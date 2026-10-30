@@ -13,7 +13,16 @@ cd "$ROOT"
 BIN="${DOCPARSE_BIN:-runtime/bin/docparse}"
 VENV=runtime/venv-sdk
 
-[[ -x "$BIN" ]] || { echo "building $BIN"; CGO_ENABLED=0 go build -trimpath -o "$BIN" ./cmd/docparse; }
+# Always build the current sources unless the caller pinned an explicit binary: reusing a
+# stale runtime/bin/docparse would validate the SDK against code that is not under review
+# (or report version drift after a bump that was never compiled).
+if [[ -z "${DOCPARSE_BIN:-}" ]]; then
+  echo "building $BIN from the current sources"
+  CGO_ENABLED=0 go build -trimpath -o "$BIN" ./cmd/docparse
+elif [[ ! -x "$BIN" ]]; then
+  echo "missing DOCPARSE_BIN=$BIN" >&2
+  exit 1
+fi
 
 if [[ ! -x "$VENV/bin/python" ]]; then
   python3 -m venv "$VENV"
