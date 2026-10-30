@@ -20,12 +20,15 @@ POST /v1/jobs  ──▶  queued ──▶ running ──▶ completed
 * **Pluggable engines** — the control plane never imports engine types; adapters
   return a document IR (`doc-ir/0.1`) and the service renders Markdown/Text/JSON.
 
-Status: **Phase 0 complete; PR-00 (Phase 1 readiness) and PR-01 (CI baseline)
-complete** — see `docs/PHASE1-READINESS.md`, `docs/PR00-ISSUE-MATRIX.md` and
-`docs/PR01-REPORT.md`. Not yet production-hardened; `docs/IMPLEMENTATION-PLAN.md`
-lists the remaining Phase 1 slices.
-External distribution of the CPU worker image is **blocked** on licence item L1
-(`libx265`), and GPU container verification is still PARTIAL.
+Status: **Phase 0 and Phase 1 complete** — PR-00 … PR-12 are merged. The one-page
+status, per-slice evidence and the open items (each with its actual blocker) are in
+`docs/PHASE1-SUMMARY.md`; the per-PR detail is in `docs/IMPLEMENTATION-PLAN.md`.
+Still open and *not* code problems: external distribution of the worker image is
+**blocked** on licence item L1 (`libx265`, GPL-2.0), two-host cluster measurement needs a
+second host, and branch protection needs a paid private repo (or a public one).
+
+Contributing, or working here as an agent? Read `AGENTS.md` first — it has the
+non-negotiables, the command that *is* CI, and the traps we already paid for.
 
 ## Quickstart (local, no Docker)
 
@@ -207,6 +210,7 @@ protection on the free plan).
 
 | Document | Contents |
 | --- | --- |
+| `AGENTS.md` | operational contract for contributors/agents: rules, commands, traps, deliberate gaps |
 | `docs/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
 | `docs/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
 | `docs/PHASE1-SUMMARY.md` | Phase 1 status: what shipped, what was verified, what is blocked and why |
