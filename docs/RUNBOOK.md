@@ -34,8 +34,8 @@ scripts/backup_online.py --data-dir /data --out /backups/2026-11-01 --verify
 
 If the tool exits non-zero with *"snapshot and pinning disagreed"*, a job changed retention
 state (ACK, TTL, cancel) in the milliseconds between the snapshot and the pin. Nothing is
-wrong with the data — just run the backup again: it takes a fresh snapshot. It never writes a
-backup it could not protect.
+wrong with the data — the tool removes the partial destination, so just re-run the same
+command: it takes a fresh snapshot. It never writes a backup it could not protect.
 
 `backup_online.py` prints a JSON report (`jobs_servable`, `files`, `bytes`, `db_seconds`,
 `verify.problems`). `--verify` runs `PRAGMA integrity_check` and re-hashes every artifact.

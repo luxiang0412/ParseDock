@@ -81,8 +81,7 @@ class Leases:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.lock = threading.Lock()
         self.stop_event = threading.Event()
-        self.thread = threading.Thread(target=self._loop, daemon=True)
-        self.thread.start()
+        self.thread: threading.Thread | None = None
         self.last = time.time()
         self.renew_errors: list[str] = []
 
@@ -91,12 +90,18 @@ class Leases:
         while not self.stop_event.wait(interval):
             self.renew()
 
+    def start(self) -> None:
+        # Started after pinning: the thread and the pin would otherwise share one SQLite
+        # connection and could commit each other's transaction halfway through.
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
+
     def pin(self, jobs: set[str]) -> list[str]:
         now = datetime.datetime.now(datetime.timezone.utc)
         exp = now + datetime.timedelta(seconds=self.seconds)
         stamp = lambda d: d.isoformat(timespec="microseconds").replace("+00:00", "Z")
         unpinnable = []
-        with self.conn:
+        with self.lock, self.conn:
             for job_id in sorted(jobs):
                 lease = f"backup-{uuid.uuid4().hex}"
                 # Only a job that is still 'active' can be protected: once cleanup has
@@ -137,7 +142,8 @@ class Leases:
 
     def release(self) -> None:
         self.stop_event.set()
-        self.thread.join(timeout=5)
+        if self.thread is not None:
+            self.thread.join(timeout=5)
         with self.lock:
             if self.ids:
                 try:
@@ -207,6 +213,8 @@ def main() -> int:
         t_lock = time.time()
         leases = Leases(src_db, args.lease_seconds)
         unpinnable = leases.pin(jobs)
+        if not unpinnable:
+            leases.start()
         db_seconds_lock = time.time() - t_lock
         # A job that left 'active' between the snapshot and the pin (ACK, TTL, cancel) cannot
         # be protected: cleanup may delete its files without re-checking leases. Rather than
@@ -217,9 +225,11 @@ def main() -> int:
                     if j in jobs_with_artifacts and not (data / "results" / j).exists()]
         if unpinnable or vanished:
             leases.release()
+            shutil.rmtree(out, ignore_errors=True)
             print(json.dumps({
                 "error": "snapshot and pinning disagreed: jobs changed retention state during "
-                         "the backup. Retry (a new snapshot is taken).",
+                         "the backup. The partial destination was removed; retry the same "
+                         "command (it takes a fresh snapshot).",
                 "unpinnable": sorted(set(unpinnable)),
                 "missing_files": sorted(set(vanished)),
             }, indent=2), file=sys.stderr)
