@@ -147,7 +147,9 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: aggregate results
+      - name: aggregate results (merge gate)
+        # scripts/ci_summary.py is unit-tested; a substring grep here once let a
+        # failing contract job pass the summary (see docs/PR01-REPORT.md §6).
         env:
           RESULTS: >-
             static=${{ needs.static.result }}
@@ -155,20 +157,4 @@ jobs:
             contract=${{ needs.contract.result }}
             lifecycle=${{ needs.lifecycle.result }}
             image=${{ needs.image.result }}
-        run: |
-          set -euo pipefail
-          {
-            echo "## PR-01 CI summary"
-            echo
-            echo "| job | result |"
-            echo "| --- | --- |"
-            for pair in $RESULTS; do
-              echo "| ${pair%%=*} | ${pair#*=} |"
-            done
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "$RESULTS"
-          if echo "$RESULTS" | grep -qv '=success'; then
-            echo "one or more required jobs failed" >&2
-            exit 1
-          fi
-          echo "all required jobs succeeded"
+        run: python3 scripts/ci_summary.py "$RESULTS" --github-summary "$GITHUB_STEP_SUMMARY"
