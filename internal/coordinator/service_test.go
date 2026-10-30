@@ -1281,3 +1281,26 @@ func TestQuotaRejectionKeepsPinnedFiles(t *testing.T) {
 		t.Fatalf("quota rejection deleted a pinned input: %v", err)
 	}
 }
+
+// PR-12 codex review: an unknown lease state must never authorise deleting files.
+func TestDeleteDeferredWhenLeaseStateUnknown(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Cancelling the context makes the lease lookup fail; nothing may be deleted.
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	s.deleteJobUnlessLeased(cancelled, job.ID)
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); err != nil {
+		t.Fatalf("files deleted on an unknown lease state: %v", err)
+	}
+	var retention string
+	_ = s.DB.QueryRowContext(ctx, `SELECT retention_status FROM jobs WHERE id = ?`, job.ID).Scan(&retention)
+	if retention != string(jobs.RetentionActive) {
+		t.Fatalf("retention moved on a failed lookup: %s", retention)
+	}
+}

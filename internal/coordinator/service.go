@@ -981,7 +981,8 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	// A client (or an online backup) may hold a live download lease on the input; deleting
 	// under it would pull the bytes out from under a reader. In that case the cleaner removes
 	// the files once the lease expires (it already honours download_leases).
-	if le, _ := s.hasActiveDownloadLease(ctx, jobID); le {
+	if le, lerr := s.hasActiveDownloadLease(ctx, jobID); lerr != nil || le {
+		// Unknown is treated as leased: the cleaner will remove the files later.
 		return s.GetJob(ctx, jobID, "")
 	}
 	_ = s.Store.DeleteJob(jobID)
@@ -993,7 +994,16 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 // exactly these leases, and deleting under one would break a copy that already snapshotted
 // the job. The cleaner removes the files once the lease expires.
 func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
-	if le, _ := s.hasActiveDownloadLease(ctx, jobID); le {
+	// Move the job out of 'active' before deciding. Pinning only accepts active rows, so the
+	// database arbitrates the race: either the pin commits first (we then see the lease) or
+	// this update wins and the pin fails, making the backup retry with a fresh snapshot.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
+		WHERE id = ? AND retention_status = 'active'`, ts(nowUTC()), jobID); err != nil {
+		return // cannot authorise deletion; leave the files to the cleaner
+	}
+	le, err := s.hasActiveDownloadLease(ctx, jobID)
+	if err != nil || le {
+		// A failed lookup is not permission to delete: the lease may exist.
 		return
 	}
 	_ = s.Store.DeleteJob(jobID)
