@@ -244,7 +244,7 @@ func TestEnrichKeepsEngineDateType(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := documentir.New()
-	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 1,
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 3,
 		Loc: &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
 		Cells: []documentir.Cell{
 			{Row: 0, Col: 0, Text: "45123", DataType: "date"},
@@ -288,7 +288,7 @@ func TestEnrichWarnsOnUncachedSharedFormula(t *testing.T) {
 		t.Fatal(err)
 	}
 	doc := documentir.New()
-	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 1,
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 3,
 		Loc: &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
 		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 1, Col: 0},
 			{Row: 0, Col: 1, Text: "2"}, {Row: 0, Col: 2, Text: "9"}}}}
@@ -463,5 +463,47 @@ func TestEnrichSkipsMultiTableSheets(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no multi-table warning: %v", warnings)
+	}
+}
+
+// A sub-block of a sheet (table dimensions smaller than the used range) is
+// ambiguous: a shifted offset could match repeated labels. Skip it.
+func TestEnrichSkipsSubBlockTables(t *testing.T) {
+	path := writeMinimalXLSX(t) // used range A1:D2
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 2,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "Sheet1"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "1"}, {Row: 0, Col: 1, Text: "x"}}}}
+	applied, warnings, err := EnrichXLSXFormulas(context.Background(), path, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("sub-block table enriched %d cells", applied)
+	}
+	found := false
+	for _, w := range warnings {
+		if w.Code == documentir.WarnFormulaMissing {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no ambiguity warning: %v", warnings)
+	}
+}
+
+// A named sheet without formulas must not produce a warning.
+func TestEnrichSilentForFormulaFreeSheet(t *testing.T) {
+	path := writeMinimalXLSX(t)
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 4,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "NoFormulas"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "x"}}}}
+	applied, warnings, err := EnrichXLSXFormulas(context.Background(), path, doc)
+	if err != nil || applied != 0 {
+		t.Fatalf("applied = %d err = %v", applied, err)
+	}
+	if len(warnings) != 0 {
+		t.Fatalf("spurious warning for a formula-free sheet: %v", warnings)
 	}
 }

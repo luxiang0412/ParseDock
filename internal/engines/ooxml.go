@@ -82,6 +82,7 @@ type xlsxSharedStrings struct {
 // when the used range starts at A1 and the mapping is therefore an identity.
 type sheetFormulas struct {
 	originRow, originCol int
+	maxRow, maxCol       int
 	cells                map[[2]int]formulaCell
 	// values holds every cell's text at its worksheet address. It is used to
 	// *verify* that a table's local (0,0) really is the worksheet's origin before
@@ -183,6 +184,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		values := map[[2]int]string{}
 		capped := false
 		originRow, originCol := -1, -1
+		maxRow, maxCol := -1, -1
 		for _, row := range ws.SheetData.Rows {
 			for _, c := range row.Cells {
 				col, r, ok := parseA1(c.Ref)
@@ -194,6 +196,12 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 				}
 				if originCol < 0 || col < originCol {
 					originCol = col
+				}
+				if r > maxRow {
+					maxRow = r
+				}
+				if col > maxCol {
+					maxCol = col
 				}
 				// Record every cell's text first: origin verification compares the
 				// engine's table against the sheet, so ordinary cells matter.
@@ -249,7 +257,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		}
 		if len(cells) > 0 && originRow >= 0 {
 			formulas[sh.name] = sheetFormulas{originRow: originRow, originCol: originCol,
-				cells: cells, values: values, valuesCapped: capped}
+				maxRow: maxRow, maxCol: maxCol, cells: cells, values: values, valuesCapped: capped}
 		}
 	}
 	if len(formulas) == 0 {
@@ -275,7 +283,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		name := ""
 		loc := table.Loc
 		switch {
-		case loc != nil && loc.Sheet != "" && hasSheet(formulas, ordered, loc.Sheet):
+		case loc != nil && loc.Sheet != "" && hasFormulaData(formulas, loc.Sheet):
 			name = loc.Sheet
 		case (loc == nil || loc.Sheet == "") && loc != nil && loc.Page > 0 && loc.Page-1 < len(ordered):
 			// xberg exposes the 1-based sheet index in Loc.Page.
@@ -305,6 +313,16 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		// OOXML references are worksheet-absolute. Without a per-table origin the
 		// mapping is only the identity when the sheet starts at A1 *and* holds a
 		// single table; otherwise guessing would attach another table's formula.
+		// A sub-block of the sheet could also match a shifted offset when labels
+		// repeat. Requiring the table to span the sheet's entire used range removes
+		// that ambiguity: only then is table-local (0,0) provably the sheet origin.
+		spansSheet := table.Rows > 0 && table.Cols > 0 &&
+			table.Rows == sheetData.maxRow+1 && table.Cols == sheetData.maxCol+1
+		if !spansSheet {
+			ambiguous = true
+			originUnknown = true
+			continue
+		}
 		if sheetData.originRow != 0 || sheetData.originCol != 0 || perSheet[name] > 1 {
 			originUnknown = true
 			if perSheet[name] > 1 {
@@ -440,16 +458,12 @@ func sameCellValue(a, b string) bool {
 	return ea == nil && eb == nil && fa == fb
 }
 
-func hasSheet(formulas map[string]sheetFormulas, ordered []string, name string) bool {
-	if _, ok := formulas[name]; ok {
-		return true
-	}
-	for _, n := range ordered {
-		if n == name {
-			return true
-		}
-	}
-	return false
+// hasFormulaData reports whether a sheet has any formula cells. A named sheet
+// without formulas must not be resolved: otherwise it would produce a spurious
+// "formula text unavailable" warning.
+func hasFormulaData(formulas map[string]sheetFormulas, name string) bool {
+	_, ok := formulas[name]
+	return ok
 }
 
 // ShouldEnrichFormulas reports whether formula extraction applies to a format.
