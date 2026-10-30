@@ -35,6 +35,13 @@ import (
 	"parsedock.dev/parsedock/internal/worker"
 )
 
+// serviceVersion is the released artefact version; apiVersion is the OpenAPI document
+// version. They move together, and scripts/check_versions.py enforces that.
+const (
+	serviceVersion = "0.1.0"
+	apiVersion     = "0.1.0"
+)
+
 type flags struct {
 	role             string
 	listen           string
@@ -88,6 +95,7 @@ type flags struct {
 	mineruTimeout    time.Duration
 	engineMaxRSSMB   int64
 	escalateScans    bool
+	version          bool
 	engineMinVRAM    string
 	tlsCert          string
 	tlsKey           string
@@ -190,6 +198,7 @@ func parseFlags() *flags {
 	fs.StringVar(&f.mineruHome, "mineru-home", env("PARSEDOCK_MINERU_HOME", ""), "ephemeral MINERU_HOME")
 
 	fs.BoolVar(&f.check, "check", false, "print capabilities and exit")
+	fs.BoolVar(&f.version, "version", false, "print the service and API versions as JSON and exit")
 	_ = fs.Parse(os.Args[1:])
 	return f
 }
@@ -236,6 +245,12 @@ func run(f *flags) error {
 
 	if f.check {
 		return printCheck(f, cfg)
+	}
+	if f.version {
+		// Machine-readable so scripts/check_versions.py can compare it with the OpenAPI
+		// document and both SDKs without parsing log text.
+		fmt.Printf("{\"version\":\"%s\",\"api\":\"%s\"}\n", serviceVersion, apiVersion)
+		return nil
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

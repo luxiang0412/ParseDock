@@ -40,6 +40,22 @@ def free(port: int) -> None:
             raise SystemExit(f"port {port} busy; stop the previous run")
 
 
+def test_cli(stack_api: str, token: str, sample: Path) -> None:
+    """The console script must parse a file end to end and print the bytes."""
+    out = subprocess.run(
+        [sys.executable, "-m", "parsedock_sdk.cli", "parse", str(sample), "--format", "markdown",
+         "--api", stack_api, "--token", token],
+        capture_output=True)
+    assert out.returncode == 0, out.stderr.decode()
+    assert out.stdout.strip(), "CLI printed nothing"
+    # --keep leaves the result downloadable; the default ACKs it.
+    out = subprocess.run(
+        [sys.executable, "-m", "parsedock_sdk.cli", "parse", str(sample), "--api", stack_api,
+         "--token", token, "--keep", "-o", os.devnull],
+        capture_output=True)
+    assert out.returncode == 0, out.stderr.decode()
+
+
 def main() -> int:
     if not BIN.exists():
         raise SystemExit("build the binary first: make build")
@@ -153,6 +169,10 @@ def main() -> int:
             ir = c.parse_sync(FIXTURE, mode="fast")
             assert ir.get("schema_version") == "doc-ir/0.1", ir
             print("[ok] synchronous parse returned doc-ir/0.1")
+
+            # 10. CLI (console script / python -m) parses and optionally keeps the result.
+            test_cli(base, TOKEN, FIXTURE)
+            print("[ok] CLI parse wrote output and exited 0")
     except AssertionError as e:
         failures.append(f"assertion: {e}")
     finally:

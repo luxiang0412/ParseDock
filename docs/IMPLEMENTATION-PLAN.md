@@ -362,6 +362,30 @@ without restructuring.
 
 **DoD.** Both SDKs versioned with the service and published by release pipeline.
 
+**Status: PARTIAL (PR-10).** Delivered and verified:
+
+* `sdk/python` is an installable package (`pyproject.toml`, `pip install -e sdk/python`) with
+  a `parsedock` console script: `parsedock parse ./f.pdf -o out.md`, `parsedock status`,
+  `--mode/--device/--format/--keep`, exit codes 0/1/2. The console script and `python -m
+  parsedock_sdk.cli` are exercised by the SDK test.
+* `--version` prints `{"version":…,"api":…}` as JSON, and `scripts/check_versions.py`
+  asserts one version across the binary, `api/openapi.yaml`, `sdk/python`
+  (`__version__` **and** `pyproject.toml`) and the Java `pom.xml`.
+* The Java client builds with Maven and the jar contains `org/openapitools/client/ApiClient`
+  (the generated package name, which the check now asserts exactly after the first version
+  wrongly looked for `dev/parsedock/client`).
+* `scripts/sdk-check.sh` runs all of it (`make sdk-check`); the Python half runs in the
+  PR `unit` phase (`--no-java`), the Java half in the new nightly `sdk-check` job.
+* `docs/SDK.md` documents the lifecycle rules the wrapper enforces (ACK only after the sink,
+  `result_version` required, idempotent ACK, `410` is expected, polling shares the rate
+  budget) and the honest gaps.
+
+**Not delivered:** publishing to PyPI/Maven Central (needs registry credentials and a
+licence/notice bundle; the release pipeline still publishes images only), `schemathesis`
+property-based contract fuzzing (the repo has 36 OpenAPI-derived contract checks plus a live
+end-to-end SDK test; property fuzzing belongs in the nightly job with a pinned version), and
+the `httpx` async client (declared as an optional extra but not implemented).
+
 ---
 
 ## PR-11 — Benchmark corpus and quality bar
