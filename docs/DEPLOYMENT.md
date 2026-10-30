@@ -74,7 +74,9 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
 * Telemetry is disabled at build time and again at start-up. Only the `flash` tier is
   reachable; block egress to `mineru.net` by policy and run parsers with
   `--sandbox=unshare-net` where namespaces are available.
-* The worker reports free VRAM on every heartbeat. Set
+* The worker reports the free VRAM of the card it will use (first entry of
+  `CUDA_VISIBLE_DEVICES`, else device 0) on every heartbeat — pin `CUDA_VISIBLE_DEVICES`
+  if the host has several cards. Set
   `--engine-min-vram-mb mineru:8192` on the coordinator so `gpu_required` is refused with
   `409 gpu_unavailable` (naming the requirement) instead of queueing on a full card.
 

@@ -102,8 +102,10 @@ which fails closed when namespaces are unavailable.
 
 **Free VRAM reporting.** Workers send `free_vram_bytes` on every register/heartbeat:
 
-* the value is the **largest free memory of a single card**, not the sum — ParseDock does
-  not pool memory or pick a device, so two 4 GiB cards cannot host an 8 GiB model;
+* the value is the free memory of the card the parser will actually use: the first entry
+  of `CUDA_VISIBLE_DEVICES` (which parsers inherit), or device 0 when unset. It is never
+  a sum — ParseDock does not pool memory or pick a device, so two 4 GiB cards cannot host
+  an 8 GiB model, and a full GPU 0 is not rescued by a roomy GPU 1;
 * `-1` = unknown (no `nvidia-smi`, unusable output, or an older worker that omits the
   field), `0` = genuinely full. Unknown is treated as eligible so upgrading the
   coordinator cannot reject healthy GPU hosts.

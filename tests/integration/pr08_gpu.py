@@ -77,11 +77,14 @@ def main():
     if "nvidia" not in (docker("info", "--format", "{{json .Runtimes}}").stdout or ""):
         skip("nvidia container runtime not configured")
     if "--build" in sys.argv:
+        # A requested build that fails is a regression, not an unavailable
+        # prerequisite: report it as a failed check.
         for df, tag in (("docker/Dockerfile", BASE_IMAGE),
                         ("docker/Dockerfile.worker-gpu", GPU_IMAGE)):
             r = docker("build", "-f", df, "-t", tag, ".")
             if r.returncode != 0:
-                skip(f"image build failed for {tag}: {r.stderr[-300:]}")
+                return report([("PR08-00", False,
+                                f"image build failed for {tag}: {r.stderr[-300:]}")])
     if docker("image", "inspect", GPU_IMAGE).returncode != 0:
         skip(f"missing {GPU_IMAGE}; pass --build")
 

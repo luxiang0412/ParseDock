@@ -47,23 +47,27 @@ type GPU struct {
 	ComputeCap string `json:"compute_cap,omitempty"`
 }
 
-// MaxFreeVRAMMB returns the largest free memory of any single GPU. It is deliberately
-// not a sum: ParseDock does not pool memory or select a device, so two cards with 4 GiB
-// free cannot host an 8 GiB model. The boolean is false when the value is unknown (no
-// nvidia-smi, unusable output, driver error), which callers must treat as "no
-// information", not as "no memory".
-func MaxFreeVRAMMB(ctx context.Context) (int64, bool) {
+// FreeVRAMMB returns the free memory of the GPU this process will actually use.
+//
+// It is deliberately device-specific: ParseDock does not pool memory or choose a
+// device at run time, so the only honest number is the free memory of the card the
+// parser will run on. That card is the first entry of CUDA_VISIBLE_DEVICES (parsers
+// launched by the worker inherit the same environment), or device 0 when the variable
+// is unset. The boolean is false when the value is unknown (no nvidia-smi, unusable
+// output, driver error), which callers must treat as "no information".
+func FreeVRAMMB(ctx context.Context) (int64, bool) {
 	if _, err := exec.LookPath("nvidia-smi"); err != nil {
 		return 0, false
 	}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(c, "nvidia-smi",
+	out, err := exec.CommandContext(c, "nvidia-smi", "--id="+strconv.Itoa(VisibleGPU()),
 		"--query-gpu=memory.free", "--format=csv,noheader,nounits").Output()
 	if err != nil {
 		return 0, false
 	}
-	var best, parsed int64
+	var best int64
+	parsed := 0
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if v, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64); err == nil {
 			if v > best {
@@ -79,6 +83,23 @@ func MaxFreeVRAMMB(ctx context.Context) (int64, bool) {
 		return 0, false
 	}
 	return best, true
+}
+
+// VisibleGPU is the index of the first GPU in CUDA_VISIBLE_DEVICES, or 0 when unset.
+// It is the device a CUDA parser will select by default; anything else would admit
+// memory on a card the engine never touches.
+func VisibleGPU() int {
+	raw := strings.TrimSpace(os.Getenv("CUDA_VISIBLE_DEVICES"))
+	if raw == "" {
+		return 0
+	}
+	first, _, _ := strings.Cut(raw, ",")
+	first = strings.TrimSpace(first)
+	// Entries can be UUIDs (GPU-xxxx); only numeric indices are addressable here.
+	if idx, err := strconv.Atoi(first); err == nil && idx >= 0 {
+		return idx
+	}
+	return 0
 }
 
 // DetectGPU probes nvidia-smi with a short timeout. Absence is not an error:
