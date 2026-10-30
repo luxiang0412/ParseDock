@@ -114,6 +114,16 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.run_gate(), 1)
         self.assertEqual(self.run_gate(["--allow-missing"]), 0)
 
+    def test_missing_aggregate_fails(self):
+        """A current engine entry without a quality dimension must not pass silently."""
+        self.base_case()
+        self.write(
+            [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],
+            [{"engine": "xberg", "dimensions": {}, "quality_sub": {}}])
+        self.assertEqual(self.run_gate(), 1)
+        self.assertEqual(self.run_gate(["--allow-missing"]), 0)
+
     def test_zero_baseline_latency_regression_fails(self):
         """native CSV baselines round to 0 ms; a jump to seconds must still fail."""
         self.base_case()

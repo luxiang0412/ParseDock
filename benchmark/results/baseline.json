@@ -2,7 +2,7 @@
   "engines": {
     "docling-rs": {
       "performance": 5.0,
-      "quality": 5.912399999999999,
+      "quality": 6.8081000000000005,
       "structure": 10.0
     },
     "native": {
@@ -12,35 +12,35 @@
     },
     "xberg": {
       "performance": 10.0,
-      "quality": 8.28845,
+      "quality": 6.7328,
       "structure": 10.0
     }
   },
-  "generated_at": "2026-10-30T19:03:43+00:00",
+  "generated_at": "2026-10-30T19:12:29+00:00",
   "samples": {
     "docling-rs": {
       "generated/docx_report.docx": {
         "cer": 0.284,
-        "p50_ms": 12.5,
-        "p95_ms": 12.5
+        "p50_ms": 13.4,
+        "p95_ms": 13.4
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 0.8836,
-        "p50_ms": 690.0,
-        "p95_ms": 690.0
+        "p50_ms": 679.2,
+        "p95_ms": 679.2
+      },
+      "generated/pdf_scanned_zh.pdf": {
+        "cer": 0.098,
+        "p50_ms": 699.6,
+        "p95_ms": 699.6
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.0072,
-        "p50_ms": 815.7,
-        "p95_ms": 815.7
+        "p50_ms": 813.0,
+        "p95_ms": 813.0
       }
     },
     "native": {
-      "generated/csv_semicolon_eu.csv": {
-        "cer": 0.0,
-        "p50_ms": 0.0,
-        "p95_ms": 0.0
-      },
       "generated/csv_utf8.csv": {
         "cer": 0.0,
         "p50_ms": 0.0,
@@ -48,30 +48,30 @@
       }
     },
     "xberg": {
-      "generated/csv_semicolon_eu.csv": {
-        "cer": 0.1091,
-        "p50_ms": 9.6,
-        "p95_ms": 9.6
-      },
       "generated/csv_utf8.csv": {
         "cer": 0.1128,
-        "p50_ms": 7.7,
-        "p95_ms": 7.7
+        "p50_ms": 7.6,
+        "p95_ms": 7.6
       },
       "generated/docx_report.docx": {
         "cer": 0.0824,
-        "p50_ms": 10.7,
-        "p95_ms": 10.7
+        "p50_ms": 11.5,
+        "p95_ms": 11.5
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 0.0548,
-        "p50_ms": 220.0,
-        "p95_ms": 220.0
+        "p50_ms": 216.7,
+        "p95_ms": 216.7
+      },
+      "generated/pdf_scanned_zh.pdf": {
+        "cer": 0.8235,
+        "p50_ms": 215.3,
+        "p95_ms": 215.3
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.1157,
-        "p50_ms": 16.0,
-        "p95_ms": 16.0
+        "p50_ms": 13.3,
+        "p95_ms": 13.3
       }
     }
   }

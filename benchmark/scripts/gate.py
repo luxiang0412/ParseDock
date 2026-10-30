@@ -159,7 +159,14 @@ def main() -> int:
             continue
         for dim in ("quality", "structure"):
             bv, cv = b.get(dim), c.get(dim)
-            if bv is None or cv is None:
+            if bv is None:
+                continue
+            if cv is None:
+                msg = f"{name}.{dim}: missing from the current run"
+                if args.allow_missing:
+                    warnings.append(msg + " (skipped)")
+                else:
+                    failures.append(msg + " — a missing aggregate is not a pass")
                 continue
             d = rel_drop(bv, cv)
             if d > args.max_quality_drop:
