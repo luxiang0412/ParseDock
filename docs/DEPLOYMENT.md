@@ -102,6 +102,11 @@ JSON — useful as a deployment smoke test and for support tickets.
 | `GET /readyz` (api) | readiness | proxies the coordinator's readiness |
 | `GET /readyz` (coordinator) | readiness | SQLite ping, free bytes vs watermark, cleaner not stalled (`503` when stalled) |
 
+The images do not ship an HTTP client, so the compose file intentionally has no
+container-level `healthcheck`. Point your orchestrator's HTTP probe at these
+endpoints (they are reachable on the internal network for the coordinator and on
+the published port for the API replicas).
+
 `/readyz` deliberately reports `accepting_uploads=false` when below the watermark while
 remaining `ready` for reads/ACKs, so an orchestrator does not kill the process that is
 supposed to reclaim space.

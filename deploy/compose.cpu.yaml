@@ -34,9 +34,9 @@ services:
       # SQLite + inputs + results. Must be local disk, never a network share.
       - parsedock-data:/data
     networks: [backend]
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/docparse", "--role=api", "--listen=127.0.0.1:9", "--dev-insecure"]
-      disable: true
+    # No container healthcheck: the image is deliberately minimal (no curl/wget)
+    # and orchestration probes are the documented HTTP endpoints (/healthz,
+    # /readyz). A fake `test:` command would report health without checking it.
 
   api-1:
     <<: *common
