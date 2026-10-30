@@ -22,9 +22,11 @@
 
 ## Verified end to end (real processes, real files, real engines where applicable)
 
-* **Real corpus**: 958 eligible documents, **96.9 % completion**, 2.75 files/s at 4 workers
-  (`docs/REAL-CORPUS-TEST.md`); three defects found and fixed (PDF trailer, `/Encrypt`,
-  `expanded_too_large`).
+* **Real corpus** (re-run on current `main`, `.doc`/`.xls` now actually sent): 972 documents,
+  **96.5 % completion**, 23.34 M chars, 6 612 tables; 3.6 files/s at client c=16 with the four
+  parser slots 90 % busy (`docs/REAL-CORPUS-TEST.md` §2a). Three defects found in the first
+  pass (PDF trailer, `/Encrypt`, `expanded_too_large`) plus two in the re-run (relative
+  `--work-dir` broke every CLI parse; the claim poll interval was a hard-coded 1 s).
 * **CI**: six blocking PR jobs; a negative-control PR proved the merge gate fails on a
   contract regression.
 * **GPU**: `parsedock-worker-gpu:0.1.0` runs MinerU on the RTX 2080 Ti and completes a

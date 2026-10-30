@@ -36,8 +36,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+# Mirrors internal/storage/sniff.go. The legacy OLE2 container is shared by Word, Excel and
+# PowerPoint, so the extension decides; PR-04 taught the service to accept these, and the
+# harness has to send them or it silently skips the very files under test.
 ACCEPTED_EXT = {".pdf", ".docx", ".xlsx", ".xlsm", ".pptx", ".csv", ".tsv",
-                ".txt", ".md", ".markdown", ".png", ".jpg", ".jpeg", ".webp"}
+                ".txt", ".md", ".markdown", ".png", ".jpg", ".jpeg", ".webp",
+                ".doc", ".dot", ".xls", ".xlt", ".ppt", ".pot"}
 
 
 @dataclass

@@ -95,6 +95,7 @@ type flags struct {
 	mineruTimeout    time.Duration
 	engineMaxRSSMB   int64
 	escalateScans    bool
+	pollInterval     time.Duration
 	version          bool
 	engineMinVRAM    string
 	tlsCert          string
@@ -134,6 +135,8 @@ func parseFlags() *flags {
 	fs.StringVar(&f.dataDir, "data-dir", env("PARSEDOCK_DATA_DIR", "./runtime/data"), "data directory (coordinator only)")
 	fs.StringVar(&f.dbPath, "db", env("PARSEDOCK_DB", ""), "sqlite path (default <data-dir>/coordinator.db)")
 	fs.StringVar(&f.workDir, "work-dir", env("PARSEDOCK_WORK_DIR", "./runtime/work"), "worker scratch directory")
+	fs.DurationVar(&f.pollInterval, "poll-interval", durationEnv("PARSEDOCK_POLL_INTERVAL", 250*time.Millisecond),
+		"how long an idle worker waits between claim attempts; this is the latency floor when the queue is shallow")
 	fs.StringVar(&f.internalToken, "internal-token", env("PARSEDOCK_INTERNAL_TOKEN", ""), "shared internal token")
 	fs.StringVar(&f.apiKeys, "api-keys", env("PARSEDOCK_API_KEYS", ""), "comma list <token:owner[:scopes]> or sha256:<hex>:owner[:scopes]")
 	fs.StringVar(&f.apiKeysFile, "api-keys-file", env("PARSEDOCK_API_KEYS_FILE", ""), "file with one key entry per line (preferred: argv is world-readable)")
@@ -411,6 +414,7 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 		MaxConcurrency:    f.workerConcurrency,
 		WorkDir:           f.workDir,
 		HeartbeatInterval: f.heartbeat,
+		PollInterval:      f.pollInterval,
 		MaxParseTime:      time.Duration(f.maxParseMinutes) * time.Minute,
 		MaxInputBytes:     f.maxUploadMB << 20,
 		EscalateScans:     f.escalateScans,
@@ -719,6 +723,15 @@ func hostname() string {
 		return "unknown"
 	}
 	return h
+}
+
+func durationEnv(k string, def time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }
 
 func env(k, def string) string {

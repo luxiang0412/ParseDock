@@ -69,6 +69,9 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 		args = append([]string{"-n", "--", spec.Bin}, args...)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
+	// Note: workDir and args must be absolute. cmd.Dir sets the child's cwd, so a relative
+	// arg would be resolved against workDir and fail; worker.New resolves its scratch root so
+	// every derived path is absolute.
 	cmd.Dir = workDir
 	cmd.Env = append(os.Environ(), "NO_COLOR=1", "TERM=dumb")
 	cmd.Env = append(cmd.Env, spec.Env...)

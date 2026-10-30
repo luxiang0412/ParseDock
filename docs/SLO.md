@@ -85,7 +85,7 @@ Wiring an OTLP exporter later is additive: the propagation point is the request 
 | Signal | Measured | Source |
 | --- | --- | --- |
 | Throughput (2 workers, 200 ms parse) | 8.8 jobs/s (88 % of the 10 jobs/s ceiling) | `docs/CLUSTER-LITE.md` §7 |
-| Real corpus (958 files, 4 workers) | 2.75 files/s, 348 s wall | `docs/REAL-CORPUS-TEST.md` |
+| Real corpus (972 files, 4 slots) | 3.6 files/s at client c=16 (slots 90 % busy); 2.3 files/s at c=4, where the 500 ms client poll is the limit | `docs/REAL-CORPUS-TEST.md` §2a |
 | Disk per result | ≈ 1.9 × input bytes | `docs/DEPLOYMENT.md` §6a |
 | Peak RSS | xberg ≈ 40 MB, docling-rs ≈ 0.9–1.2 GB | `docs/DEPLOYMENT.md` §6a |
 
