@@ -12,6 +12,7 @@
 FROM parsedock:0.1.0 AS base
 USER root
 
+# Versions must match images.lock.json (scripts/verify-pins.sh enforces it).
 ARG XBERG_VERSION=1.3.10
 ARG DOCLING_RS_VERSION=2.53.3
 ARG DOCLING_RS_MODELS_TAG=models-v1

@@ -1,0 +1,162 @@
+name: Nightly
+
+# Real-engine verification and licence evidence (PR-01).
+# Runs nightly, and on demand for engine-related work.
+
+on:
+  schedule:
+    - cron: "30 18 * * *" # 02:30 Asia/Shanghai
+  workflow_dispatch:
+    inputs:
+      repeats:
+        description: "Benchmark repeats for the quality subset"
+        default: "1"
+        required: false
+      engines:
+        description: "Engines for acceptance-real"
+        default: "native,xberg,docling-rs"
+        required: false
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  CGO_ENABLED: "0"
+  PYTHONUNBUFFERED: "1"
+
+jobs:
+  real-engines:
+    name: real-engines
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: cache engine binaries and models
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            runtime/engines/xberg-cli
+            runtime/engines/docling-rs
+          key: engines-${{ hashFiles('images.lock.json') }}
+      - name: engines phase (install, acceptance-real, quality bench, score)
+        run: bash scripts/ci-local.sh engines
+      - name: upload real-engine evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-real-engines
+          path: build/ci/
+          if-no-files-found: warn
+
+  container:
+    name: container-smoke
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
+      - name: build control-plane image (cached)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: parsedock:smoke
+          load: true
+          cache-from: type=gha,scope=control-plane
+          cache-to: type=gha,scope=control-plane,mode=max
+      - name: build worker image (cached)
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: docker/Dockerfile.engines
+          tags: parsedock-worker-cpu:smoke
+          load: true
+          cache-from: type=gha,scope=worker-cpu
+          cache-to: type=gha,scope=worker-cpu,mode=max
+      - name: container phase (real engines end-to-end + licence evidence)
+        env:
+          SKIP_IMAGE_BUILD: "1"
+        run: bash scripts/ci-local.sh container
+      - name: upload container evidence + SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-container
+          path: build/ci/
+          if-no-files-found: warn
+
+  licence:
+    name: licence-audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
+      - name: build control-plane image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: parsedock:audit
+          load: true
+          cache-from: type=gha,scope=control-plane
+          cache-to: type=gha,scope=control-plane,mode=max
+      - name: build worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: docker/Dockerfile.engines
+          tags: parsedock-worker-cpu:audit
+          load: true
+          cache-from: type=gha,scope=worker-cpu
+          cache-to: type=gha,scope=worker-cpu,mode=max
+      - name: audit both images (report mode - records the BLOCK, does not publish)
+        run: |
+          set -euo pipefail
+          mkdir -p build/ci/sbom
+          AUDIT_MODE=report SBOM_DIR=build/ci/sbom bash scripts/license_audit.sh \
+            parsedock:audit parsedock-worker-cpu:audit
+      - name: record the current licence classification
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee build/ci/licence-classification.txt
+          import json
+          control = json.load(open("build/ci/sbom/parsedock_audit.json"))
+          worker = json.load(open("build/ci/sbom/parsedock-worker-cpu_audit.json"))
+          print(f"control_plane={'PASS' if not control['gpl_libraries'] else 'BLOCK'}")
+          print(f"worker={'BLOCK' if worker['gpl_libraries'] else 'PASS'}")
+          print(f"worker_gpl={worker['gpl_libraries']}")
+          print(f"worker_lgpl={len(worker['lgpl_libraries'])}")
+          for note in worker["notes"]:
+              print(f"note: {note}")
+          PY
+          {
+            echo "## Licence audit"
+            echo
+            cat build/ci/licence-classification.txt
+            echo
+            echo "Worker image distribution stays blocked while libx265 is present (L1)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-sbom
+          path: build/ci/
+          if-no-files-found: warn

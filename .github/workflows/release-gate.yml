@@ -1,0 +1,70 @@
+name: Release gate
+
+# Blocks publication of release artefacts while a licence finding is open (PR-01,
+# requirement 7). There is intentionally no registry push step yet: PR-08/PR-12
+# own publishing. This workflow is the gate those steps must pass through.
+#
+# Current expected state:
+#   parsedock (control plane)         PASS
+#   parsedock-worker-cpu              BLOCK  (libx265, legal item L1)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  licence-gate:
+    name: licence-gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.10.0
+      - name: build control-plane image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          tags: parsedock:release
+          load: true
+          cache-from: type=gha,scope=control-plane
+          cache-to: type=gha,scope=control-plane,mode=max
+      - name: build worker image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.15.0
+        with:
+          context: .
+          file: docker/Dockerfile.engines
+          tags: parsedock-worker-cpu:release
+          load: true
+          cache-from: type=gha,scope=worker-cpu
+          cache-to: type=gha,scope=worker-cpu,mode=max
+      - name: enforce licence gate (blocking)
+        run: |
+          set -euo pipefail
+          mkdir -p build/release/sbom
+          SBOM_DIR=build/release/sbom bash scripts/license_audit.sh \
+            parsedock:release parsedock-worker-cpu:release
+      - name: summary
+        if: always()
+        run: |
+          {
+            echo "## Release gate"
+            echo
+            echo "Licence audit is blocking for release tags. A BLOCK means the image"
+            echo "must not be published (see docs/LICENSE-REVIEW.md item L1)."
+            echo
+            ls -la build/release/sbom 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: upload SBOM
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-sbom
+          path: build/release/
+          if-no-files-found: warn

@@ -14,6 +14,9 @@
 #   1  a GPL library is present in an image that is meant for distribution
 #   2  docker is unavailable / image missing (PARTIAL, not a pass)
 #
+# AUDIT_MODE=report records the findings and always exits 0 (nightly / PR signal).
+# The default mode (AUDIT_MODE=enforce) is the release gate.
+#
 # This gate is engineering evidence only. The legal decision on libx265 is L1 in
 # docs/LICENSE-REVIEW.md and is NOT made here.
 set -uo pipefail
@@ -25,6 +28,7 @@ fi
 OUT_DIR="${SBOM_DIR:-build/sbom}"
 mkdir -p "$OUT_DIR"
 status=0
+MODE="${AUDIT_MODE:-enforce}"
 
 for image in "${IMAGES[@]}"; do
   safe_name="${image//[:\/]/_}"
@@ -121,11 +125,18 @@ PY
     else
       echo "BLOCK $image: $gpl_count GPL library file(s) found (see $json)." >&2
       echo "      Resolve L1 in docs/LICENSE-REVIEW.md, or set APPROVED_GPL=1 APPROVED_GPL_REASON='…' for an approved internal build." >&2
-      status=1
+      if [[ "$MODE" == "report" ]]; then
+        echo "REPORT-ONLY: not failing the build (AUDIT_MODE=report)" >&2
+      else
+        status=1
+      fi
     fi
   else
     echo "PASS  $image: no GPL library found"
   fi
 done
 
+if [[ "$MODE" == "report" && "$status" -eq 0 ]]; then
+  echo "license audit (report mode) completed"
+fi
 exit "$status"

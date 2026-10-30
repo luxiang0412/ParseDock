@@ -22,6 +22,10 @@ fmt-check: ## fail when files are not gofmt'd (CI)
 verify-pins: ## check go.mod / Dockerfiles / workflows against images.lock.json
 	python3 scripts/verify_pins.py
 
+lint-workflows: ## actionlint on .github/workflows (pinned binary)
+	bash scripts/install-actionlint.sh
+	runtime/bin/actionlint -no-color -shellcheck= .github/workflows/*.yml
+
 vet: ## go vet
 	$(GO) vet ./...
 

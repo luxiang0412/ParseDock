@@ -1,0 +1,174 @@
+name: CI
+
+# Blocking PR pipeline (PR-01). Every job runs the same commands as
+# `scripts/ci-local.sh <phase>`, so a local `make ci` and CI cannot drift.
+#
+# Required checks (branch protection): static, unit, contract, lifecycle, image,
+# ci-summary. Real-engine acceptance lives in nightly.yml + engine-changes.yml so
+# the PR path stays under the 8 minute budget.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  GOTOOLCHAIN: local
+  GOFLAGS: -mod=readonly
+  CGO_ENABLED: "0"
+  PYTHONUNBUFFERED: "1"
+  # Pinned tool image; scripts/verify_pins.py fails if this drifts from
+  # images.lock.json.
+  OPENAPI_GENERATOR_IMAGE: openapitools/openapi-generator-cli@sha256:dbc745d3a93f7bbc4289155001ef8eba1474d9e34a0733e7baf32d78e8bb02d7
+
+jobs:
+  static:
+    name: static
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: static phase (pins, fmt, vet, build, tidy drift)
+        run: bash scripts/ci-local.sh static
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-static
+          path: build/ci/
+          if-no-files-found: warn
+
+  unit:
+    name: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: unit phase (go test + scoring rubric)
+        run: bash scripts/ci-local.sh unit
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-unit
+          path: build/ci/
+          if-no-files-found: warn
+
+  contract:
+    name: contract
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: contract phase (specs, router/SDK drift, SDK regeneration)
+        run: bash scripts/ci-local.sh contract
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-contract
+          path: build/ci/
+          if-no-files-found: warn
+
+  lifecycle:
+    name: lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: lifecycle phase (T03-T16, PR-00 runtime, backup/restore)
+        run: bash scripts/ci-local.sh lifecycle
+      - name: upload evidence (acceptance + PR-00 JSON, stack logs)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-lifecycle
+          path: build/ci/
+          if-no-files-found: warn
+
+  image:
+    name: image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: image phase (build, self-check, reproducibility, licence report)
+        run: bash scripts/ci-local.sh image
+      - name: upload build summary (digest, repro hashes, SBOM)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ci-image
+          path: build/ci/
+          if-no-files-found: warn
+
+  ci-summary:
+    name: ci-summary
+    if: always()
+    needs: [static, unit, contract, lifecycle, image]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: aggregate results
+        env:
+          RESULTS: >-
+            static=${{ needs.static.result }}
+            unit=${{ needs.unit.result }}
+            contract=${{ needs.contract.result }}
+            lifecycle=${{ needs.lifecycle.result }}
+            image=${{ needs.image.result }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## PR-01 CI summary"
+            echo
+            echo "| job | result |"
+            echo "| --- | --- |"
+            for pair in $RESULTS; do
+              echo "| ${pair%%=*} | ${pair#*=} |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESULTS"
+          if echo "$RESULTS" | grep -qv '=success'; then
+            echo "one or more required jobs failed" >&2
+            exit 1
+          fi
+          echo "all required jobs succeeded"

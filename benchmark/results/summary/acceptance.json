@@ -1,7 +1,7 @@
 {
   "profiles": {
     "lifecycle": {
-      "updated_at": "2026-10-30T09:29:53.652534+00:00",
+      "updated_at": "2026-10-30T09:47:49.981496+00:00",
       "results": {
         "T03": "PASS",
         "T04": "PASS",
@@ -17,7 +17,7 @@
         "T15": "PASS",
         "T16": "PASS"
       },
-      "raw": "benchmark/results/raw/acceptance-lifecycle-20261030T172953.json",
+      "raw": "benchmark/results/raw/acceptance-lifecycle-20261030T174749.json",
       "engines": "native,xberg,docling-rs"
     },
     "real": {
