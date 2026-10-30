@@ -72,6 +72,8 @@ phase_unit() {
   step "go test" bash -c "cd '$ROOT' && go test ./... -count=1 -timeout 300s" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
   step "CI merge-gate unit tests" python3 "$ROOT/tests/unit/test_ci_summary.py" || return 1
+  step "fixture integrity" python3 "$ROOT/tests/unit/test_fixtures.py" || return 1
+  step "benchmark gate unit tests" python3 "$ROOT/tests/unit/test_gate.py" || return 1
 }
 
 phase_contract() {
@@ -122,6 +124,9 @@ phase_engines() {
     --engines native,xberg,docling-rs --only pdf_native_en,pdf_scanned_en,docx,csv" || return 1
   step "score" bash -c "cd '$ROOT' && python3 benchmark/scripts/summarize.py && python3 benchmark/scripts/score.py --write" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
+  # Quality gate (PR-11): a change that regresses quality >2 % relative or latency >15 %
+  # fails here unless the baseline is deliberately updated in the PR.
+  step "engine quality gate" python3 "$ROOT/benchmark/scripts/gate.py" || return 1
 }
 
 phase_container() {

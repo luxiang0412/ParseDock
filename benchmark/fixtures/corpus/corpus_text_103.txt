@@ -1,0 +1,3 @@
+需要关注两项风险。第一，冷链走廊依赖单一承运商，一旦中断每周约九百票货物将延误。第二，新扫描站运行的固件2.4.1存在标签重复的已知问题，整改计划应于二零二六年十一月十五日前提交。
+
+The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from 4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.

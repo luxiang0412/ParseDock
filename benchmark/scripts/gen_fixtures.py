@@ -168,9 +168,123 @@ def build_scanned_pdf(path, img_path):
     img.save(path, "PDF", resolution=200.0)
 
 
+
+def build_corpus(root: Path, count: int) -> list[dict]:
+    """Generate a larger deterministic corpus for throughput and robustness runs.
+
+    These fixtures are *not* part of the quality score (the hand-checked set in
+    ``generated/`` is); they exist so batch runs, sheet-window extraction and the real
+    corpus harness see realistic variety: page counts, languages, encodings, delimited
+    layouts and Office documents with different shapes. Every file is synthetic and
+    licensed under the same terms as the rest of the repository.
+    """
+    import docx
+    import openpyxl
+
+    corpus = root / "corpus"
+    corpus.mkdir(parents=True, exist_ok=True)
+    records: list[dict] = []
+
+    def note(path: Path, category: str, fmt: str, pages: int = 0, notes: str = "") -> None:
+        records.append({
+            "path": path.relative_to(root).as_posix(),
+            "category": category,
+            "format": fmt,
+            "bytes": path.stat().st_size,
+            "sha256": sha256(path),
+            "pages": pages,
+            "gold": None,
+            "notes": notes,
+            "sensitive": False,
+        })
+
+    bodies = [EN_BODY, EN_BODY2, ZH_BODY, ZH_BODY2]
+    page_counts = [1, 1, 2, 2, 3, 5, 8, 12, 20, 30]
+    made = 0
+    i = 0
+    while made < count:
+        i += 1
+        kind = i % 7
+        pages = page_counts[i % len(page_counts)]
+        if kind == 0:
+            p = corpus / f"corpus_pdf_text_{i:03d}.pdf"
+            build_pdf(p, pages=pages, with_table=(i % 3 == 0))
+            note(p, "pdf_native_en", "pdf", pages, f"{pages}p synthetic text")
+        elif kind == 1:
+            p = corpus / f"corpus_pdf_zh_{i:03d}.pdf"
+            build_pdf(p, pages=pages, chinese=True, with_table=(i % 2 == 0))
+            note(p, "pdf_native_zh", "pdf", pages, f"{pages}p CJK text")
+        elif kind == 2:
+            p = corpus / f"corpus_pdf_two_column_{i:03d}.pdf"
+            build_two_column_pdf(p)
+            note(p, "pdf_two_column", "pdf", 1, "reading order")
+        elif kind == 3:
+            src = root / "generated" / "scan_source_en.png"
+            if not src.exists():
+                continue
+            p = corpus / f"corpus_pdf_scan_{i:03d}.pdf"
+            build_scanned_pdf(p, src)
+            note(p, "pdf_scanned", "pdf", 1, "OCR required")
+        elif kind == 4:
+            cols = 3 + (i % 8)
+            rows = 5 + (i % 40)
+            sep = "," if i % 2 else ";"
+            enc = "utf-8" if i % 3 else "gb18030"
+            p = corpus / f"corpus_table_{i:03d}.csv"
+            lines = [sep.join(f"col{c}" for c in range(cols))]
+            for r in range(rows):
+                cells = [f"r{r}c{c}" if (r + c) % 5 else f"{r * 100 + c}" for c in range(cols)]
+                lines.append(sep.join(cells))
+            p.write_text("\n".join(lines) + "\n", encoding=enc)
+            note(p, "csv_table", "csv", 0, f"{rows}x{cols} {sep} {enc}")
+        elif kind == 5:
+            body = "\n\n".join(bodies[(i + k) % len(bodies)] for k in range(1 + i % 6))
+            p = corpus / f"corpus_text_{i:03d}.txt"
+            p.write_text(body + "\n", encoding="utf-8")
+            note(p, "text_plain", "txt", 0, f"{len(body)} chars")
+        else:
+            if i % 2:
+                d = docx.Document()
+                d.add_heading(f"Corpus document {i}", level=1)
+                for k in range(1 + i % 5):
+                    d.add_paragraph(bodies[k % len(bodies)])
+                if i % 3 == 0:
+                    t = d.add_table(rows=3 + i % 4, cols=4)
+                    t.style = "Table Grid"
+                    for r in range(len(t.rows)):
+                        for c in range(4):
+                            t.cell(r, c).text = f"r{r}c{c}"
+                p = corpus / f"corpus_doc_{i:03d}.docx"
+                d.save(p)
+                note(p, "docx_corpus", "docx", 0, "synthetic docx")
+            else:
+                wb = openpyxl.Workbook()
+                for s_idx in range(1 + i % 3):
+                    ws = wb.active if s_idx == 0 else wb.create_sheet()
+                    ws.title = f"S{s_idx + 1}"
+                    for r in range(1, 6 + i % 20):
+                        for c in range(1, 4 + i % 6):
+                            ws.cell(row=r, column=c,
+                                    value=(r * c if (r + c) % 3 else f"v{r}-{c}"))
+                p = corpus / f"corpus_sheet_{i:03d}.xlsx"
+                wb.save(p)
+                note(p, "xlsx_corpus", "xlsx", 0, "synthetic workbook")
+        made += 1
+
+    (corpus / "manifest.json").write_text(json.dumps({
+        "generated_by": "benchmark/scripts/gen_fixtures.py --corpus",
+        "generated_at": datetime.utcnow().isoformat() + "Z",
+        "count": len(records),
+        "fixtures": records,
+    }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return records
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=str(Path(__file__).resolve().parent.parent / "fixtures"))
+    ap.add_argument("--corpus", type=int, default=0,
+                    help="also generate N synthetic corpus documents under fixtures/corpus")
     args = ap.parse_args()
     root = Path(args.out)
     gen = root / "generated"
@@ -382,6 +496,10 @@ def main():
     p = bad / "not_a_docx.docx"
     p.write_bytes(b"PK\x03\x04" + b"garbage" * 100)
     note(p, "invalid", "docx", None, 0, "zip magic with invalid central directory")
+
+    if args.corpus:
+        corpus = build_corpus(root, args.corpus)
+        print(f"wrote {len(corpus)} corpus fixtures under {root / 'corpus'}")
 
     manifest = root / "manifest.json"
     manifest.write_text(json.dumps({

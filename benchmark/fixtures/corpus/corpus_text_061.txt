@@ -1,0 +1,3 @@
+Two risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware 2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.
+
+本季度三个区域枢纽共处理托盘十二万八千四百个，同比增长百分之十二点五。调整排程后，平均卸货上架时间由四点二小时降至三点一小时，爽约次数下降百分之三十八。仓库B仍是瓶颈，高峰期入库通道利用率达到百分之九十四。
