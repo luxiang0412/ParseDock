@@ -1,0 +1,15 @@
+* text=auto eol=lf
+
+# Binary fixtures and generated archives must never be normalised
+benchmark/fixtures/** -text
+test_data/** -text
+*.png binary
+*.jpg binary
+*.webp binary
+*.pdf binary
+*.docx binary
+*.xlsx binary
+*.pptx binary
+*.doc binary
+*.xls binary
+*.zip binary

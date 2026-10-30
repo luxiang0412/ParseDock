@@ -16,6 +16,12 @@ build: ## build the single binary
 fmt: ## gofmt
 	gofmt -w cmd internal migrations
 
+fmt-check: ## fail when files are not gofmt'd (CI)
+	@out=$$(gofmt -l cmd internal migrations); if [ -n "$$out" ]; then echo "not gofmt'd:"; echo "$$out"; exit 1; fi
+
+verify-pins: ## check go.mod / Dockerfiles / workflows against images.lock.json
+	python3 scripts/verify_pins.py
+
 vet: ## go vet
 	$(GO) vet ./...
 
@@ -25,6 +31,15 @@ test: vet ## unit + integration tests (Go)
 
 contract: ## PR-00: OpenAPI/SDK/router contract checks
 	python3 tests/contract/openapi_contract.py
+
+ci: ## run the same phases CI runs (static,unit,contract,lifecycle,image)
+	bash scripts/ci-local.sh all
+
+ci-phase: ## run one CI phase (PHASE=static|unit|contract|lifecycle|image|engines|container)
+	bash scripts/ci-local.sh $(PHASE)
+
+container-smoke: ## end-to-end container smoke with real engines
+	bash scripts/container-smoke.sh
 
 pr00: contract ## PR-00: runtime contract checks (10 scenarios)
 	python3 tests/integration/pr00_contract.py
@@ -52,10 +67,13 @@ bench: ## quality + latency + concurrency (requires engine servers)
 gpu-bench: ## GPU verification (docling cpu/cuda, mineru flash)
 	$(PY_FIX) benchmark/scripts/gpu_bench.py --repeats 3
 
-sdk: ## regenerate Python/Java SDKs from api/openapi.yaml
-	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local openapitools/openapi-generator-cli validate -i /local/api/openapi.yaml
-	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local openapitools/openapi-generator-cli generate -i /local/api/openapi.yaml -g python -o /local/sdk/python-generated --package-name parsedock_client --additional-properties=library=urllib3,projectName=parsedock
-	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local openapitools/openapi-generator-cli generate -i /local/api/openapi.yaml -g java -o /local/sdk/java-generated --additional-properties=groupId=dev.parsedock,artifactId=parsedock-client,artifactVersion=0.1.0,library=okhttp-gson
+GEN_IMAGE := $(shell python3 -c 'import json;print(json.load(open("images.lock.json"))["images"]["openapi_generator"])')
+
+sdk: ## regenerate Python/Java SDKs from api/openapi.yaml (deterministic)
+	docker run --rm -v $$PWD:/local $(GEN_IMAGE) validate -i /local/api/openapi.yaml
+	rm -rf sdk/python-generated sdk/java-generated
+	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local $(GEN_IMAGE) generate -i /local/api/openapi.yaml -g python -o /local/sdk/python-generated --package-name parsedock_client --additional-properties=library=urllib3,projectName=parsedock,hideGenerationTimestamp=true
+	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local $(GEN_IMAGE) generate -i /local/api/openapi.yaml -g java -o /local/sdk/java-generated --additional-properties=groupId=dev.parsedock,artifactId=parsedock-client,artifactVersion=0.1.0,library=okhttp-gson,hideGenerationTimestamp=true
 
 sdk-test: ## run the Python SDK lifecycle test against a local stack
 	python3 sdk/python/test_sdk.py

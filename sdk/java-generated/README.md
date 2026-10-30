@@ -2,7 +2,6 @@
 
 ParseDock
 - API version: 0.1.0
-  - Build date: 2026-10-30T09:08:43.398624024Z[Etc/UTC]
   - Generator version: 7.27.0-SNAPSHOT
 
 ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown,
