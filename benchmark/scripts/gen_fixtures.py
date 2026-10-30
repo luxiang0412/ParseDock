@@ -16,6 +16,11 @@ import random
 from datetime import date, datetime
 from pathlib import Path
 
+from reportlab import rl_config
+
+# Reproducible PDFs: fixed /ID and /CreationDate instead of the wall clock.
+rl_config.invariant = 1
+
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -169,6 +174,63 @@ def build_scanned_pdf(path, img_path):
 
 
 
+def normalize_pdf(path: Path) -> None:
+    """Rewrite a PDF with fixed metadata so regenerating it yields identical bytes.
+
+    reportlab honours rl_config.invariant, but PIL's PDF writer (used for the scanned
+    fixtures) stamps /CreationDate and /ModDate with the current time, which makes the
+    corpus manifest unreproducible. pypdf rewrites the document with a fixed date.
+    """
+    from pypdf import PdfReader, PdfWriter
+
+    reader = PdfReader(str(path))
+    writer = PdfWriter()
+    for page in reader.pages:
+        writer.add_page(page)
+    writer.add_metadata({
+        "/Producer": "ParseDock fixture generator",
+        "/Creator": "ParseDock fixture generator",
+        "/CreationDate": "D:20260101000000Z",
+        "/ModDate": "D:20260101000000Z",
+    })
+    tmp = path.with_suffix(".norm.pdf")
+    with tmp.open("wb") as fh:
+        writer.write(fh)
+    tmp.replace(path)
+
+
+def normalize_office_zip(path: Path) -> None:
+    """Make an OOXML file byte-reproducible.
+
+    openpyxl and python-docx stamp the current time into core.xml and into every ZIP member
+    header, so two runs with identical content produce different bytes. The corpus manifest
+    hashes the bytes, therefore the timestamps are rewritten to a fixed value.
+    """
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(path) as zin:
+        items = [(info.filename, zin.read(info.filename)) for info in zin.infolist()]
+    raw = io.BytesIO()
+    with zipfile.ZipFile(raw, "w", zipfile.ZIP_DEFLATED) as zout:
+        for name, data in items:
+            if name in ("docProps/core.xml", "docProps/app.xml"):
+                text = data.decode("utf-8", "replace")
+                for tag in ("dcterms:created", "dcterms:modified"):
+                    head = text.find("<" + tag)
+                    if head != -1:
+                        end = text.find(">", head)
+                        close = text.find("</" + tag, end)
+                        if end != -1 and close != -1:
+                            text = text[:end + 1] + "2026-01-01T00:00:00Z" + text[close:]
+                data = text.encode("utf-8")
+            info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            zout.writestr(info, data)
+    path.write_bytes(raw.getvalue())
+
+
 def build_corpus(root: Path, count: int) -> list[dict]:
     """Generate a larger deterministic corpus for throughput and robustness runs.
 
@@ -209,14 +271,17 @@ def build_corpus(root: Path, count: int) -> list[dict]:
         if kind == 0:
             p = corpus / f"corpus_pdf_text_{i:03d}.pdf"
             build_pdf(p, pages=pages, with_table=(i % 3 == 0))
+            normalize_pdf(p)
             note(p, "pdf_native_en", "pdf", pages, f"{pages}p synthetic text")
         elif kind == 1:
             p = corpus / f"corpus_pdf_zh_{i:03d}.pdf"
             build_pdf(p, pages=pages, chinese=True, with_table=(i % 2 == 0))
+            normalize_pdf(p)
             note(p, "pdf_native_zh", "pdf", pages, f"{pages}p CJK text")
         elif kind == 2:
             p = corpus / f"corpus_pdf_two_column_{i:03d}.pdf"
             build_two_column_pdf(p)
+            normalize_pdf(p)
             note(p, "pdf_two_column", "pdf", 1, "reading order")
         elif kind == 3:
             src = root / "generated" / "scan_source_en.png"
@@ -224,6 +289,7 @@ def build_corpus(root: Path, count: int) -> list[dict]:
                 continue
             p = corpus / f"corpus_pdf_scan_{i:03d}.pdf"
             build_scanned_pdf(p, src)
+            normalize_pdf(p)
             note(p, "pdf_scanned", "pdf", 1, "OCR required")
         elif kind == 4:
             cols = 3 + (i % 8)
@@ -255,7 +321,10 @@ def build_corpus(root: Path, count: int) -> list[dict]:
                         for c in range(4):
                             t.cell(r, c).text = f"r{r}c{c}"
                 p = corpus / f"corpus_doc_{i:03d}.docx"
+                d.core_properties.created = datetime(2026, 1, 1)
+                d.core_properties.modified = datetime(2026, 1, 1)
                 d.save(p)
+                normalize_office_zip(p)
                 note(p, "docx_corpus", "docx", 0, "synthetic docx")
             else:
                 wb = openpyxl.Workbook()
@@ -267,7 +336,10 @@ def build_corpus(root: Path, count: int) -> list[dict]:
                             ws.cell(row=r, column=c,
                                     value=(r * c if (r + c) % 3 else f"v{r}-{c}"))
                 p = corpus / f"corpus_sheet_{i:03d}.xlsx"
+                wb.properties.created = datetime(2026, 1, 1)
+                wb.properties.modified = datetime(2026, 1, 1)
                 wb.save(p)
+                normalize_office_zip(p)
                 note(p, "xlsx_corpus", "xlsx", 0, "synthetic workbook")
         made += 1
 

@@ -129,11 +129,11 @@ phase_engines() {
   step "acceptance real engines (T01/T02/T11)" python3 "$ROOT/tests/integration/acceptance.py" \
     --profile real --engines native,xberg,docling-rs || return 1
   step "bench quality (4 fixtures)" bash -c "cd '$ROOT' && python3 benchmark/scripts/bench.py quality \
-    --engines native,xberg,docling-rs --only pdf_native_en,pdf_scanned_en,docx,csv" || return 1
+    --engines native,xberg,docling-rs --only pdf_native_en,pdf_scanned,docx,csv" || return 1
   # The gate needs latency from *this* run, not from a previously committed file: without
   # perf the p50/p95 comparison would silently pass on stale measurements.
   step "bench perf (same fixtures)" bash -c "cd '$ROOT' && python3 benchmark/scripts/bench.py perf \
-    --engines native,xberg,docling-rs --repeats 3 --only pdf_native_en,pdf_scanned_en,docx,csv" || return 1
+    --engines native,xberg,docling-rs --repeats 3 --only pdf_native_en,pdf_scanned,docx,csv" || return 1
   step "score" bash -c "cd '$ROOT' && python3 benchmark/scripts/summarize.py && python3 benchmark/scripts/score.py --write" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
   # Quality gate (PR-11): a change that regresses quality >2 % relative or latency >15 %

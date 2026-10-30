@@ -1,8 +1,8 @@
 {
   "engines": {
     "docling-rs": {
-      "performance": null,
-      "quality": 8.0014,
+      "performance": 5.0,
+      "quality": 5.912399999999999,
       "structure": 10.0
     },
     "native": {
@@ -11,23 +11,28 @@
       "structure": 10.0
     },
     "xberg": {
-      "performance": null,
-      "quality": 8.2807,
+      "performance": 10.0,
+      "quality": 8.28845,
       "structure": 10.0
     }
   },
-  "generated_at": "2026-10-30T18:47:17+00:00",
+  "generated_at": "2026-10-30T19:03:43+00:00",
   "samples": {
     "docling-rs": {
       "generated/docx_report.docx": {
         "cer": 0.284,
-        "p50_ms": 18.9,
-        "p95_ms": 18.9
+        "p50_ms": 12.5,
+        "p95_ms": 12.5
+      },
+      "generated/pdf_scanned_en.pdf": {
+        "cer": 0.8836,
+        "p50_ms": 690.0,
+        "p95_ms": 690.0
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.0072,
-        "p50_ms": 808.7,
-        "p95_ms": 808.7
+        "p50_ms": 815.7,
+        "p95_ms": 815.7
       }
     },
     "native": {
@@ -45,23 +50,28 @@
     "xberg": {
       "generated/csv_semicolon_eu.csv": {
         "cer": 0.1091,
-        "p50_ms": 8.1,
-        "p95_ms": 8.1
+        "p50_ms": 9.6,
+        "p95_ms": 9.6
       },
       "generated/csv_utf8.csv": {
         "cer": 0.1128,
-        "p50_ms": 8.8,
-        "p95_ms": 8.8
+        "p50_ms": 7.7,
+        "p95_ms": 7.7
       },
       "generated/docx_report.docx": {
         "cer": 0.0824,
-        "p50_ms": 10.8,
-        "p95_ms": 10.8
+        "p50_ms": 10.7,
+        "p95_ms": 10.7
+      },
+      "generated/pdf_scanned_en.pdf": {
+        "cer": 0.0548,
+        "p50_ms": 220.0,
+        "p95_ms": 220.0
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.1157,
-        "p50_ms": 16.4,
-        "p95_ms": 16.4
+        "p50_ms": 16.0,
+        "p95_ms": 16.0
       }
     }
   }
