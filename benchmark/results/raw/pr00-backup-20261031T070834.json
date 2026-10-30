@@ -1,0 +1,28 @@
+{
+  "finished_at": "2026-10-30T23:08:34.926840+00:00",
+  "status": "PASS",
+  "detail": {
+    "jobs": {
+      "released": "job_06GRY4K34BDPRPHJ6RQGWM8XZC",
+      "active": "job_06GRY4KPARCVE9M2PGSV3QK3WW"
+    },
+    "files_before_backup": {
+      "released": [],
+      "active": [
+        "results/job_06GRY4KPARCVE9M2PGSV3QK3WW/manifest.json",
+        "results/job_06GRY4KPARCVE9M2PGSV3QK3WW/result.json",
+        "results/job_06GRY4KPARCVE9M2PGSV3QK3WW/result.md",
+        "results/job_06GRY4KPARCVE9M2PGSV3QK3WW/result.txt"
+      ]
+    },
+    "backup_stdout": "backup complete: /home/luxiang/project/work/ParseDock/runtime/pr00-backup/backup (1 active jobs)",
+    "manifest_active_jobs": 1,
+    "backup_result_dirs": [
+      "job_06GRY4KPARCVE9M2PGSV3QK3WW"
+    ],
+    "restore_stdout": "purged 0 artifact dir(s) belonging to non-active retention states\nrestore complete: /home/luxiang/project/work/ParseDock/runtime/pr00-backup/restored\nnote: the coordinator's cleaner will finish any pending retention work on start",
+    "restored_active_download": 200,
+    "restored_released_download": 410,
+    "restored_active_version": "sha256:a9f4c1c046451c6bf45908263b6b225b7e6457131b46ba01453c1a610e22ffa5"
+  }
+}

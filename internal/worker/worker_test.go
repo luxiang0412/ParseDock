@@ -215,3 +215,16 @@ func TestGPUDeviceTypesAreMeasured(t *testing.T) {
 		}
 	}
 }
+
+// The engine subprocess runs with cwd = the attempt directory, so its arguments must be
+// absolute. The default --work-dir is relative, which made a fresh checkout fail every CLI
+// parse with "File not found"; New() resolves it once.
+func TestWorkerResolvesWorkDir(t *testing.T) {
+	w := New(Config{WorkDir: "relative/scratch"}, nil, nil)
+	if !filepath.IsAbs(w.Cfg.WorkDir) {
+		t.Fatalf("work dir not absolute: %q", w.Cfg.WorkDir)
+	}
+	if got := filepath.Join(w.Cfg.WorkDir, "job", "a1"); !filepath.IsAbs(got) {
+		t.Fatalf("derived attempt dir not absolute: %q", got)
+	}
+}

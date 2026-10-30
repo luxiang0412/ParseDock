@@ -210,7 +210,7 @@ docling-rs, 4 workers on one 24-core host:
 | Metric | Value |
 | --- | --- |
 | input bytes | 2.3 GiB of documents (PDF-heavy, 58–74 MiB ledgers included) |
-| wall time | 348 s (2.75 files/s), engine p50 268 ms / p95 1.4 s for PDFs |
+| wall time | 419 s at client c=4 (2.3 files/s) / **267 s at c=16 (3.6 files/s)**; engine p50 265 ms / p95 1.36 s for PDFs |
 | result bytes | ≈ 1.9× the input text volume for JSON + Markdown + Text (3 artifacts per job) |
 | disk per job | input + 3 artifacts; released/expired jobs are removed at TTL or ACK |
 | peak RSS | xberg ≈ 40 MB, docling-rs ≈ 0.9–1.2 GB per concurrent parse |

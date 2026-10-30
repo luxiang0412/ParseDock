@@ -72,7 +72,12 @@ type Worker struct {
 // New builds a worker.
 func New(cfg Config, reg *engines.Registry, log *slog.Logger) *Worker {
 	if cfg.PollInterval <= 0 {
-		cfg.PollInterval = time.Second
+		cfg.PollInterval = 250 * time.Millisecond
+	}
+	if cfg.PollInterval < 10*time.Millisecond {
+		// A claim is a single indexed query; anything below this just burns CPU and
+		// coordinator requests without improving latency.
+		cfg.PollInterval = 10 * time.Millisecond
 	}
 	if cfg.HeartbeatInterval <= 0 {
 		cfg.HeartbeatInterval = 10 * time.Second
@@ -88,6 +93,15 @@ func New(cfg Config, reg *engines.Registry, log *slog.Logger) *Worker {
 	}
 	if cfg.DeviceType == "" {
 		cfg.DeviceType = "cpu"
+	}
+	// Resolve the scratch root to an absolute path. Engines run with cmd.Dir set to the
+	// attempt directory and are handed paths derived from this root; with a relative root
+	// (the default is "./runtime/work") a fresh checkout failed every CLI parse with
+	// "File not found", because the path was applied relative to the attempt directory.
+	if abs, err := filepath.Abs(cfg.WorkDir); err == nil {
+		cfg.WorkDir = abs
+	} else if log != nil {
+		log.Warn("work dir is not resolvable, keeping it as given", "dir", cfg.WorkDir, "err", err)
 	}
 	return &Worker{
 		Cfg: cfg, Reg: reg, Log: log,
