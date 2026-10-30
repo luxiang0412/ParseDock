@@ -23,7 +23,9 @@ import time
 import urllib.error
 import urllib.request
 
-BIN = os.environ.get("DOCPARSE_BIN", "bin/docparse")
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Same default as the other integration tests: `make build` writes runtime/bin.
+BIN = os.environ.get("DOCPARSE_BIN", os.path.join(ROOT, "runtime", "bin", "docparse"))
 
 
 def free_port() -> int:

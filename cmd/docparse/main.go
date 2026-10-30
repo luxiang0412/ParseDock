@@ -297,7 +297,10 @@ func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *
 		IdleTimeout:       120 * time.Second,
 		// No WriteTimeout: result downloads and SSE are long-lived.
 	}
-	if f.tlsCert != "" || f.tlsKey != "" {
+	if f.tlsCert != "" || f.tlsKey != "" || f.tlsClientCA != "" {
+		if f.tlsCert == "" || f.tlsKey == "" {
+			return errors.New("--tls-client-ca requires --tls-cert and --tls-key: refusing to start a plaintext listener that would silently drop mutual TLS")
+		}
 		serverTLS, terr := tlsutil.ServerConfig(f.tlsCert, f.tlsKey, f.tlsClientCA)
 		if terr != nil {
 			return terr
