@@ -225,7 +225,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
 
-  /v1/jobs/{id}/ack:
+  /v1/jobs/{id}/acknowledge:
     post:
       tags: [jobs]
       operationId: ackJob
