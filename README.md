@@ -20,9 +20,10 @@ POST /v1/jobs  ──▶  queued ──▶ running ──▶ completed
 * **Pluggable engines** — the control plane never imports engine types; adapters
   return a document IR (`doc-ir/0.1`) and the service renders Markdown/Text/JSON.
 
-Status: **Phase 0 complete; PR-00 (Phase 1 readiness) complete** — see
-`docs/PHASE1-READINESS.md` and `docs/PR00-ISSUE-MATRIX.md`. Not yet
-production-hardened; `docs/IMPLEMENTATION-PLAN.md` lists the Phase 1 slices.
+Status: **Phase 0 complete; PR-00 (Phase 1 readiness) and PR-01 (CI baseline)
+complete** — see `docs/PHASE1-READINESS.md`, `docs/PR00-ISSUE-MATRIX.md` and
+`docs/PR01-REPORT.md`. Not yet production-hardened; `docs/IMPLEMENTATION-PLAN.md`
+lists the remaining Phase 1 slices.
 External distribution of the CPU worker image is **blocked** on licence item L1
 (`libx265`), and GPU container verification is still PARTIAL.
 
@@ -159,6 +160,9 @@ make bench             # quality + latency + concurrency (needs engine servers)
 make score             # regenerate the scoring tables from the raw data
 make gpu-bench         # CPU vs CUDA, VRAM measurements
 make license-audit     # SBOM + GPL gate for the built images
+make ci                # run the CI phases locally (same commands as GitHub Actions)
+make verify-pins       # go.mod / Dockerfiles / workflows vs images.lock.json
+make lint-workflows    # actionlint on .github/workflows
 ```
 
 Latest results (2026-10-30, this host): **13/13 lifecycle cases PASS**,
@@ -195,6 +199,7 @@ termination, no per-tenant disk quota yet.
 | --- | --- |
 | `docs/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
 | `docs/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
+| `docs/CI.md` | CI workflows, phases, pinned inputs, artifacts, licence policy |
 | `docs/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |
 | `docs/ENVIRONMENT.md` | host, toolchain, engine versions, isolation |
 | `docs/LICENSE-REVIEW.md` | per-component licence verification + open items |
