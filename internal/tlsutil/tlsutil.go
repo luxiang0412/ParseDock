@@ -90,6 +90,7 @@ func Transport(cfg *tls.Config) *http.Transport {
 		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
 	}
 	t := base.Clone()
+	t.ResponseHeaderTimeout = 30 * time.Second
 	t.MaxIdleConns = 128
 	t.MaxIdleConnsPerHost = 32
 	t.IdleConnTimeout = 90 * time.Second

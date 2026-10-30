@@ -340,6 +340,7 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	go gw.FlushThrottle(ctx)
 	srv := &http.Server{
 		Addr:              f.listen,
 		Handler:           gw.Handler(),
@@ -472,6 +473,7 @@ func runStandalone(ctx context.Context, f *flags, cfg coordinator.Config, log *s
 			apiErr <- err
 			return
 		}
+		go gw.FlushThrottle(ctx)
 		srv := &http.Server{
 			Addr:              f.listen,
 			Handler:           gw.Handler(),

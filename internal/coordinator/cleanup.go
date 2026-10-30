@@ -212,6 +212,14 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 
 	// 8. Orphan result/input directories (crash between file commit and DB commit).
 	rep.OrphanDirs = s.sweepOrphans(ctx, rep)
+	if len(rep.Errors) == 0 {
+		s.instr().cleanupRuns.With("ok").Inc()
+	} else {
+		s.instr().cleanupRuns.With("error").Inc()
+	}
+	if rep.LeasesReaped > 0 {
+		s.instr().expired.With().Add(uint64(rep.LeasesReaped))
+	}
 	return rep
 }
 

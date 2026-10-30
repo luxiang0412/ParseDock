@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -1166,4 +1167,56 @@ func TestGPUWorkerConcurrencyIsCapped(t *testing.T) {
 	if mc != 4 {
 		t.Fatalf("cpu worker concurrency = %d, want 4", mc)
 	}
+}
+
+// PR-09 codex review: parse latency must be measured from the attempt that produced the
+// result, not from the job's first claim, otherwise retries and escalations are billed to
+// the final engine.
+func TestParseLatencyUsesCompletingAttempt(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	first, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || first == nil {
+		t.Fatalf("claim: %v %v", first, err)
+	}
+	// Simulate a failed first attempt that is retried later.
+	if _, err := s.Fail(ctx, job.ID, first.LeaseToken, jobs.ErrTimeout, "timed out", true); err != nil {
+		t.Fatal(err)
+	}
+	// Make the retry available immediately and backdate the first claim.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET available_at = '' WHERE id = ?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET started_at = ? WHERE id = ?`,
+		ts(nowUTC().Add(-time.Hour)), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || second == nil {
+		t.Fatalf("retry claim: %v %v", second, err)
+	}
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: second.LeaseToken,
+		Engine: "native", Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := defaultInstruments.Reg.WriteText(&buf); err != nil {
+		t.Fatal(err)
+	}
+	// The failing attempt was an hour ago; if the old measurement were used, the sum
+	// would be > 3600. The completing attempt took milliseconds.
+	for _, line := range strings.Split(buf.String(), "\n") {
+		if strings.HasPrefix(line, "parsedock_parse_seconds_sum{") {
+			f, err := strconv.ParseFloat(strings.Fields(line)[1], 64)
+			if err != nil {
+				t.Fatalf("bad sum line %q", line)
+			}
+			if f > 60 {
+				t.Fatalf("parse latency used the first claim: %s", line)
+			}
+			return
+		}
+	}
+	t.Fatal("no parsedock_parse_seconds_sum line")
 }

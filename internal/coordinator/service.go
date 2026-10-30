@@ -30,9 +30,12 @@ const jobCols = `id, owner_id, input_name, mime_type, format, input_sha256, inpu
 // Service is the Coordinator: the only component that touches SQLite and the
 // authoritative file store.
 type Service struct {
-	DB    *sql.DB
-	Store *storage.Store
-	Cfg   Config
+	// Instruments is optional; the HTTP layer falls back to the process-wide default
+	// registry so instrumentation never has to be threaded through call sites.
+	Instruments *Instruments
+	DB          *sql.DB
+	Store       *storage.Store
+	Cfg         Config
 	// Audit receives structured audit lines (create/ack/cancel/release). It is
 	// nil in tests that do not care.
 	Audit *slog.Logger
@@ -272,6 +275,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	s.audit(ctx, "job_created", job, map[string]any{
 		"engine_hint": job.EngineHint, "mode": job.RequestedMode, "device": job.RequestedDevice,
 	})
+	s.instr().jobsCreated.With(job.RequestedMode, job.Format).Inc()
 	return job, true, nil
 }
 
@@ -540,6 +544,7 @@ type ClaimedTask struct {
 	EngineHint    string    `json:"engine_hint"`
 	RoutingReason string    `json:"routing_reason"`
 	MaxLifetimeAt time.Time `json:"max_lifetime_at"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
 // WorkerCaps is the capability set used to filter claims.
@@ -548,6 +553,15 @@ type WorkerCaps struct {
 	Engines  []string `json:"engines"`
 	Device   string   `json:"device_type"`
 	CanGPU   bool     `json:"-"`
+}
+
+// instr returns the service instruments, falling back to the process-wide registry so
+// instrumentation is always available (and never nil) in tests and single-binary runs.
+func (s *Service) instr() *Instruments {
+	if s.Instruments != nil {
+		return s.Instruments
+	}
+	return defaultInstruments
 }
 
 // Claim atomically leases one queued job matching the worker's capabilities.
@@ -599,7 +613,8 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 	        ORDER BY priority DESC, created_at ASC LIMIT 1)
 	        AND processing_status = 'queued'
 	      RETURNING id, format, mime_type, input_name, input_sha256, input_size, page_count,
-	                requested_mode, requested_device, engine_hint, routing_reason, current_attempt, max_lifetime_at`
+	                requested_mode, requested_device, engine_hint, routing_reason, current_attempt,
+	                max_lifetime_at, created_at`
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -612,9 +627,9 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 	args = append(args, ts(now), freeMB, string(minJSON), freeMB)
 	row := tx.QueryRowContext(ctx, q, args...)
 	var t ClaimedTask
-	var maxLife string
+	var maxLife, created string
 	if err := row.Scan(&t.JobID, &t.Format, &t.MimeType, &t.InputName, &t.InputSHA256, &t.InputSize,
-		&t.PageCount, &t.Mode, &t.Device, &t.EngineHint, &t.RoutingReason, &t.AttemptNo, &maxLife); err != nil {
+		&t.PageCount, &t.Mode, &t.Device, &t.EngineHint, &t.RoutingReason, &t.AttemptNo, &maxLife, &created); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -623,8 +638,16 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 	if t.MaxLifetimeAt, err = parseTS(maxLife); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, "claim: bad max_lifetime_at")
 	}
+	if t.CreatedAt, err = parseTS(created); err != nil {
+		return nil, NewError(500, jobs.ErrInternal, "claim: bad created_at")
+	}
 	t.LeaseToken = jobs.NewToken()
 	t.LeaseUntil = now.Add(s.Cfg.WorkerLeaseTTL)
+	// Queueing time is measured from creation to the first claim only: retries and
+	// escalations would otherwise hide a stalled queue behind a growing histogram.
+	if t.AttemptNo == 1 && !t.CreatedAt.IsZero() {
+		s.instr().claimWait.With().Observe(now.Sub(t.CreatedAt).Seconds())
+	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO attempts
 		(job_id, attempt_no, worker_id, lease_token, lease_until, started_at, state, device_type)
 		VALUES (?,?,?,?,?,?,?,?)`,
@@ -760,9 +783,27 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	// Read the owner through the transaction: taking another pooled connection
 	// while holding one can starve the pool under concurrent completions.
 	var ownerID string
-	if err := tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.JobID).Scan(&ownerID); err != nil {
+	// Parse latency is attributed to the engine that produced the result, so it must be
+	// this attempt's start: jobs.started_at keeps the first claim (COALESCE) and would
+	// include retries and escalations in the final engine's histogram.
+	var startedRaw sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
+		Scan(&ownerID, &startedRaw); err != nil {
 		_ = s.Store.DeleteJob(p.JobID)
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
+	}
+	var attemptStart sql.NullString
+	_ = tx.QueryRowContext(ctx, `SELECT started_at FROM attempts WHERE job_id = ? AND lease_token = ?`,
+		p.JobID, p.Token).Scan(&attemptStart)
+	startedAt := now
+	if attemptStart.Valid {
+		if t0, perr := parseTS(attemptStart.String); perr == nil {
+			startedAt = t0
+		}
+	} else if startedRaw.Valid {
+		if t0, perr := parseTS(startedRaw.String); perr == nil {
+			startedAt = t0
+		}
 	}
 	// A result can be much larger than its input, so admission alone cannot bound
 	// tenant storage: enforce the limit transactionally on the committed bytes.
@@ -855,6 +896,8 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		_ = s.Store.DeleteJob(p.JobID)
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
+	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
+	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
 	s.appendEvent(ctx, p.JobID, "completed", map[string]any{
 		"result_version": manifest.Version, "engine": p.Engine, "engine_version": p.Version,
 		"result_expires_at": expires, "pages": p.PageCount, "warnings": p.Warnings,
