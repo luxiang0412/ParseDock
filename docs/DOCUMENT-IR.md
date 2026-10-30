@@ -52,7 +52,7 @@ Therefore ParseDock stores a structured IR and renders three views:
   "confidence": 0.93,                // only when the engine actually reports it
   "source_location": { … },
   "table_id": "tbl_1",               // when type=table
-  "image_ref": "images/p1_0.png",    // artifact-relative, never inline bytes
+  "image_ref": "",                    // RESERVED: no adapter emits one yet (see §6)
   "metadata": { "content_layer": "furniture" }
 }
 ```
@@ -99,7 +99,8 @@ engine exposes them (XLSX via structured engines).
 Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 `page_limit_reached`, `partial_content`, `encrypted`, `degraded_conversion`,
 `unsupported_element`, `layout_heuristic`, `no_coordinates`, plus adapter-specific
-`sheet_name_unavailable`, `encoding_converted`.
+`sheet_name_unavailable`, `encoding_converted`, `no_page_boundaries`,
+`formula_text_unavailable`, `ocr_quality_unknown`.
 
 ## 3. Rules the adapters must follow
 
@@ -123,7 +124,7 @@ Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 | docling-rs / docling-serve | ✅ `pages` map | ✅ + origin | ✅ body tree | ✅ `section_header` + level | ✅ cells + spans | ✅ `groups[label=sheet].name` | ❌ |
 | xberg | ✅ page split | ✅ tables only | page text order + tables | ⚠️ from `style_name` annotations | ✅ grid | ❌ (warning) | ⚠️ document-level quality score |
 | MinerU (flash) | ✅ `<!-- page N of M -->` | ❌ | markdown order | ⚠️ from markdown | ✅ via markdown tables | ❌ | ❌ |
-| Tika | ✅ form-feed split | ❌ | text order | ❌ | ❌ | ❌ | ❌ |
+| Tika | ⚠️ only when form feeds exist (never for PDF in 4.2) | ❌ | text order | ⚠️ markdown headings for OOXML | ⚠️ markdown tables for OOXML | ❌ | ❌ |
 | native | – (line) | ❌ | line order | ✅ markdown headings | ✅ csv/tsv grid | ⚠️ `csv` pseudo-sheet | ❌ |
 
 ## 5. Validation performed in Phase 0
@@ -140,6 +141,8 @@ Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 | PDF page numbers | present for all page-based engines |
 | Heading hierarchy | docling-rs levels preserved; markdown-derived levels only where the engine emitted them |
 | OCR locality/confidence | **gap**: no candidate returns per-word/line bbox + confidence for scans in the tested configuration; results carry `ocr_low_confidence`/`no_coordinates` warnings instead |
+| Page box (for rendering a bbox) | `source_location.page_width_pt` / `page_height_pt` are populated from Docling's page map **for PDF/slide only** (points, 1/72"). For XLSX, Docling's "page size" is a cell-grid extent, so it is deliberately not reported as points; use `sheet` + `cell_range`. Absent elsewhere (PR-00 / F08) |
+| Tika page numbers | only when Tika emits page boundaries (form feeds). Tika 4.2 does **not** for PDFs, so PR-00 changed the adapter to omit `page` and warn `no_page_boundaries` instead of stamping page 1 on the whole document |
 
 ## 6. Known gaps (deliberate, tracked)
 
@@ -147,8 +150,18 @@ Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 * **OCR confidence/bbox**: tesseract's word boxes are not surfaced by xberg's JSON output;
   docling-rs reports page/region boxes but not per-word confidence.
 * **MinerU flash bbox**: page granularity only.
-* **Image extraction**: `image_ref` is defined but no adapter publishes artifacts yet
-  (images are described as placeholders/alt text).
+* **Image extraction**: `image_ref` is defined but **no adapter emits it and no
+  artifact download endpoint exists**. It is a reserved field: a test pins that no
+  adapter invents one, and `Document.HasImageRefs()` exists so a future adapter
+  cannot silently introduce a dangling reference. Activating it requires an
+  authorized artifact endpoint plus ACK/TTL participation (PR-05).
+* **Formula text**: `Cell.Formula` is never populated — neither xberg nor docling-rs
+  exposes the OOXML `<f>` element. `cached_value`/text is what the engines give.
+  Reading formulas from the worksheet XML is a PR-05 task and must cover shared
+  formulas, dates and precision; until then a fixture test asserts the field stays
+  empty rather than fabricated.
+* **Page rotation**: `rotation_deg` is defined but not populated (no engine reports
+  it for the tested corpus).
 * **Reading order for two-column PDFs** is engine-dependent; docling-rs handles it,
   Tika and xberg do not (plain text order).
 

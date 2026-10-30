@@ -105,7 +105,12 @@
 * **Strengths:** widest format coverage of all candidates; 4–140 ms per document; correct GB18030
   decoding; useful backstop for formats no other engine handles.
 * **Weaknesses observed**
-  * Text only: no bbox, no heading levels, no table structure (ParseDock records `no_coordinates`).
+  * **PDF:** plain text only — no bbox, no heading levels, no table structure, and
+    **no page boundaries** (verified: 0 form feeds on a 3-page file). ParseDock records
+    `no_coordinates` + `no_page_boundaries` for those.
+  * **OOXML/HTML:** Tika 4.2 returns *markdown* (heading markers, pipe tables), which
+    the adapter lifts into IR elements — so it does have DOCX structure, just no
+    coordinates.
   * No OCR by default (scanned PDF text is empty or partial).
   * **Does not reject the zip bomb** used in the test corpus (returned HTTP 200 in 14 ms);
     ParseDock's own pre-flight validation is what stops it.

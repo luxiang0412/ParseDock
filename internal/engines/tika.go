@@ -2,6 +2,7 @@ package engines
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -76,6 +77,14 @@ func (t *Tika) Probe(ctx context.Context) error {
 }
 
 // Parse implements Engine.
+//
+// Two Tika behaviours matter for IR honesty (F08):
+//   - For PDFs it returns plain text with *no* page boundaries (verified: 0 form
+//     feeds on a 3-page file), so page numbers are only assigned when form feeds
+//     are actually present. A missing boundary becomes a warning, never page 1
+//     for the whole document.
+//   - For OOXML/HTML it returns markdown (headings, pipe tables), which is lifted
+//     into the IR instead of being flattened into paragraphs.
 func (t *Tika) Parse(ctx context.Context, req Request) (*documentir.Document, error) {
 	f, err := os.Open(req.Path)
 	if err != nil {
@@ -122,42 +131,119 @@ func (t *Tika) Parse(ctx context.Context, req Request) (*documentir.Document, er
 	doc.Metrics.ParseMs = time.Since(start).Milliseconds()
 
 	text := string(raw)
-	// Tika separates PDF pages with form feeds.
-	pages := strings.Split(text, "\f")
 	isPDF := req.Format == "pdf"
-	for i, page := range pages {
-		page = strings.TrimSpace(page)
-		if page == "" {
-			continue
-		}
-		blocks := splitBlocks(page)
-		if len(blocks) == 0 {
-			blocks = []string{page}
-		}
-		for _, b := range blocks {
-			el := documentir.Element{
-				ID:   fmt.Sprintf("el_%d", len(doc.Elements)+1),
-				Type: documentir.ElParagraph,
-				Text: b,
-			}
-			if isPDF {
-				el.Loc = &documentir.SourceLocation{Kind: "pdf", Page: i + 1}
-			} else {
-				el.Loc = &documentir.SourceLocation{Kind: "none"}
-			}
-			doc.Elements = append(doc.Elements, el)
-		}
-	}
-	doc.PageCount = len(pages)
-	if !isPDF {
-		doc.PageCount = 1
-	}
 	doc.PageKind = pageKind(req.Format)
+
+	if !strings.Contains(text, "\f") {
+		// No page boundaries from Tika: lift the whole body, keep provenance
+		// honest. Tika's OOXML output is markdown, so use the markdown lifter.
+		if looksLikeMarkdown(text) {
+			LiftMarkdown(doc, text)
+		} else {
+			liftPlainTextWithKind(doc, text, doc.PageKind)
+		}
+		if isPDF {
+			doc.AddWarning(documentir.WarnNoPageBoundaries,
+				"Tika returned no page boundaries for this PDF; elements carry no page number", "warn")
+			if pages := t.pdfPageCount(ctx, req.Path); pages > 0 {
+				doc.PageCount = pages
+			}
+		} else {
+			doc.PageCount = 1
+		}
+	} else {
+		pages := strings.Split(text, "\f")
+		for i, page := range pages {
+			page = strings.TrimSpace(page)
+			if page == "" {
+				continue
+			}
+			scratch := documentir.New()
+			if looksLikeMarkdown(page) {
+				LiftMarkdown(scratch, page)
+			} else {
+				liftPlainTextWithKind(scratch, page, doc.PageKind)
+			}
+			for _, el := range scratch.Elements {
+				el.Loc = &documentir.SourceLocation{Kind: doc.PageKind, Page: i + 1}
+				doc.Elements = append(doc.Elements, el)
+			}
+			for _, tbl := range scratch.Tables {
+				tbl.Loc = &documentir.SourceLocation{Kind: doc.PageKind, Page: i + 1}
+				tbl.ID = fmt.Sprintf("tbl_%d", len(doc.Tables)+1)
+				doc.Tables = append(doc.Tables, tbl)
+			}
+		}
+		doc.PageCount = len(pages)
+	}
 	doc.Metrics.Pages = doc.PageCount
-	doc.AddWarning(documentir.WarnNoCoordinates,
-		"Tika returns text only: no bounding boxes, headings or table structure", "info")
+	if !doc.HasBBox() {
+		doc.AddWarning(documentir.WarnNoCoordinates,
+			"Tika returns no bounding boxes; table structure is only available for OOXML/HTML inputs", "info")
+	}
 	if len(doc.Elements) == 0 {
 		return nil, Errf(false, jobs.ErrMalformed, "tika produced no text")
 	}
 	return doc, nil
+}
+
+// pdfPageCount asks Tika's metadata endpoint for the authoritative page count.
+// It is best effort: an error just means the count stays unknown.
+func (t *Tika) pdfPageCount(ctx context.Context, path string) int {
+	f, err := os.Open(path)
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, t.BaseURL+"/rmeta/text", f)
+	if err != nil {
+		return 0
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/octet-stream")
+	resp, err := t.client().Do(req)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return 0
+	}
+	var meta []map[string]any
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&meta); err != nil || len(meta) == 0 {
+		return 0
+	}
+	for _, key := range []string{"xmpTPg:NPages", "meta:page-count", "pdf:page-count"} {
+		if v, ok := meta[0][key]; ok {
+			if n, ok := toInt(v); ok && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
+}
+
+func toInt(v any) (int, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int(n), true
+	case string:
+		var out int
+		if _, err := fmt.Sscanf(strings.TrimSpace(n), "%d", &out); err == nil {
+			return out, true
+		}
+	}
+	return 0, false
+}
+
+// liftPlainTextWithKind is liftPlainText with an explicit page kind.
+func liftPlainTextWithKind(doc *documentir.Document, text, kind string) {
+	before := len(doc.Elements)
+	liftPlainText(doc, text)
+	for i := before; i < len(doc.Elements); i++ {
+		if doc.Elements[i].Loc != nil {
+			doc.Elements[i].Loc.Kind = kind
+		}
+	}
+	doc.PageCount = 0 // unknown: no page boundaries were provided
 }

@@ -80,13 +80,20 @@ type Element struct {
 }
 
 // SourceLocation declares which coordinate system a box belongs to.
+//
+// A bbox is only interpretable if the consumer knows the page box, so the page
+// size is carried alongside it when the engine provides it (PDF points, 1/72").
+// Absent page size means "unknown", never a default.
 type SourceLocation struct {
-	Kind  string `json:"kind"` // pdf | sheet | slide | none
-	Page  int    `json:"page,omitempty"`
-	BBox  *BBox  `json:"bbox,omitempty"`
-	Sheet string `json:"sheet,omitempty"`
-	Range string `json:"cell_range,omitempty"` // A1:F20
-	Line  int    `json:"line,omitempty"`       // plain-text sources
+	Kind         string  `json:"kind"` // pdf | sheet | slide | none
+	Page         int     `json:"page,omitempty"`
+	BBox         *BBox   `json:"bbox,omitempty"`
+	Sheet        string  `json:"sheet,omitempty"`
+	Range        string  `json:"cell_range,omitempty"` // A1:F20
+	Line         int     `json:"line,omitempty"`       // plain-text sources
+	Rotation     int     `json:"rotation_deg,omitempty"`
+	PageWidthPt  float64 `json:"page_width_pt,omitempty"`
+	PageHeightPt float64 `json:"page_height_pt,omitempty"`
 }
 
 // BBox is axis-aligned; Coord names the coordinate space so consumers never
@@ -137,6 +144,9 @@ const (
 	WarnUnsupported      = "unsupported_element"
 	WarnLayoutHeuristic  = "layout_heuristic"
 	WarnNoCoordinates    = "no_coordinates"
+	WarnNoPageBoundaries = "no_page_boundaries"
+	WarnFormulaMissing   = "formula_text_unavailable"
+	WarnOCRUsedUnknown   = "ocr_quality_unknown"
 )
 
 // Warning is a non-fatal observation about the parse.
@@ -186,4 +196,32 @@ func (d *Document) Finalize() {
 	if d.Metrics.Pages == 0 {
 		d.Metrics.Pages = d.PageCount
 	}
+}
+
+// HasBBox reports whether any element or table carries geometry. Adapters use it
+// to decide whether a `no_coordinates` warning is truthful.
+func (d *Document) HasBBox() bool {
+	for _, el := range d.Elements {
+		if el.Loc != nil && el.Loc.BBox != nil {
+			return true
+		}
+	}
+	for _, t := range d.Tables {
+		if t.Loc != nil && t.Loc.BBox != nil {
+			return true
+		}
+	}
+	return false
+}
+
+// HasImageRefs reports whether any element references an image artifact. No
+// adapter publishes image artifacts yet (PR-05), so this must stay false until a
+// download path exists; the test suite pins that.
+func (d *Document) HasImageRefs() bool {
+	for _, el := range d.Elements {
+		if el.ImageRef != "" {
+			return true
+		}
+	}
+	return false
 }

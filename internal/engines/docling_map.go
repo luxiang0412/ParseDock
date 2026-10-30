@@ -140,6 +140,12 @@ func mapDocling(doc *documentir.Document, raw []byte, pageKind string) error {
 		groupIdx[d.Groups[i].SelfRef] = &d.Groups[i]
 	}
 
+	// Page box sizes, used to make bboxes interpretable (F08). Keyed by page_no.
+	pageSizes := map[int]doclingPage{}
+	for _, p := range d.Pages {
+		pageSizes[p.PageNo] = p
+	}
+
 	sheet := ""
 	visited := map[string]bool{}
 
@@ -153,7 +159,7 @@ func mapDocling(doc *documentir.Document, raw []byte, pageKind string) error {
 			switch {
 			case strings.HasPrefix(r.Ref, "#/texts/"):
 				if t, ok := textIdx[r.Ref]; ok {
-					doc.Elements = append(doc.Elements, textToElement(doc, t, pageKind, sheet))
+					doc.Elements = append(doc.Elements, textToElement(doc, t, pageKind, sheet, pageSizes))
 					for _, c := range t.Children {
 						if strings.HasPrefix(c.Ref, "#/texts/") {
 							walk([]doclingRef{c}, depth+1)
@@ -162,13 +168,13 @@ func mapDocling(doc *documentir.Document, raw []byte, pageKind string) error {
 				}
 			case strings.HasPrefix(r.Ref, "#/tables/"):
 				if t, ok := tableIdx[r.Ref]; ok {
-					addDoclingTable(doc, t, pageKind, sheet)
+					addDoclingTable(doc, t, pageKind, sheet, pageSizes)
 				}
 			case strings.HasPrefix(r.Ref, "#/pictures/"):
 				if p, ok := picIdx[r.Ref]; ok {
 					el := documentir.Element{
 						ID: fmt.Sprintf("el_%d", len(doc.Elements)+1), Type: documentir.ElImage,
-						Loc: provLocation(p.Prov, pageKind, sheet),
+						Loc: provLocation(p.Prov, pageKind, sheet, pageSizes),
 					}
 					for _, c := range p.Caption {
 						if t, ok := textIdx[c.Ref]; ok {
@@ -203,21 +209,22 @@ func mapDocling(doc *documentir.Document, raw []byte, pageKind string) error {
 		if visited[t.SelfRef] || t.Text == "" {
 			continue
 		}
-		doc.Elements = append(doc.Elements, textToElement(doc, t, pageKind, ""))
+		doc.Elements = append(doc.Elements, textToElement(doc, t, pageKind, "", pageSizes))
 	}
 	for i := range d.Tables {
 		if !visited[d.Tables[i].SelfRef] {
-			addDoclingTable(doc, &d.Tables[i], pageKind, "")
+			addDoclingTable(doc, &d.Tables[i], pageKind, "", pageSizes)
 		}
 	}
 	return nil
 }
 
-func textToElement(doc *documentir.Document, t *doclingText, pageKind, sheet string) documentir.Element {
+func textToElement(doc *documentir.Document, t *doclingText, pageKind, sheet string,
+	pageSizes map[int]doclingPage) documentir.Element {
 	el := documentir.Element{
 		ID:   fmt.Sprintf("el_%d", len(doc.Elements)+1),
 		Text: t.Text,
-		Loc:  provLocation(t.Prov, pageKind, sheet),
+		Loc:  provLocation(t.Prov, pageKind, sheet, pageSizes),
 	}
 	if el.Text == "" {
 		el.Text = t.Orig
@@ -264,7 +271,8 @@ func textToElement(doc *documentir.Document, t *doclingText, pageKind, sheet str
 	return el
 }
 
-func addDoclingTable(doc *documentir.Document, t *doclingTable, pageKind, sheet string) {
+func addDoclingTable(doc *documentir.Document, t *doclingTable, pageKind, sheet string,
+	pageSizes map[int]doclingPage) {
 	rows := t.Data.NumRows
 	cols := t.Data.NumCols
 	if rows == 0 || cols == 0 {
@@ -288,7 +296,7 @@ func addDoclingTable(doc *documentir.Document, t *doclingTable, pageKind, sheet 
 		Rows:       rows,
 		Cols:       cols,
 		HeaderRows: headerRows,
-		Loc:        provLocation(t.Prov, pageKind, sheet),
+		Loc:        provLocation(t.Prov, pageKind, sheet, pageSizes),
 	}
 	for _, c := range t.Data.TableCells {
 		rowSpan := c.RowSpan
@@ -317,7 +325,8 @@ func addDoclingTable(doc *documentir.Document, t *doclingTable, pageKind, sheet 
 	})
 }
 
-func provLocation(provs []doclingProv, pageKind, sheet string) *documentir.SourceLocation {
+func provLocation(provs []doclingProv, pageKind, sheet string,
+	pageSizes map[int]doclingPage) *documentir.SourceLocation {
 	if len(provs) == 0 {
 		if sheet != "" {
 			return &documentir.SourceLocation{Kind: "sheet", Sheet: sheet}
@@ -328,6 +337,14 @@ func provLocation(provs []doclingProv, pageKind, sheet string) *documentir.Sourc
 	loc := &documentir.SourceLocation{Kind: pageKind, Page: p.PageNo}
 	if pageKind == "sheet" && sheet != "" {
 		loc.Sheet = sheet
+	}
+	// Page dimensions are PDF points (1/72"). For spreadsheets Docling reports
+	// the sheet grid extent, not points, so those fields stay empty there.
+	if pageKind == "pdf" || pageKind == "slide" {
+		if size, ok := pageSizes[p.PageNo]; ok && size.Size.Width > 0 && size.Size.Height > 0 {
+			loc.PageWidthPt = size.Size.Width
+			loc.PageHeightPt = size.Size.Height
+		}
 	}
 	if p.BBox != nil {
 		coord := "pdf_top_left_v1"
