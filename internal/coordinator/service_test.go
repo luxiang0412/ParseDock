@@ -1251,3 +1251,33 @@ func TestFailKeepsFilesUnderDownloadLease(t *testing.T) {
 		t.Fatalf("input deleted under a live lease: %v", err)
 	}
 }
+
+// PR-12 codex review: the quota-rejection path must not delete a pinned input either.
+func TestQuotaRejectionKeepsPinnedFiles(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 10} })
+	ctx := context.Background()
+	v := int64(-1)
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "w1", Host: "h",
+		DeviceType: "cpu", Engines: []string{"native"}, FreeVRAMBytes: &v}); err != nil {
+		t.Fatal(err)
+	}
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO download_leases
+		(lease_id, job_id, created_at, expires_at, last_renewed_at) VALUES (?,?,?,?,?)`,
+		"backup-2", job.ID, ts(nowUTC()), ts(nowUTC().Add(10*time.Minute)), ts(nowUTC())); err != nil {
+		t.Fatal(err)
+	}
+	big := bytes.Repeat([]byte("x"), 500)
+	_, err = s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: big, Text: big, JSON: big})
+	if AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("want quota rejection, got %v", err)
+	}
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); err != nil {
+		t.Fatalf("quota rejection deleted a pinned input: %v", err)
+	}
+}
