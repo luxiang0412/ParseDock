@@ -8,7 +8,7 @@ exist to schedule, parallelise and collect artifacts — not to hold logic.
 
 | File | Trigger | Jobs | Blocking |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `ci-summary` | yes (branch protection) |
+| `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `ci-summary` | yes — see "Merge gate" |
 | `.github/workflows/engine-changes.yml` | every PR (path-classified inside) | `detect`, `real-engines`, `container` | recommended for engine/docker changes |
 | `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `container-smoke` (includes SBOM + licence classification) | no (evidence) |
 | `.github/workflows/release-gate.yml` | tags `v*`, manual | `licence-gate` (blocking audit, no publish step) | yes, for releases |
@@ -43,6 +43,21 @@ safe to include in branch protection.
   first. CI fails when regeneration produces a diff.
 * `.gitattributes` forces LF and marks binary fixtures so a Windows/macOS checkout
   with `core.autocrlf=true` cannot create false SDK drift.
+
+## Merge gate
+
+`ci-summary` aggregates the five job results through `scripts/ci_summary.py`
+(unit-tested in `tests/unit/test_ci_summary.py`). A missing, cancelled, skipped or
+failed job makes the summary fail, which fails the workflow run. The previous
+inline `grep` implementation passed while `contract` was failing (substring match) —
+that regression is covered by a test, and a negative-control PR proved the fix
+(run `41041186706`: `contract` and `ci-summary` both red).
+
+**Enforcement caveat:** this repository is private on a free GitHub plan, where
+branch protection and rulesets return `HTTP 403`. The check names and the
+enablement command are documented in `docs/PR01-REPORT.md` §6b; until the owner
+upgrades the plan (or makes the repo public), a red pipeline is visible but not
+technically unmergeable.
 
 ## Artifacts
 

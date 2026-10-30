@@ -10,7 +10,7 @@
 | --- | --- |
 | GitHub Actions for vet/test/build, OpenAPI, contract, SDK drift, PR-00 regressions | **DONE** — 4 workflows, 6 blocking PR jobs |
 | Mock lifecycle acceptance on every PR; real engines nightly + on engine changes | **DONE** — `ci/lifecycle`, `nightly/real-engines`, `engine-changes/real-engines` |
-| Blocking checks; contract failure prevents merge | **DONE** — branch protection on `main` with required checks |
+| Blocking checks; contract failure prevents merge | **PARTIAL** — gate implemented and proven red on failure (negative-control run `41041186706`); platform refuses branch protection on a private free-plan repo (§6b) |
 | Reproducible builds with pinned Go, dependencies and image digests | **DONE** — `images.lock.json` + `verify_pins.py` + `repro-check.sh` (byte-identical) |
 | Full logs, acceptance JSON, build summary, failure diagnostics as artifacts | **DONE** — `build/ci/` per job (logs, step timings, JSON, SBOM, digest) |
 | CI runtime ≤ 8 min for critical PR checks, with caching | **DONE** — 3 m 53 s – 3 m 58 s measured (lifecycle is the critical path) |
@@ -18,7 +18,10 @@
 | No API/ACK/TTL/worker/IR behaviour changes | **DONE** — no runtime code changed; tests unchanged and green |
 | Actually trigger CI (not just local runs) | **DONE** — 5 real runs incl. 1 failure that found a real bug (§6) |
 
-**Verdict: PR-01 Definition of Done is met. GO for PR-02.**
+**Verdict: PR-01 is complete except one platform-blocked item** — enforced merge
+blocking (branch protection) requires a paid plan or a public repository. **GO for
+PR-02**; the enforcement gap must be closed by the repository owner before the
+public API/SDK are frozen (it is a one-command change once the plan allows it).
 
 ## 2. Changes and commits
 
@@ -85,11 +88,15 @@ described in `docs/CI.md`.
 | [41036163447](https://github.com/luxiang0412/ParseDock/actions/runs/41036163447) | push `main` | `1839b71` | **success** | 3 m 58 s |
 | [41036753219](https://github.com/luxiang0412/ParseDock/actions/runs/41036753219) | push `main` (Node 24 action pins) | `e9c43b2` | **success** | 3 m 57 s |
 | [41038125488](https://github.com/luxiang0412/ParseDock/actions/runs/41038125488) | push `main` (base-image/plain-builder fix) | `85b2764` | **success** | 3 m 53 s |
-| [41038813735](https://github.com/luxiang0412/ParseDock/actions/runs/41038813735) | push `main` (artifact scoping) | `1200ad4` | see run log | ~4 m |
+| [41038813735](https://github.com/luxiang0412/ParseDock/actions/runs/41038813735) | push `main` (artifact scoping) | `1200ad4` | **success** | 3 m 45 s |
 | [41037246798](https://github.com/luxiang0412/ParseDock/actions/runs/41037246798) | `workflow_dispatch` nightly | `e9c43b2` | **failure** (real bug, §6) | 3 m 22 s |
 | [41038145488](https://github.com/luxiang0412/ParseDock/actions/runs/41038145488) | `workflow_dispatch` nightly (after fix) | `85b2764` | **success** | 1 m 56 s |
+| [41039343974](https://github.com/luxiang0412/ParseDock/actions/runs/41039343974) | **pull_request #1** | `e0b7154` | **success** (6/6 checks) | 3 m 56 s |
+| [41041186706](https://github.com/luxiang0412/ParseDock/actions/runs/41041186706) | pull_request #2 (negative control) | `546f198` | **failure, as intended** (contract + ci-summary) | 3 m 58 s |
 
-Job timings of run `41038125488` (the representative PR-shaped pipeline):
+Job timings of the PR run `41039343974` (`static` 1 m 47 s, `unit` 0 m 54 s,
+`contract` 0 m 39 s, `image` 2 m 07 s, `lifecycle` 3 m 43 s, `ci-summary` 0 m 05 s;
+total 3 m 56 s) match the main-branch run `41038125488`:
 
 | Job | Started | Finished | Duration |
 | --- | --- | --- | --- |
@@ -150,6 +157,42 @@ is why the PR critical path is the lifecycle job.
 4. **Node 20 deprecation warnings** for the first action pins → bumped to the
    Node 24 releases (`e9c43b2`).
 
+## 6b. Merge gate: verified with a negative control
+
+Requirement 3 ("a failing contract must prevent merging") was tested by pushing a
+throwaway branch that renames the public ACK path (`/ack` → `/acknowledge`) and
+opening draft PR #2. Results:
+
+| Attempt | `contract` | `ci-summary` | Finding |
+| --- | --- | --- | --- |
+| run [41040541150](https://github.com/luxiang0412/ParseDock/actions/runs/41040541150) | fail (29 s) | **pass — false green** | `echo "$RESULTS" \| grep -qv '=success'` is a substring test: `contract=failure … static=success` still contains `=success` |
+| run [41041186706](https://github.com/luxiang0412/ParseDock/actions/runs/41041186706) | fail (31 s) | **fail (5 s)** with `::error::contract: failure` | fixed by `scripts/ci_summary.py` + `tests/unit/test_ci_summary.py` (10 tests); the second attempt also exposed that `ci-summary` had no checkout step and could not run the script |
+
+PR #2 was closed and its branch deleted after the experiment.
+
+**Enforcement status: PARTIAL — platform blocked.** This repository is private on a
+free GitHub plan, and both branch protection and repository rulesets are refused:
+
+```
+HTTP 403: Upgrade to GitHub Pro or make this repository public to enable this feature.
+```
+
+The check names, required list and failing behaviour are ready; the one-command
+enablement (once the owner upgrades to Pro or makes the repo public) is:
+
+```bash
+gh api -X PUT repos/luxiang0412/ParseDock/branches/main/protection --input - <<'JSON'
+{"required_status_checks":{"strict":true,
+  "contexts":["static","unit","contract","lifecycle","image","ci-summary","engine-changes/detect"]},
+ "enforce_admins":true,"required_pull_request_reviews":null,"restrictions":null,
+ "allow_force_pushes":false,"allow_deletions":false,"required_conversation_resolution":true}
+JSON
+```
+
+Until then a failing pipeline is clearly red on the PR (checks + `ci-summary`), but
+a human with write access could still merge. That is a plan/visibility decision for
+the owner, not a CI defect.
+
 ## 7. Risks and open items
 
 | # | Risk | Mitigation / status |
@@ -162,6 +205,7 @@ is why the PR critical path is the lifecycle job.
 | R6 | Real-engine download (590 MB) depends on GitHub/HF availability | cached by `actions/cache` keyed on `images.lock.json`; a failed download fails the nightly, not PRs |
 | R7 | Coverage is not uploaded (Go/Python) | out of scope for PR-01; PR-09 (observability) is the natural home |
 | R8 | `engine-changes` real-engine job is not a required check (path-classified) | documented; reviewers must see it green for engine PRs; making it required would block unrelated PRs |
+| R9 | Branch protection / rulesets unavailable on a private free-plan repo (`403`) | see §6b: checks are red on failure and verified by a negative control; the enablement command is prepared; requires the owner to upgrade or make the repo public |
 
 ## 8. PR-00 leftovers found (recorded, not fixed here)
 
@@ -181,8 +225,10 @@ and green.
       PR-00 regression tests run in GitHub Actions.
 - [x] Mock lifecycle acceptance on every PR; real engines nightly and on
       engine-related changes (`engine-changes` path classification).
-- [x] Required status checks configured on `main` (`static`, `unit`, `contract`,
-      `lifecycle`, `image`, `ci-summary`, `engine-changes/detect`).
+- [ ] **Required status checks enforced on `main`** — **PARTIAL (platform)**. The
+      gate exists and was proven to fail the pipeline (`ci-summary` red with
+      `contract=failure`), but GitHub refuses branch protection/rulesets for a
+      private repo on a free plan (`HTTP 403`, §6b). Enablement command prepared.
 - [x] Reproducible builds: pinned Go 1.24.4, `go.sum`, image digests,
       `-trimpath -buildvcs=false -buildid=`, byte-identical proof in CI.
 - [x] Artifacts: full logs, step-timing JSON, acceptance/PR-00 JSON, stack logs,
