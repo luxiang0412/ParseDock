@@ -97,7 +97,12 @@ def main():
                 if not queue:
                     return
                 queue.pop()
-            r = one(args.api, args.token, name, content, args.mode, args.device, args.timeout)
+            try:
+                r = one(args.api, args.token, name, content, args.mode, args.device, args.timeout)
+            except Exception as exc:  # noqa: BLE001 - connection reset, timeout, DNS
+                # A raised exception must still be counted, otherwise an unreachable
+                # API would produce a report with zero failures.
+                r = (False, args.timeout, f"exception: {type(exc).__name__}: {str(exc)[:80]}")
             with lock:
                 results.append(r)
 
@@ -109,6 +114,10 @@ def main():
         t.join()
     wall = time.time() - started
 
+    if len(results) != args.jobs:
+        # Every job must be accounted for; a missing result is itself a failure.
+        for _ in range(args.jobs - len(results)):
+            results.append((False, args.timeout, "missing result"))
     lat = [r[1] for r in results]
     ok = [r for r in results if r[0]]
     failures = {}

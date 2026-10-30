@@ -22,8 +22,7 @@ API1=$((PORT_BASE+1))
 API2=$((PORT_BASE+2))
 TOKEN="cluster-lite-key"
 
-pkill -x docparse 2>/dev/null || true
-sleep 0.5
+PIDS=()
 rm -rf "$RUN"
 mkdir -p "$RUN/data"
 go build -o "$BIN" ./cmd/docparse
@@ -31,20 +30,29 @@ go build -o "$BIN" ./cmd/docparse
 "$BIN" --role coordinator --internal-listen "127.0.0.1:$COORD_PORT" --internal-token tok \
   --data-dir "$RUN/data" --engines mock --rate-limit 5000 --rate-burst 2000 \
   --log-level info >"$RUN/coordinator.log" 2>&1 &
+PIDS+=($!)
 "$BIN" --role api --listen "127.0.0.1:$API1" --coordinator-url "http://127.0.0.1:$COORD_PORT" \
   --internal-token tok --dev-insecure --api-keys "$TOKEN:load-owner" --rate-limit 5000 --rate-burst 2000 \
   --max-upload-mb 32 >"$RUN/api1.log" 2>&1 &
+PIDS+=($!)
 "$BIN" --role api --listen "127.0.0.1:$API2" --coordinator-url "http://127.0.0.1:$COORD_PORT" \
   --internal-token tok --dev-insecure --api-keys "$TOKEN:load-owner" --rate-limit 5000 --rate-burst 2000 \
   --max-upload-mb 32 >"$RUN/api2.log" 2>&1 &
+PIDS+=($!)
 for i in 1 2; do
   PARSEDOCK_MOCK_DELAY_MS="$DELAY" "$BIN" --role worker --coordinator-url "http://127.0.0.1:$COORD_PORT" \
     --internal-token tok --engines mock --worker-id "w$i" --device-type cpu \
     >"$RUN/worker$i.log" 2>&1 &
+  PIDS+=($!)
 done
 
+# Only the processes started here are terminated: a host may run other docparse
+# instances for a different deployment or a parallel test.
 cleanup() {
-  pkill -x docparse 2>/dev/null || true
+  for pid in "${PIDS[@]:-}"; do
+    kill "$pid" 2>/dev/null || true
+  done
+  wait 2>/dev/null || true
 }
 trap cleanup EXIT
 

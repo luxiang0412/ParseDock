@@ -321,7 +321,7 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 		return err
 	}
 	gw, err := api.New(api.Config{
-		CoordinatorURL: f.coordinatorURL,
+		CoordinatorURL: f.coordinatorBaseURL(),
 		InternalToken:  f.internalToken,
 		Keys:           keys,
 		DevInsecure:    f.devInsecure,
@@ -345,6 +345,29 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 	return serve(ctx, srv, log)
 }
 
+// coordinatorBaseURL returns the coordinator URL matching the TLS flags. A client
+// certificate or a CA implies the coordinator listener is TLS, so an http:// URL is
+// upgraded instead of silently failing every proxy request with 502.
+func (f *flags) coordinatorBaseURL() string {
+	u := f.coordinatorURL
+	if f.tlsCA != "" || (f.tlsCert != "" && f.tlsKey != "") {
+		if strings.HasPrefix(u, "http://") {
+			u = "https://" + strings.TrimPrefix(u, "http://")
+		}
+	}
+	return u
+}
+
+// standaloneBaseURL is the coordinator URL inside a single process: the scheme
+// follows the server TLS flags and the host/port follows --internal-listen.
+func standaloneBaseURL(f *flags) string {
+	scheme := "http"
+	if f.tlsCert != "" || f.tlsKey != "" {
+		scheme = "https"
+	}
+	return scheme + "://" + f.internalListen
+}
+
 func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	reg := buildRegistry(f, f.deviceType)
 	if len(reg.All()) == 0 {
@@ -359,7 +382,7 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	}
 	gpus, _ := sysinfo.DetectGPU(ctx)
 	cfg := worker.Config{
-		CoordinatorURL:    f.coordinatorURL,
+		CoordinatorURL:    f.coordinatorBaseURL(),
 		InternalToken:     f.internalToken,
 		WorkerID:          f.workerID,
 		DeviceType:        f.deviceType,
@@ -394,6 +417,8 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 }
 
 func runStandalone(ctx context.Context, f *flags, cfg coordinator.Config, log *slog.Logger) error {
+	// The in-process worker must dial the listener this process just started.
+	f.coordinatorURL = standaloneBaseURL(f)
 	// In standalone the worker and gateway talk to the local coordinator listener.
 	f.coordinatorURL = "http://" + f.internalListen
 	ready := make(chan struct{})
@@ -422,7 +447,7 @@ func runStandalone(ctx context.Context, f *flags, cfg coordinator.Config, log *s
 			return
 		}
 		gw, err := api.New(api.Config{
-			CoordinatorURL: "https://" + f.internalListen,
+			CoordinatorURL: standaloneBaseURL(f),
 			InternalToken:  f.internalToken,
 			Keys:           keys,
 			DevInsecure:    f.devInsecure,
