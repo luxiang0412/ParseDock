@@ -53,7 +53,13 @@ type xlsxWorksheet struct {
 					Type string `xml:"t,attr"`
 					SI   string `xml:"si,attr"`
 				} `xml:"f"`
-				V string `xml:"v"`
+				V  string `xml:"v"`
+				Is struct {
+					T string `xml:"t"`
+					R []struct {
+						T string `xml:"t"`
+					} `xml:"r"`
+				} `xml:"is"`
 			} `xml:"c"`
 		} `xml:"row"`
 	} `xml:"sheetData"`
@@ -77,6 +83,11 @@ type xlsxSharedStrings struct {
 type sheetFormulas struct {
 	originRow, originCol int
 	cells                map[[2]int]formulaCell
+	// values holds every cell's text at its worksheet address. It is used to
+	// *verify* that a table's local (0,0) really is the worksheet's origin before
+	// any formula is attached; without positive evidence enrichment is skipped.
+	values       map[[2]int]string
+	valuesCapped bool
 }
 
 type formulaCell struct {
@@ -156,6 +167,8 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 			continue
 		}
 		cells := map[[2]int]formulaCell{}
+		values := map[[2]int]string{}
+		capped := false
 		originRow, originCol := -1, -1
 		for _, row := range ws.SheetData.Rows {
 			for _, c := range row.Cells {
@@ -168,6 +181,24 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 				}
 				if originCol < 0 || col < originCol {
 					originCol = col
+				}
+				// Record every cell's text first: origin verification compares the
+				// engine's table against the sheet, so ordinary cells matter.
+				if !capped {
+					val := cachedText(c.T, c.V, sharedStrings)
+					if val == "" && c.T == "inlineStr" {
+						val = c.Is.T
+						for _, r := range c.Is.R {
+							val += r.T
+						}
+					}
+					if val != "" {
+						values[[2]int{r, col}] = val
+					}
+					if len(values) > 200000 {
+						capped = true
+						values = map[[2]int]string{}
+					}
 				}
 				hasFormula := strings.TrimSpace(c.F.Text) != "" || c.F.Type == "shared"
 				if !hasFormula {
@@ -200,10 +231,12 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 				if fc.formula != "" || fc.cached != "" || fc.shared {
 					cells[[2]int{r, col}] = fc
 				}
+
 			}
 		}
 		if len(cells) > 0 && originRow >= 0 {
-			formulas[sh.name] = sheetFormulas{originRow: originRow, originCol: originCol, cells: cells}
+			formulas[sh.name] = sheetFormulas{originRow: originRow, originCol: originCol,
+				cells: cells, values: values, valuesCapped: capped}
 		}
 	}
 	if len(formulas) == 0 {
@@ -213,6 +246,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 	applied := 0
 	sharedSkipped := false
 	originUnknown := false
+	unverified := false
 	ordered := make([]string, 0, len(sheets))
 	for _, sh := range sheets {
 		ordered = append(ordered, sh.name)
@@ -265,6 +299,14 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 			}
 			continue
 		}
+		// The sheet's used range starts at A1, but the engine's table may still
+		// start elsewhere (a title row at A1, table at A2). Verify the identity
+		// mapping against the sheet's own cell text; no evidence -> no enrichment.
+		if sheetData.valuesCapped || !verifyTableOrigin(table, sheetData.values, sheetData.cells) {
+			originUnknown = true
+			unverified = true
+			continue
+		}
 		cells := sheetData.cells
 		for ci := range table.Cells {
 			if ci%512 == 0 {
@@ -306,6 +348,9 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		if ambiguous {
 			msg = "formula text unavailable: the sheet contains several tables and no per-table origin, so table-local cells cannot be mapped to worksheet addresses"
 		}
+		if unverified {
+			msg = "formula text unavailable: the table's origin could not be verified against the worksheet content, so table-local cells were not mapped to worksheet addresses"
+		}
 		warnings = append(warnings, documentir.Warning{Code: documentir.WarnFormulaMissing,
 			Message: msg, Severity: "info"})
 	}
@@ -325,6 +370,42 @@ func cachedText(cellType, raw string, sharedStrings []string) string {
 	default:
 		return raw
 	}
+}
+
+// verifyTableOrigin reports whether the table's local coordinates line up with the
+// worksheet's addresses. Evidence comes from non-formula cells only: a formula
+// cell's engine text may be a formatted rendering (a date, a currency) that does
+// not equal the raw cached value. At least one comparable cell must agree and at
+// least half of them must agree; otherwise the table is treated as unmappable
+// rather than guessed.
+func verifyTableOrigin(table *documentir.Table, values map[[2]int]string,
+	formulaCells map[[2]int]formulaCell) bool {
+	if len(values) == 0 {
+		return false
+	}
+	compared, matched := 0, 0
+	for _, c := range table.Cells {
+		key := [2]int{c.Row, c.Col}
+		if _, isFormula := formulaCells[key]; isFormula {
+			continue
+		}
+		text := strings.TrimSpace(c.Text)
+		if text == "" {
+			continue
+		}
+		got := strings.TrimSpace(values[key])
+		if got == "" {
+			continue
+		}
+		compared++
+		if got == text {
+			matched++
+		}
+		if compared >= 50 {
+			break
+		}
+	}
+	return matched >= 1 && matched*2 >= compared
 }
 
 func hasSheet(formulas map[string]sheetFormulas, ordered []string, name string) bool {
