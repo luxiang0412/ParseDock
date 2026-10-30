@@ -1304,3 +1304,32 @@ func TestDeleteDeferredWhenLeaseStateUnknown(t *testing.T) {
 		t.Fatalf("retention moved on a failed lookup: %s", retention)
 	}
 }
+
+// PR-12 codex review: a superseded completion must not touch retention or the input —
+// another attempt may still need it.
+func TestSupersededCompletionKeepsInput(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Expire the lease: the completion is then a late result from a superseded attempt.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE attempts SET lease_until = ? WHERE job_id = ? AND lease_token = ?`,
+		ts(nowUTC().Add(-time.Minute)), job.ID, task.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")})
+	if AsError(err).Code != jobs.ErrLeaseLost {
+		t.Fatalf("want lease_lost, got %v", err)
+	}
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); err != nil {
+		t.Fatalf("superseded completion deleted the input: %v", err)
+	}
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.RetentionStatus != jobs.RetentionActive {
+		t.Fatalf("superseded completion moved retention to %s", got.RetentionStatus)
+	}
+}

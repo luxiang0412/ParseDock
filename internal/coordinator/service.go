@@ -768,7 +768,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		s.deleteJobUnlessLeased(ctx, p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -789,7 +789,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	var startedRaw sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
 		Scan(&ownerID, &startedRaw); err != nil {
-		s.deleteJobUnlessLeased(ctx, p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	var attemptStart sql.NullString
@@ -847,7 +847,8 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 				_ = s.Store.DeleteResults(p.JobID)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
 			}
-			// The job is terminal now; its input and the rejected result go away.
+			// The job is terminal now; its input and the rejected result go away unless a
+			// download lease (client or online backup) still protects them.
 			s.deleteJobUnlessLeased(ctx, p.JobID)
 			s.appendEvent(ctx, p.JobID, "failed", map[string]any{
 				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false})
@@ -866,17 +867,19 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		ts(now), ts(expires), manifest.Version, filepath.Join(s.Store.ResultDir(p.JobID), "manifest.json"),
 		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 	if err != nil {
-		s.deleteJobUnlessLeased(ctx, p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "complete: "+err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		_ = tx.Rollback()
-		s.deleteJobUnlessLeased(ctx, p.JobID) // late result from a superseded attempt
+		// Late result from a superseded attempt: drop only what this attempt wrote. The
+		// input belongs to the job, which another attempt may still be parsing.
+		_ = s.Store.DeleteResults(p.JobID)
 		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'succeeded', engine = ?, device_type = ?
 		WHERE job_id = ? AND lease_token = ?`, p.Engine, p.Device, p.JobID, p.Token); err != nil {
-		s.deleteJobUnlessLeased(ctx, p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
 	}
 	for _, a := range manifest.Files {
@@ -884,16 +887,16 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			VALUES(?,?,?,?,?,1,?) ON CONFLICT(job_id, kind) DO UPDATE SET path=excluded.path, size=excluded.size,
 			sha256=excluded.sha256, generation=artifacts.generation+1, ready_at=excluded.ready_at`,
 			p.JobID, a.Name, s.Store.ResultPath(p.JobID, a.Name), a.Size, a.SHA256, ts(now)); err != nil {
-			s.deleteJobUnlessLeased(ctx, p.JobID)
+			_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
 		}
 	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
-		s.deleteJobUnlessLeased(ctx, p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	if err := tx.Commit(); err != nil {
-		s.deleteJobUnlessLeased(ctx, p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
