@@ -238,7 +238,7 @@ func (w *Worker) loop(ctx context.Context, slot int) {
 		// A GPU worker must refresh its free VRAM before every claim: another slot may
 		// have loaded a model since the last registration, and a stale "roomy" value
 		// would let the coordinator dispatch a job that then OOMs.
-		if w.Cfg.DeviceType == "gpu" || time.Since(lastReg) > time.Minute {
+		if isGPUDevice(w.Cfg.DeviceType) || time.Since(lastReg) > time.Minute {
 			_ = w.register(ctx)
 			lastReg = time.Now()
 		}
@@ -677,6 +677,13 @@ func truncate(s string, n int) string {
 	return string(r[:n])
 }
 
+// isGPUDevice reports whether the device type names a GPU execution target. The
+// coordinator accepts gpu, cuda and mps alike, so VRAM measurement and the pre-claim
+// refresh must cover all of them (nvidia-smi is absent for MPS, which reports unknown).
+func isGPUDevice(t string) bool {
+	return t == "gpu" || t == "cuda" || t == "mps"
+}
+
 func numCPU() int        { return sysinfo.CPU() }
 func totalMemory() int64 { return sysinfo.MemoryBytes() }
 
@@ -684,7 +691,7 @@ func totalMemory() int64 { return sysinfo.MemoryBytes() }
 // queried on every register/heartbeat so admission uses fresh data instead of the
 // value captured at start-up.
 func (w *Worker) freeVRAMBytes() int64 {
-	if w.Cfg.DeviceType != "gpu" {
+	if !isGPUDevice(w.Cfg.DeviceType) {
 		return -1
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
