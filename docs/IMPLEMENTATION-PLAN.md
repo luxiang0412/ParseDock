@@ -1,5 +1,11 @@
 # IMPLEMENTATION PLAN — Phase 1 (post-Phase-0)
 
+> **Phase 1 status (2026-11-01): PR-01 … PR-12 are merged.** `docs/PHASE1-SUMMARY.md`
+> has the one-page status, the verified evidence and the three open items that are
+> blocked on something other than code (L1 `libx265` licence, a second host, branch
+> protection on a free private repo). Every PR below carries its own **Status:** line
+> with what was verified and what was deliberately left out.
+>
 > **PR-00 (Phase 1 readiness) is complete**: see `docs/PHASE1-READINESS.md` and
 > `docs/PR00-ISSUE-MATRIX.md`. Landed here: scored decisions generated from data,
 > text-format routing, ACK/Cancel/Heartbeat/lease semantics, public/internal

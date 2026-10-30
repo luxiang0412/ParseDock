@@ -197,8 +197,11 @@ OOXML structure + zip-ratio + PDF page checks before any engine runs; server-sid
 file names; per-job authorization for downloads/ACK; owner isolation returns `404`
 for foreign jobs; engine subprocesses with timeouts, process-group kill and optional
 network-namespace isolation that **fails closed**; no URL ingestion, no webhooks, no
-document content in logs. Gaps: shared static internal token (mTLS is P1), no TLS
-termination, no per-tenant disk quota yet.
+document content in logs. Phase 1 added mTLS on the internal hop, per-owner storage quotas,
+metrics/SLOs, an installable Python SDK with CLI, a 110-document benchmark corpus with a
+quality gate, and a runbook with a measured restore drill. Gaps that remain are listed with
+reasons in `docs/PHASE1-SUMMARY.md` (L1 `libx265` licence, two-host measurement, branch
+protection on the free plan).
 
 ## Documentation
 
@@ -206,6 +209,10 @@ termination, no per-tenant disk quota yet.
 | --- | --- |
 | `docs/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
 | `docs/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
+| `docs/PHASE1-SUMMARY.md` | Phase 1 status: what shipped, what was verified, what is blocked and why |
+| `docs/SLO.md` | SLO targets, result-loss budget, metric reference, tracing stance |
+| `docs/RUNBOOK.md` | backup/restore, upgrade, and one playbook per alert |
+| `docs/SDK.md` | Python package/CLI, Java client, version rule, lifecycle contract |
 | `docs/CI.md` | CI workflows, phases, pinned inputs, artifacts, licence policy |
 | `docs/REAL-CORPUS-TEST.md` | 958-file real corpus: results, defects found, engine comparison |
 | `docs/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |
