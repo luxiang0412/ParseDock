@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"parsedock.dev/parsedock/internal/documentir"
@@ -443,5 +444,40 @@ func TestEnrichSkipsWhenOriginIsNotA1(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("no warning for the unmappable origin: %v", warnings)
+	}
+}
+
+// Two tables on one sheet: the sheet's A1 origin does not locate the second table,
+// so neither is enriched and the IR says why.
+func TestEnrichSkipsMultiTableSheets(t *testing.T) {
+	path := writeMinimalXLSX(t)
+	doc := documentir.New()
+	loc := &documentir.SourceLocation{Kind: "sheet", Sheet: "Sheet1"}
+	doc.Tables = []documentir.Table{
+		{ID: "t1", Rows: 2, Cols: 4, Loc: loc, Cells: []documentir.Cell{{Row: 1, Col: 1, Text: "42"}}},
+		{ID: "t2", Rows: 2, Cols: 4, Loc: loc, Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "x"}}},
+	}
+	applied, warnings, err := EnrichXLSXFormulas(context.Background(), path, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("multi-table sheet enriched %d cells", applied)
+	}
+	for _, t2 := range doc.Tables {
+		for _, c := range t2.Cells {
+			if c.Formula != "" || c.CachedValue != "" {
+				t.Fatalf("cross-table enrichment: %+v", c)
+			}
+		}
+	}
+	found := false
+	for _, w := range warnings {
+		if w.Code == documentir.WarnFormulaMissing && strings.Contains(w.Message, "several tables") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no multi-table warning: %v", warnings)
 	}
 }

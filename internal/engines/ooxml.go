@@ -217,33 +217,52 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 	for _, sh := range sheets {
 		ordered = append(ordered, sh.name)
 	}
+	// Resolve which worksheet each IR table belongs to, then count tables per
+	// sheet: with two tables on one sheet the sheet's A1 origin says nothing about
+	// where the second table starts, so enrichment is only safe when a sheet is
+	// represented by exactly one table.
+	resolved := make([]string, len(doc.Tables))
+	perSheet := map[string]int{}
+	for ti := range doc.Tables {
+		table := &doc.Tables[ti]
+		name := ""
+		loc := table.Loc
+		switch {
+		case loc != nil && loc.Sheet != "" && hasSheet(formulas, ordered, loc.Sheet):
+			name = loc.Sheet
+		case (loc == nil || loc.Sheet == "") && loc != nil && loc.Page > 0 && loc.Page-1 < len(ordered):
+			// xberg exposes the 1-based sheet index in Loc.Page.
+			candidate := ordered[loc.Page-1]
+			if _, ok := formulas[candidate]; ok {
+				name = candidate
+			}
+		}
+		resolved[ti] = name
+		if name != "" {
+			perSheet[name]++
+		}
+	}
+
+	ambiguous := false
 	for ti := range doc.Tables {
 		if err := ctx.Err(); err != nil {
 			return applied, warnings, err
 		}
 		table := &doc.Tables[ti]
-		sheet := ""
-		if table.Loc != nil && table.Loc.Sheet != "" {
-			sheet = table.Loc.Sheet
-		}
-		sheetData, ok := formulas[sheet]
-		if !ok {
-			// Engines that expose only the sheet *index* (xberg) put it in Loc.Page
-			// (1-based). Use it directly; do not infer a sheet from table order,
-			// which is unreliable (several tables per sheet, skipped sheets).
-			if sheet == "" && table.Loc != nil && table.Loc.Page > 0 && table.Loc.Page-1 < len(ordered) {
-				sheetData, ok = formulas[ordered[table.Loc.Page-1]]
-			}
-		}
-		if !ok {
+		name := resolved[ti]
+		if name == "" {
 			continue
 		}
+		sheetData := formulas[name]
 		// Engine table cells are table-local (0,0 = first cell of the table), while
-		// OOXML references are worksheet-absolute. Only an A1-origin sheet makes the
-		// two coincide; otherwise the offset is unknown and guessing would attach
-		// another cell's formula.
-		if sheetData.originRow != 0 || sheetData.originCol != 0 {
+		// OOXML references are worksheet-absolute. Without a per-table origin the
+		// mapping is only the identity when the sheet starts at A1 *and* holds a
+		// single table; otherwise guessing would attach another table's formula.
+		if sheetData.originRow != 0 || sheetData.originCol != 0 || perSheet[name] > 1 {
 			originUnknown = true
+			if perSheet[name] > 1 {
+				ambiguous = true
+			}
 			continue
 		}
 		cells := sheetData.cells
@@ -283,9 +302,12 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 			Severity: "info"})
 	}
 	if originUnknown {
+		msg := "formula text unavailable: the sheet's used range does not start at A1, so table-local cells cannot be mapped to worksheet addresses without an origin"
+		if ambiguous {
+			msg = "formula text unavailable: the sheet contains several tables and no per-table origin, so table-local cells cannot be mapped to worksheet addresses"
+		}
 		warnings = append(warnings, documentir.Warning{Code: documentir.WarnFormulaMissing,
-			Message:  "formula text unavailable: the sheet's used range does not start at A1, so table-local cells cannot be mapped to worksheet addresses without an origin",
-			Severity: "info"})
+			Message: msg, Severity: "info"})
 	}
 	return applied, warnings, nil
 }
@@ -303,6 +325,18 @@ func cachedText(cellType, raw string, sharedStrings []string) string {
 	default:
 		return raw
 	}
+}
+
+func hasSheet(formulas map[string]sheetFormulas, ordered []string, name string) bool {
+	if _, ok := formulas[name]; ok {
+		return true
+	}
+	for _, n := range ordered {
+		if n == name {
+			return true
+		}
+	}
+	return false
 }
 
 // ShouldEnrichFormulas reports whether formula extraction applies to a format.
