@@ -2,6 +2,7 @@ package engines
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/xml"
 	"fmt"
 	"io"
@@ -84,20 +85,23 @@ type formulaCell struct {
 // EnrichXLSXFormulas adds formula text and cached values to the IR tables of an
 // xlsx/xlsm document. It returns the number of cells enriched and a warning list
 // (which the caller should add to the document).
-func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []documentir.Warning) {
+func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.Document) (int, []documentir.Warning, error) {
 	if doc == nil {
-		return 0, nil
+		return 0, nil, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, nil, err
 	}
 	zr, err := zip.OpenReader(inputPath)
 	if err != nil {
 		return 0, []documentir.Warning{{Code: documentir.WarnUnsupported,
-			Message: "formula enrichment skipped: not a readable OOXML package", Severity: "info"}}
+			Message: "formula enrichment skipped: not a readable OOXML package", Severity: "info"}}, nil
 	}
 	defer zr.Close()
 
 	workbook, err := readZipXML[xlsxWorkbook](zr, "xl/workbook.xml")
 	if err != nil {
-		return 0, nil // not an xlsx workbook: nothing to add
+		return 0, nil, nil // not an xlsx workbook: nothing to add
 	}
 	rels, _ := readZipXML[xlsxRels](zr, "xl/_rels/workbook.xml.rels")
 	targets := map[string]string{}
@@ -135,6 +139,9 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 	formulas := map[string]map[[2]int]formulaCell{}
 	var warnings []documentir.Warning
 	for _, sh := range sheets {
+		if err := ctx.Err(); err != nil {
+			return 0, nil, err
+		}
 		ws, err := readZipXML[xlsxWorksheet](zr, sh.part)
 		if err != nil {
 			continue
@@ -184,7 +191,7 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 		}
 	}
 	if len(formulas) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 
 	applied := 0
@@ -201,11 +208,11 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 		}
 		cells, ok := formulas[sheet]
 		if !ok {
-			// Positional fallback exists only for engines that expose the sheet
-			// *index* and no name (xberg). A table that states its sheet must never
-			// inherit another sheet's formulas just because its own sheet has none.
-			if sheet == "" && ti < len(ordered) && len(doc.Tables) == len(ordered) {
-				cells, ok = formulas[ordered[ti]]
+			// Engines that expose only the sheet *index* (xberg) put it in Loc.Page
+			// (1-based). Use it directly; do not infer a sheet from table order,
+			// which is unreliable (several tables per sheet, skipped sheets).
+			if sheet == "" && table.Loc != nil && table.Loc.Page > 0 && table.Loc.Page-1 < len(ordered) {
+				cells, ok = formulas[ordered[table.Loc.Page-1]]
 			}
 		}
 		if !ok {
@@ -241,7 +248,7 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 			Message:  "shared formulas are not expanded; only their cached values are available for non-master cells",
 			Severity: "info"})
 	}
-	return applied, warnings
+	return applied, warnings, nil
 }
 
 // cachedText converts a cached OOXML value to text, resolving shared strings.

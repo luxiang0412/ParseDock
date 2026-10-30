@@ -50,7 +50,7 @@ func TestEnrichXLSXFormulas(t *testing.T) {
 				{Row: 1, Col: 4, Text: "128400.125", DataType: "number"},
 			}},
 	}
-	applied, warnings := EnrichXLSXFormulas(path, doc)
+	applied, warnings, _ := EnrichXLSXFormulas(context.Background(), path, doc)
 	if applied < 3 {
 		t.Fatalf("applied %d formulas, want >= 3; warnings=%v", applied, warnings)
 	}
@@ -84,9 +84,10 @@ func TestEnrichXLSXFormulas(t *testing.T) {
 // Enrichment must be a no-op for non-xlsx input and must not fabricate cells.
 func TestEnrichXLSXFormulasNoOp(t *testing.T) {
 	doc := documentir.New()
-	applied, warnings := EnrichXLSXFormulas(filepath.Join("..", "..", "benchmark", "fixtures", "generated", "pdf_text_en_3p.pdf"), doc)
-	if applied != 0 || len(warnings) == 0 {
-		t.Fatalf("applied=%d warnings=%v", applied, warnings)
+	applied, warnings, err := EnrichXLSXFormulas(context.Background(),
+		filepath.Join("..", "..", "benchmark", "fixtures", "generated", "pdf_text_en_3p.pdf"), doc)
+	if err != nil || applied != 0 || len(warnings) == 0 {
+		t.Fatalf("applied=%d warnings=%v err=%v", applied, warnings, err)
 	}
 	if len(doc.Tables) != 0 || len(doc.Elements) != 0 {
 		t.Fatal("enrichment modified a document it could not read")
@@ -117,7 +118,10 @@ func TestEnrichXLSXFormulasCachedValue(t *testing.T) {
 			{Row: 1, Col: 2, Text: "ab", DataType: "string"},
 			{Row: 1, Col: 3, Text: "1", DataType: "number"},
 		}}}
-	applied, _ := EnrichXLSXFormulas(path, doc)
+	applied, _, gerr := EnrichXLSXFormulas(context.Background(), path, doc)
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
 	if applied != 3 {
 		t.Fatalf("applied = %d, want 3 formulas", applied)
 	}
@@ -168,7 +172,7 @@ func TestEnrichXLSXSharedStringResult(t *testing.T) {
 	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 2,
 		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
 		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 0, Col: 1}}}}
-	EnrichXLSXFormulas(path, doc)
+	_, _, _ = EnrichXLSXFormulas(context.Background(), path, doc)
 	if got := doc.Tables[0].Cells[0].CachedValue; got != "first" {
 		t.Fatalf("shared-string index not resolved: %q", got)
 	}
@@ -264,7 +268,7 @@ func TestEnrichKeepsEngineDateType(t *testing.T) {
 	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 1,
 		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
 		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "2023-07-15", DataType: "date"}}}}
-	EnrichXLSXFormulas(path, doc)
+	EnrichXLSXFormulas(context.Background(), path, doc)
 	cell := doc.Tables[0].Cells[0]
 	if cell.DataType != "date" {
 		t.Fatalf("engine date type overwritten: %q", cell.DataType)
@@ -304,9 +308,9 @@ func TestEnrichWarnsOnUncachedSharedFormula(t *testing.T) {
 	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 1,
 		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
 		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 1, Col: 0}}}}
-	applied, warnings := EnrichXLSXFormulas(path, doc)
-	if applied != 1 {
-		t.Fatalf("applied = %d, want the master only", applied)
+	applied, warnings, gerr := EnrichXLSXFormulas(context.Background(), path, doc)
+	if gerr != nil || applied != 1 {
+		t.Fatalf("applied = %d err = %v, want the master only", applied, gerr)
 	}
 	found := false
 	for _, w := range warnings {
@@ -326,11 +330,47 @@ func TestEnrichDoesNotCrossSheets(t *testing.T) {
 	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 4,
 		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "OtherSheet"},
 		Cells: []documentir.Cell{{Row: 1, Col: 1, Text: "42"}}}}
-	applied, _ := EnrichXLSXFormulas(path, doc)
+	applied, _, _ := EnrichXLSXFormulas(context.Background(), path, doc)
 	if applied != 0 {
 		t.Fatalf("formulas from another sheet were applied: %d", applied)
 	}
 	if doc.Tables[0].Cells[0].Formula != "" || doc.Tables[0].Cells[0].CachedValue != "" {
 		t.Fatalf("cross-sheet enrichment: %+v", doc.Tables[0].Cells[0])
+	}
+}
+
+// Engines that expose only the sheet index (xberg) still get enrichment, but only
+// via the reported index - never via table order.
+func TestEnrichUsesReportedSheetIndex(t *testing.T) {
+	path := writeMinimalXLSX(t)
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 4,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Page: 1}, // sheet 1, no name
+		Cells: []documentir.Cell{{Row: 1, Col: 1, Text: "42"}}}}
+	applied, _, err := EnrichXLSXFormulas(context.Background(), path, doc)
+	if err != nil || applied != 1 {
+		t.Fatalf("applied = %d err = %v", applied, err)
+	}
+	if doc.Tables[0].Cells[0].Formula != "=SUM(A1:A2)" {
+		t.Fatalf("formula = %q", doc.Tables[0].Cells[0].Formula)
+	}
+
+	// An out-of-range index is skipped rather than guessed.
+	doc2 := documentir.New()
+	doc2.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 4,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Page: 99},
+		Cells: []documentir.Cell{{Row: 1, Col: 1, Text: "42"}}}}
+	if applied, _, _ := EnrichXLSXFormulas(context.Background(), path, doc2); applied != 0 {
+		t.Fatalf("out-of-range sheet index enriched %d cells", applied)
+	}
+}
+
+// Enrichment must stop when the parse context is cancelled.
+func TestEnrichRespectsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	doc := documentir.New()
+	if _, _, err := EnrichXLSXFormulas(ctx, writeMinimalXLSX(t), doc); err == nil {
+		t.Fatal("cancelled context ignored")
 	}
 }

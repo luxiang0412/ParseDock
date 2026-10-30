@@ -366,8 +366,19 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 			stage.Store(s)
 		},
 	})
-	// The escalation parse below runs under the same lease: heartbeats must keep
-	// flowing, otherwise a long accurate retry loses the attempt (codex review).
+	// Enrichment and escalation both run inside the heartbeat-protected phase: a
+	// large workbook can take a while to unzip, and a lost lease would let the
+	// coordinator reclaim a job that is still being processed.
+	if perr == nil && engines.ShouldEnrichFormulas(task.Format) {
+		if n, warns, eerr := engines.EnrichXLSXFormulas(parseCtx, local, result); eerr == nil {
+			result.Warnings = append(result.Warnings, warns...)
+			if n > 0 {
+				w.Log.Info("formula enrichment", "job", task.JobID, "cells", n)
+			}
+		} else if parseCtx.Err() == nil {
+			w.Log.Warn("formula enrichment failed", "job", task.JobID, "err", eerr)
+		}
+	}
 	if perr == nil {
 		result, engine = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
 	}
@@ -394,17 +405,6 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		}
 		return w.fail(ctx, task, jobs.ErrInternal, perr.Error(), true)
 	}
-	// Formula text is not exposed by any engine; read it from the worksheet XML so
-	// the IR carries both the formula and its cached value (PR-05).
-	if engines.ShouldEnrichFormulas(task.Format) {
-		if n, warns := engines.EnrichXLSXFormulas(local, result); n > 0 || len(warns) > 0 {
-			result.Warnings = append(result.Warnings, warns...)
-			if n > 0 {
-				w.Log.Info("formula enrichment", "job", task.JobID, "cells", n)
-			}
-		}
-	}
-
 	// Legacy OLE2 Office keeps text and tables only; say so instead of letting a
 	// consumer assume page geometry exists.
 	if isLegacyFormat(task.Format) {
