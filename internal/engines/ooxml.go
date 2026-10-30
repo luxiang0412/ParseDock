@@ -73,7 +73,12 @@ type formulaCell struct {
 	formula  string
 	cached   string
 	dataType string
-	shared   bool
+	// authoritative is true when the workbook states the type explicitly
+	// (t="b"/"str"/"s"/"inlineStr"/"d"). Numeric results carry no marker and are
+	// only a fallback, because Excel stores dates as plain numbers with a number
+	// format that the engine may already have resolved.
+	authoritative bool
+	shared        bool
 }
 
 // EnrichXLSXFormulas adds formula text and cached values to the IR tables of an
@@ -151,11 +156,11 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 				fc := formulaCell{cached: cachedText(c.T, c.V, sharedStrings)}
 				switch c.T {
 				case "s", "str", "inlineStr":
-					fc.dataType = "string"
+					fc.dataType, fc.authoritative = "string", true
 				case "b":
-					fc.dataType = "bool"
+					fc.dataType, fc.authoritative = "bool", true
 				case "d":
-					fc.dataType = "date"
+					fc.dataType, fc.authoritative = "date", true
 				default:
 					fc.dataType = "number"
 				}
@@ -219,12 +224,14 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 			}
 			if fc.cached != "" && cell.CachedValue == "" {
 				cell.CachedValue = fc.cached
-				// The engine may have inferred a richer type (e.g. a date from a
-				// formatted numeric serial, which OOXML stores without t="d");
-				// only fill a type the engine left empty.
-				if cell.DataType == "" && fc.dataType != "" {
-					cell.DataType = fc.dataType
-				}
+			}
+			// Type precedence: an explicit OOXML marker beats the adapters'
+			// text-based guess; a plain numeric cached value only fills a gap,
+			// because the engine may already have resolved a date serial.
+			if fc.authoritative && fc.dataType != "" {
+				cell.DataType = fc.dataType
+			} else if cell.DataType == "" && fc.dataType != "" {
+				cell.DataType = fc.dataType
 			}
 		}
 	}

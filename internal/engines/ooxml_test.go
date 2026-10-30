@@ -112,8 +112,10 @@ func TestEnrichXLSXFormulasCachedValue(t *testing.T) {
 		Cells: []documentir.Cell{
 			{Row: 0, Col: 3, Text: "Shared label", DataType: "string"}, // ordinary cell
 			{Row: 1, Col: 1, Text: "42"},
-			{Row: 1, Col: 2, Text: "ab"},
-			{Row: 1, Col: 3, Text: "1"},
+			// The adapters fill these from text (guessType): the explicit OOXML
+			// type must win for string/boolean results.
+			{Row: 1, Col: 2, Text: "ab", DataType: "string"},
+			{Row: 1, Col: 3, Text: "1", DataType: "number"},
 		}}}
 	applied, _ := EnrichXLSXFormulas(path, doc)
 	if applied != 3 {
