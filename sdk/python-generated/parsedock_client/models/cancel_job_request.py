@@ -17,22 +17,18 @@ import pprint
 import re  # noqa: F401
 import json
 
-from datetime import datetime
-from pydantic import BaseModel, ConfigDict, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
 from typing_extensions import Self
 from pydantic_core import to_jsonable_python
 
-class SubmitResult200Response(BaseModel):
+class CancelJobRequest(BaseModel):
     """
-    SubmitResult200Response
+    CancelJobRequest
     """ # noqa: E501
-    job_id: Optional[StrictStr] = None
-    status: Optional[StrictStr] = None
-    result_version: Optional[StrictStr] = None
-    result_expires_at: Optional[datetime] = None
-    __properties: ClassVar[List[str]] = ["job_id", "status", "result_version", "result_expires_at"]
+    result_version: Optional[StrictStr] = Field(default=None, description="Required when the job is already completed.")
+    __properties: ClassVar[List[str]] = ["result_version"]
 
     model_config = ConfigDict(
         validate_by_name=True,
@@ -52,7 +48,7 @@ class SubmitResult200Response(BaseModel):
 
     @classmethod
     def from_json(cls, json_str: str) -> Optional[Self]:
-        """Create an instance of SubmitResult200Response from a JSON string"""
+        """Create an instance of CancelJobRequest from a JSON string"""
         return cls.from_dict(json.loads(json_str))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -77,7 +73,7 @@ class SubmitResult200Response(BaseModel):
 
     @classmethod
     def from_dict(cls, obj: Optional[Dict[str, Any]]) -> Optional[Self]:
-        """Create an instance of SubmitResult200Response from a dict"""
+        """Create an instance of CancelJobRequest from a dict"""
         if obj is None:
             return None
 
@@ -85,10 +81,7 @@ class SubmitResult200Response(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "job_id": obj.get("job_id"),
-            "status": obj.get("status"),
-            "result_version": obj.get("result_version"),
-            "result_expires_at": obj.get("result_expires_at")
+            "result_version": obj.get("result_version")
         })
         return _obj
 

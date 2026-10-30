@@ -25,6 +25,7 @@ import java.util.Arrays;
 import java.util.List;
 import org.openapitools.client.model.SourceLocation;
 import org.openapitools.client.model.TableCellsInner;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 

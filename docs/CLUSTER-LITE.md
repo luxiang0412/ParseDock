@@ -97,6 +97,7 @@ attempt 2 on a new worker `succeeded`, stale tokent rejected. End-to-end 50 s
 | Coordinator restart (SIGKILL) | API returns `502 coordinator_unavailable` until it is back (< 5 s measured); committed jobs survive; pending deletions resume (T08) |
 | Worker dies | lease expiry → requeue → retry (T09) |
 | Worker stalls (no heartbeat) | same as death, but after `worker_lease` |
+| Client cancels a running job | heartbeat returns `409 cancelled`; the worker stops, finalises via an idempotent `/fail`, job stays `cancelled` | `TestCancelledAttemptFinalisation`, PR00-03 |
 | Coordinator disk full | uploads `507`, reads/ACK keep working (T14) |
 | Network partition worker↔coordinator | heartbeats fail → worker aborts the parse; lease expires; job retried |
 | Duplicate claim attempt | impossible (single-statement CAS) |
@@ -135,8 +136,18 @@ path with the coordinator storing only manifests, (c) object storage + pre-signe
 * SQLite must stay on local disk. WAL over NFS/SMB is unsupported by SQLite and by us.
 * Workers need only outbound access to the coordinator; engine egress can be blocked
   (see `--sandbox=unshare-net`, which fails closed when namespaces are unavailable).
-* Scratch space is per-attempt and removed on completion; a killed worker leaves a
-  directory that the next start on that host must clean (`runtime/work`).
+* **Worker scratch (PR-00 / F09).** Each attempt gets `<work-dir>/<job>/a<N>`, removed
+  on every exit path, plus three safeguards against `SIGKILL`/partition leftovers:
+  a startup sweep, a periodic scrub (`--work-scrub-interval`, default 10 min) and a
+  maximum age (`--work-max-age`, default 1 h). Attempt directories of tasks this
+  worker is currently running are never removed. Unit-tested by
+  `TestSweepScratch*`; the scrubber logs what it removes.
+* **Identity boundary (PR-00 / F04).** The API gateway strips client-supplied
+  `X-Parsedock-Owner` / `X-Internal-Token` before proxying, the public mux has no
+  `/internal` route (verified by contract test and PR00-10), and the coordinator
+  **refuses to bind a non-loopback internal address without an internal token**
+  (`ValidateInternalBinding`). Key rotation is two keys mapped to the same stable
+  `owner_id`; jobs stay reachable across the rotation (PR00-10).
 
 ## 7. What the evidence does *not* cover
 

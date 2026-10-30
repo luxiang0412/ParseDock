@@ -157,7 +157,9 @@ class Stack:
     coord_args: list[str] = field(default_factory=list)
     worker_args: list[str] = field(default_factory=list)
     api_args: list[str] = field(default_factory=list)
+    api_keys_extra: list[str] = field(default_factory=list)
     lanes: str = "PARSEDOCK"
+    data_dir_override: Path | None = None
 
     data_dir: Path = field(init=False)
     port_coord: int = field(init=False)
@@ -168,7 +170,7 @@ class Stack:
     logs: dict[str, Path] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        self.data_dir = WORK / f"{self.name}-{os.getpid()}"
+        self.data_dir = self.data_dir_override or (WORK / f"{self.name}-{os.getpid()}")
         self.port_coord = free_port()
         self.ports_api = [free_port() for _ in range(self.api_count)]
 
@@ -191,10 +193,10 @@ class Stack:
         self.by_key[unique] = p
         return p
 
-    def start(self) -> "Stack":
-        if self.data_dir.exists():
+    def start(self, wipe: bool = True) -> "Stack":
+        if wipe and self.data_dir.exists():
             shutil.rmtree(self.data_dir)
-        self.data_dir.mkdir(parents=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
         coord = [
             "--role", "coordinator",
             "--internal-listen", f"127.0.0.1:{self.port_coord}",
@@ -211,7 +213,7 @@ class Stack:
                 "--listen", f"127.0.0.1:{port}",
                 "--coordinator-url", f"http://127.0.0.1:{self.port_coord}",
                 "--internal-token", INTERNAL_TOKEN,
-                "--api-keys", f"{API_TOKEN}:{OWNER}",
+                "--api-keys", ",".join([f"{API_TOKEN}:{OWNER}", *self.api_keys_extra]),
                 *self.api_args,
             ])
         for i in range(self.worker_count):
@@ -892,7 +894,7 @@ def build_stacks(profile: str, engines: str) -> dict[str, Stack]:
                                coord_args=["--result-ttl", "120s", "--download-lease", "5s",
                                            "--worker-lease", "5s", "--tombstone-ttl", "20s"],
                                **common)
-        stacks["bigstream"] = Stack("bigstream", worker_env={**mm, "PARSEDOCK_MOCK_BLOB_KB": "8192"},
+        stacks["bigstream"] = Stack("bigstream", worker_env={**mm, "PARSEDOCK_MOCK_BLOB_KB": "32768"},
                                     coord_args=["--download-lease", "5s", "--result-ttl", "120s"],
                                     **common)
         stacks["kill"] = Stack("kill", worker_env={**mm, "PARSEDOCK_MOCK_DELAY_MS": "40000"},

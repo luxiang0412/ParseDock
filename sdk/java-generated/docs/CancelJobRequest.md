@@ -1,14 +1,13 @@
 
 
-# FailTask200Response
+# CancelJobRequest
 
 
 ## Properties
 
 | Name | Type | Description | Notes |
 |------------ | ------------- | ------------- | -------------|
-|**jobId** | **String** |  |  [optional] |
-|**status** | **String** |  |  [optional] |
+|**resultVersion** | **String** | Required when the job is already completed. |  [optional] |
 
 
 

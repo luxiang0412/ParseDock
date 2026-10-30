@@ -5,7 +5,7 @@ All URIs are relative to *http://localhost:8080*
 Method | HTTP request | Description
 ------------- | ------------- | -------------
 [**ack_job**](JobsApi.md#ack_job) | **POST** /v1/jobs/{id}/ack | Accept that the client consumed the result, release storage asynchronously
-[**cancel_job**](JobsApi.md#cancel_job) | **POST** /v1/jobs/{id}/cancel | Stop a queued/running job, or release a completed result
+[**cancel_job**](JobsApi.md#cancel_job) | **POST** /v1/jobs/{id}/cancel | Stop a queued/running job (completed results must be ACKed)
 [**create_job**](JobsApi.md#create_job) | **POST** /v1/jobs | Upload a document and enqueue a parse job
 [**download_result**](JobsApi.md#download_result) | **GET** /v1/jobs/{id}/result | Download a derived view of the committed result
 [**get_job**](JobsApi.md#get_job) | **GET** /v1/jobs/{id} | Job status, retention state and result availability
@@ -107,13 +107,18 @@ Name | Type | Description  | Notes
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **cancel_job**
-> CancelJob202Response cancel_job(id)
+> CancelJob202Response cancel_job(id, idempotency_key=idempotency_key, cancel_job_request=cancel_job_request)
 
-Stop a queued/running job, or release a completed result
+Stop a queued/running job (completed results must be ACKed)
 
-Best effort and idempotent. A running job is marked `cancelled`; the worker
-notices on its next heartbeat and aborts. Input files are cleaned up by the
-normal retention path.
+Best effort and idempotent for `queued`/`running` jobs: the job becomes
+`cancelled`, the worker sees `cancelled` on its next heartbeat, aborts the
+engine and finalises cleanly, and files are removed by the normal
+retention path.
+
+A **completed** result is not cancelled. It is released, which is the same
+operation as ACK and therefore requires `result_version`; without it the
+call returns `409` and nothing is released. Use `POST /ack`.
 
 
 ### Example
@@ -123,6 +128,7 @@ normal retention path.
 ```python
 import parsedock_client
 from parsedock_client.models.cancel_job202_response import CancelJob202Response
+from parsedock_client.models.cancel_job_request import CancelJobRequest
 from parsedock_client.rest import ApiException
 from pprint import pprint
 
@@ -147,10 +153,12 @@ with parsedock_client.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = parsedock_client.JobsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. (optional)
+    cancel_job_request = parsedock_client.CancelJobRequest() # CancelJobRequest |  (optional)
 
     try:
-        # Stop a queued/running job, or release a completed result
-        api_response = api_instance.cancel_job(id)
+        # Stop a queued/running job (completed results must be ACKed)
+        api_response = api_instance.cancel_job(id, idempotency_key=idempotency_key, cancel_job_request=cancel_job_request)
         print("The response of JobsApi->cancel_job:\n")
         pprint(api_response)
     except Exception as e:
@@ -165,6 +173,8 @@ with parsedock_client.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
+ **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] 
+ **cancel_job_request** | [**CancelJobRequest**](CancelJobRequest.md)|  | [optional] 
 
 ### Return type
 
@@ -176,16 +186,17 @@ Name | Type | Description  | Notes
 
 ### HTTP request headers
 
- - **Content-Type**: Not defined
+ - **Content-Type**: application/json
  - **Accept**: application/json
 
 ### HTTP response details
 
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-**202** | Cancellation accepted. |  -  |
+**202** | Cancellation (or release) accepted. |  -  |
 **401** | Missing/invalid token. |  -  |
 **404** | Unknown job, or a job owned by somebody else. |  -  |
+**409** | Job already completed — cancel needs &#x60;result_version&#x60;. |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
@@ -194,10 +205,14 @@ Name | Type | Description  | Notes
 
 Upload a document and enqueue a parse job
 
-`multipart/form-data`. Put scalar fields **before** the `file` part; the
-implementation streams the file as soon as it encounters it (no full-body
-buffering). The same fields may instead be supplied as query parameters,
-which take precedence.
+`multipart/form-data`. Parts may arrive in **any order**: the file is
+streamed to the coordinator's staging area (never buffered in memory)
+while scalar fields are collected, and the job is created once the body
+has been read.
+
+Precedence for `mode`/`device`/`priority`/`ttl_seconds`/`idempotency_key`:
+query parameter → multipart field → default. The `Idempotency-Key`
+header wins over both.
 
 Upload limits are enforced server-side: size (`max_upload_mb`), page count
 (`max_pages`), archive expansion ratio, OOXML structure and PDF markers.
@@ -235,7 +250,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = parsedock_client.JobsApi(api_client)
     file = None # bytes | The document. Required.
-    mode = 'auto' # str | `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision).  (optional) (default to 'auto')
+    mode = 'auto' # str | A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR.  (optional) (default to 'auto')
     device = 'auto' # str | `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device.  (optional) (default to 'auto')
     ttl_seconds = 56 # int | Requested result TTL, capped by the server's maximum. (optional)
     priority = 0 # int | Higher runs first within the same queue. (optional) (default to 0)
@@ -262,7 +277,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **file** | **bytes**| The document. Required. | 
- **mode** | **str**| &#x60;fast&#x60; prefers native text extraction; &#x60;accurate&#x60; requires a structured engine; &#x60;auto&#x60; lets the router choose (and records the decision).  | [optional] [default to &#39;auto&#39;]
+ **mode** | **str**| A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  | [optional] [default to &#39;auto&#39;]
  **device** | **str**| &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  | [optional] [default to &#39;auto&#39;]
  **ttl_seconds** | **int**| Requested result TTL, capped by the server&#39;s maximum. | [optional] 
  **priority** | **int**| Higher runs first within the same queue. | [optional] [default to 0]
@@ -311,9 +326,16 @@ Streams the artifact and holds a **download lease** until the body is
 complete (renewed while streaming). An ACK during the stream does not
 truncate it; the cleaner waits for the lease to end before deleting.
 
-Response headers: `ETag` and `X-Result-Version` carry the manifest hash,
-`Content-Length` is always set, `X-Download-Lease` is the lease id.
-Repeated downloads are allowed while `retention_status=active`.
+Response headers:
+* `ETag` — strong validator **of this representation** (`sha256` of the
+  markdown/text/json bytes). Different formats have different ETags.
+* `X-Result-Version` — the manifest hash, identical for all three formats
+  and the only value `POST /ack` accepts.
+* `Content-Length`, `X-Download-Lease`, `Vary: Accept-Encoding`.
+
+Conditional requests: send `If-None-Match` with a previously received
+`ETag` to get `304 Not Modified` (no body). Repeated downloads are
+allowed while `retention_status=active`.
 
 
 ### Example
@@ -384,7 +406,8 @@ Name | Type | Description  | Notes
 
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-**200** | The requested representation. |  * ETag - \&quot;sha256:…\&quot; — identical to X-Result-Version. <br>  * X-Result-Version - Manifest hash the client must echo in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  |
+**304** | The client&#39;s &#x60;If-None-Match&#x60; matches the current artifact. |  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  |
+**200** | The requested representation. |  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  |
 **401** | Missing/invalid token. |  -  |
 **404** | Unknown job, or a job owned by somebody else. |  -  |
 **409** | The result is not ready yet (job queued/running/failed). |  -  |

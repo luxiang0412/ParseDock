@@ -16,8 +16,8 @@ type Capability struct {
 var BuiltinCapabilities = map[string]Capability{
 	"native": {
 		Name: "native", Device: "cpu", Priority: 100,
-		Formats: []string{"txt", "md", "csv", "tsv"}, Modes: []string{"fast", "auto"},
-		Notes: "pure Go; no models, no subprocess",
+		Formats: []string{"txt", "md", "csv", "tsv"}, Modes: []string{"fast", "accurate"},
+		Notes: "pure Go; no models, no subprocess; the accurate choice for text formats",
 	},
 	"mock": {
 		Name: "mock", Device: "cpu", Priority: 1,

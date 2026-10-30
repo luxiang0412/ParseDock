@@ -10,6 +10,8 @@
 |**jobId** | **String** |  |  [optional] |
 |**status** | **String** |  |  [optional] |
 |**retentionStatus** | **String** |  |  [optional] |
+|**resultVersion** | **String** |  |  [optional] |
+|**processingDeadlineAt** | **OffsetDateTime** |  |  [optional] |
 |**message** | **String** |  |  [optional] |
 
 

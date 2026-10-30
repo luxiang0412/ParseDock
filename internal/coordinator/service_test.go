@@ -5,6 +5,8 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -345,16 +347,121 @@ func TestCancelIsIdempotent(t *testing.T) {
 	s := testService(t, nil)
 	ctx := context.Background()
 	job := create(t, s, "a.txt", []byte("hello world"), CreateParams{})
-	first, err := s.Cancel(ctx, job.ID, "owner-1")
+	first, err := s.Cancel(ctx, job.ID, "owner-1", "")
 	if err != nil || first.ProcessingStatus != jobs.StatusCancelled {
 		t.Fatalf("cancel: %v %+v", err, first)
 	}
-	second, err := s.Cancel(ctx, job.ID, "owner-1")
+	second, err := s.Cancel(ctx, job.ID, "owner-1", "")
 	if err != nil || second.ProcessingStatus != jobs.StatusCancelled {
 		t.Fatalf("repeat cancel: %v %+v", err, second)
 	}
-	if _, err := s.Cancel(ctx, job.ID, "owner-2"); AsError(err).Code != jobs.ErrNotFound {
+	if _, err := s.Cancel(ctx, job.ID, "owner-2", ""); AsError(err).Code != jobs.ErrNotFound {
 		t.Fatalf("cross-owner cancel: %v", err)
+	}
+}
+
+// F03: cancelling a completed job must not bypass the ACK version check.
+func TestCancelCompletedRequiresResultVersion(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello world"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.Cancel(ctx, job.ID, "owner-1", ""); AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("cancel without result_version = %v, want conflict", err)
+	}
+	if _, err := s.Cancel(ctx, job.ID, "owner-1", "sha256:nope"); AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("cancel with stale result_version = %v, want conflict", err)
+	}
+	still, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if still.RetentionStatus != jobs.RetentionActive {
+		t.Fatalf("failed cancel changed retention to %s", still.RetentionStatus)
+	}
+	// With the correct version it releases exactly like ACK.
+	released, err := s.Cancel(ctx, job.ID, "owner-1", done.ResultVersion)
+	if err != nil || released.RetentionStatus != jobs.RetentionReleasePending {
+		t.Fatalf("cancel with version: %v %+v", err, released)
+	}
+}
+
+// F03: a cancelled worker can finalise cleanly (heartbeat says cancelled, fail is
+// an idempotent no-op) instead of being told the lease was lost.
+func TestCancelledAttemptFinalisation(t *testing.T) {
+	s := testService(t, func(c *Config) { c.WorkerLeaseTTL = time.Minute })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello world"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := s.Cancel(ctx, job.ID, "owner-1", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Heartbeat(ctx, job.ID, task.LeaseToken, 10, "x"); AsError(err).Code != jobs.ErrCancelled {
+		t.Fatalf("heartbeat after cancel = %v, want cancelled", err)
+	}
+	got, err := s.Fail(ctx, job.ID, task.LeaseToken, jobs.ErrCancelled, "worker stopped", false)
+	if err != nil {
+		t.Fatalf("fail after cancel should be an idempotent no-op, got %v", err)
+	}
+	if got.ProcessingStatus != jobs.StatusCancelled {
+		t.Fatalf("job status changed to %s", got.ProcessingStatus)
+	}
+}
+
+// F03: ACK and a new download cannot interleave into a deleted-but-leased state.
+func TestDownloadLeaseIsAtomicWithRetention(t *testing.T) {
+	s := testService(t, func(c *Config) { c.DownloadLeaseTTL = time.Minute })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello world"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var wg sync.WaitGroup
+	var leases, gone int
+	var mu sync.Mutex
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if i == 8 {
+				_, _ = s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release")
+				return
+			}
+			_, lease, _, err := s.BeginDownload(ctx, job.ID, "owner-1")
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				leases++
+				s.EndDownload(ctx, lease)
+			} else if AsError(err).Code == jobs.ErrGone {
+				gone++
+			}
+		}(i)
+	}
+	wg.Wait()
+	if leases+gone != 15 {
+		t.Fatalf("leases=%d gone=%d, want 15 accounted for", leases, gone)
+	}
+	// Whatever the interleaving, a released job never keeps a lease behind.
+	var live int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM download_leases WHERE job_id = ? AND expires_at > ?`,
+		job.ID, ts(nowUTC())).Scan(&live)
+	if live != 0 {
+		t.Fatalf("%d download leases survived their own EndDownload", live)
+	}
+	rep := s.RunCleanup(ctx)
+	if rep.Released != 1 {
+		t.Fatalf("cleanup released %d: %+v", rep.Released, rep)
 	}
 }
 
@@ -365,4 +472,118 @@ func stringsReader(s string) *bytes.Reader { return bytes.NewReader([]byte(s)) }
 func dirExists(p string) bool {
 	st, err := os.Stat(p)
 	return err == nil && st.IsDir()
+}
+
+// F02: routing is a policy, not a quality promise. Table-driven so every
+// format × mode × device combination is pinned.
+func TestRouteTable(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Engines = []EngineSpec{
+			{Name: "native", Device: "cpu", Priority: 100, Formats: []string{"txt", "md", "csv", "tsv"}, Modes: []string{"fast", "accurate"}},
+			{Name: "xberg", Device: "cpu", Priority: 50, Formats: []string{"pdf", "docx", "xlsx", "png"}, Modes: []string{"fast", "auto"}},
+			{Name: "docling-rs", Device: "cpu", Priority: 40, Formats: []string{"pdf", "docx", "xlsx", "png"}, Modes: []string{"accurate"}},
+			// Lower priority than the CPU engines on purpose: it must only win
+			// when the caller asks for a GPU (gpu_preferred/gpu_required).
+			{Name: "gpu-engine", Device: "gpu", Priority: 20, Formats: []string{"pdf"}, Modes: []string{"accurate"}},
+		}
+	})
+	ctx := context.Background()
+	cases := []struct {
+		format, mode, device string
+		want                 string // "" means error
+		code                 string
+	}{
+		// text formats: native in every mode, including accurate
+		{"csv", jobs.ModeAuto, jobs.DeviceAuto, "native", ""},
+		{"csv", jobs.ModeFast, jobs.DeviceAuto, "native", ""},
+		{"csv", jobs.ModeAccurate, jobs.DeviceAuto, "native", ""},
+		{"csv", jobs.ModeAccurate, jobs.DeviceCPU, "native", ""},
+		{"md", jobs.ModeAccurate, jobs.DeviceAuto, "native", ""},
+		{"txt", jobs.ModeFast, jobs.DeviceAuto, "native", ""},
+		{"tsv", jobs.ModeAccurate, jobs.DeviceAuto, "native", ""},
+		// pdf: fast->xberg, accurate->docling-rs, auto->highest priority
+		{"pdf", jobs.ModeFast, jobs.DeviceAuto, "xberg", ""},
+		{"pdf", jobs.ModeAccurate, jobs.DeviceAuto, "docling-rs", ""},
+		{"pdf", jobs.ModeAuto, jobs.DeviceAuto, "xberg", ""},
+		// device constraints
+		{"pdf", jobs.ModeFast, jobs.DeviceCPU, "xberg", ""},
+		{"pdf", jobs.ModeAccurate, jobs.DeviceGPUPreferred, "gpu-engine", ""},
+		// mode=fast must not be served by an accurate-only engine, and vice versa
+		{"png", jobs.ModeAccurate, jobs.DeviceAuto, "docling-rs", ""},
+		{"png", jobs.ModeFast, jobs.DeviceAuto, "xberg", ""},
+		// unknown format
+		{"pptx", jobs.ModeFast, jobs.DeviceAuto, "", jobs.ErrUnsupportedType},
+		// gpu_required without a registered GPU worker is an explicit failure
+		{"pdf", jobs.ModeAccurate, jobs.DeviceGPURequired, "", jobs.ErrGPUUnavailable},
+	}
+	for _, c := range cases {
+		t.Run(c.format+"/"+c.mode+"/"+c.device, func(t *testing.T) {
+			engine, reason, err := s.route(ctx, c.format, c.mode, c.device)
+			if c.want == "" {
+				if err == nil || AsError(err).Code != c.code {
+					t.Fatalf("want error %s, got engine=%q err=%v", c.code, engine, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if engine != c.want {
+				t.Fatalf("engine = %q, want %q (reason: %s)", engine, c.want, reason)
+			}
+			if reason == "" {
+				t.Fatal("routing reason must always be recorded")
+			}
+		})
+	}
+}
+
+// F02 regression: GB18030 must decode correctly in auto/fast/accurate.
+func TestTextFormatsUseNativeInEveryMode(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Engines = []EngineSpec{
+			{Name: "native", Device: "cpu", Priority: 100, Formats: []string{"txt", "md", "csv", "tsv"}, Modes: []string{"fast", "accurate"}},
+			{Name: "xberg", Device: "cpu", Priority: 50, Formats: []string{"pdf", "csv", "txt"}, Modes: []string{"fast", "auto"}},
+		}
+	})
+	ctx := context.Background()
+	job, _, err := s.CreateJob(ctx, CreateParams{
+		OwnerID: "owner-1", InputName: "gb.csv", Mode: jobs.ModeAccurate,
+		Body: bytes.NewReader([]byte{0xC7, 0xF8, 0xD3, 0xF2, ',', 'a', '\n'}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if job.EngineHint != "native" {
+		t.Fatalf("engine hint = %q, want native (reason: %s)", job.EngineHint, job.RoutingReason)
+	}
+	if !strings.Contains(job.RoutingReason, "native") {
+		t.Fatalf("routing reason does not explain the choice: %s", job.RoutingReason)
+	}
+}
+
+// F04: a coordinator bound to a non-loopback address must not run without a
+// shared internal token, because it trusts the owner header from its caller.
+func TestValidateInternalBinding(t *testing.T) {
+	cases := []struct {
+		addr, token string
+		dev         bool
+		wantErr     bool
+	}{
+		{"127.0.0.1:8081", "", false, false},
+		{"localhost:8081", "", false, false},
+		{":8081", "", false, true},
+		{"0.0.0.0:8081", "", false, true},
+		{"10.0.0.5:8081", "", false, true},
+		{"0.0.0.0:8081", "secret", false, false},
+		{"0.0.0.0:8081", "", true, false},
+		{"[::1]:8081", "", false, false},
+	}
+	for _, c := range cases {
+		err := ValidateInternalBinding(c.addr, c.token, c.dev)
+		if (err != nil) != c.wantErr {
+			t.Errorf("ValidateInternalBinding(%q, token=%q, dev=%v) = %v, wantErr=%v",
+				c.addr, c.token, c.dev, err, c.wantErr)
+		}
+	}
 }

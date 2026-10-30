@@ -61,17 +61,18 @@ header injected by the gateway. The public port never reaches the coordinator.
 ## 3. Request flow (async)
 
 ```
-POST /v1/jobs (multipart)
+POST /v1/jobs (multipart, parts in any order)
   api:  auth → rate limit → MaxBytesReader → proxy
-  coord: sniff/validate → stream to tmp/*.part → fsync → rename
-         → insert job(queued) → 202 {job_id,status_url}
+  coord: stream file part to tmp/*.part (bounded) while collecting fields
+         → sniff/validate → fsync → rename → insert job(queued) → 202
   worker: POST /internal/tasks/claim   → attempt+lease_token, status=running
           GET /internal/tasks/{id}/input (lease token) → local copy + sha256 check
           engine.Parse(ctx) → IR
           PUT /internal/tasks/{id}/result (lease token) → coordinator renders md/txt/json,
               writes result.* atomically, commits DB with fencing check
 GET /v1/jobs/{id}/result?format=markdown
-  coord: retention must be active → download_leagues row → stream + renew → delete lease
+  coord: one conditional INSERT creates the download lease only while retention is
+         active → stream + renew + ETag/If-None-Match → delete lease
 POST /v1/jobs/{id}/ack {result_version}
   coord: active → release_pending (idempotent), refuses new downloads
 cleaner (every 60 s):
@@ -84,7 +85,7 @@ cleaner (every 60 s):
 | Path | Responsibility |
 | --- | --- |
 | `cmd/docparse` | flags, role wiring, engine registry construction, `--check` capability dump |
-| `internal/api` | public mux, bearer auth, per-owner token bucket, reverse proxy, body caps |
+| `internal/api` | public mux, bearer auth, per-owner token bucket, reverse proxy, body caps, header sanitisation |
 | `internal/coordinator` | SQLite schema/migrations, job service, internal + proxy mux, cleaner |
 | `internal/jobs` | job aggregate, statuses, error codes, ULID ids |
 | `internal/storage` | atomic file store, manifests, disk watermark, magic/zip/PDF pre-flight |
@@ -113,7 +114,8 @@ cleaner (every 60 s):
 | public → api | bearer token → owner; per-owner token bucket; `MaxBytesReader` |
 | api → coordinator | internal shared token; owner header stripped from client input |
 | worker → coordinator | internal token + per-task lease token; input/result authorised by token |
-| upload | extension + magic bytes + OOXML structure + zip-bomb ratio + PDF markers + page limit |
+| upload | extension + magic bytes + OOXML structure + zip-bomb ratio + PDF markers + page limit; multipart parts may arrive in any order without buffering the document |
+| representations | `ETag` validates one representation; `X-Result-Version` (manifest hash) is the only ACK token |
 | filenames | server-generated job ids; original name kept as metadata only (`filepath.Base`, control chars stripped) |
 | engine | subprocess, timeout, private scratch dir, optional netns; no shell interpolation |
 | logs | no document text, no tokens, no result bodies; only ids/counters/error codes |

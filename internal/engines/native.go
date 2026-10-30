@@ -40,7 +40,10 @@ func (n *Native) Device() string { return "cpu" }
 func (n *Native) Formats() []string { return []string{"txt", "md", "csv", "tsv"} }
 
 // Modes implements Engine.
-func (n *Native) Modes() []string { return []string{"fast", "auto"} }
+//
+// Native also serves mode=accurate: for text formats it decodes correctly
+// (GB18030/UTF-16) where the ML engines do not, and it is the fastest option.
+func (n *Native) Modes() []string { return []string{"fast", "accurate"} }
 
 // Probe implements Engine.
 func (n *Native) Probe(context.Context) error { return nil }

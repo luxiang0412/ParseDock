@@ -8,16 +8,27 @@ Method | HTTP request | Description
 
 
 # **job_events**
-> str job_events(id, last_event_id=last_event_id, last_event_id2=last_event_id2)
+> str job_events(id, scope=scope, last_event_id=last_event_id, last_event_id2=last_event_id2)
 
 Server-sent events for one job
 
-`text/event-stream`. A `snapshot` event is sent first, then lifecycle
-events (`created`, `running`, `retry_scheduled`, `completed`, `failed`,
-`release_pending`, `lease_expired`, `released`, `expired`, `cancelled`).
-Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume.
-The stream ends with `stream_end` when the job reaches a terminal state;
-the final answer is always `GET /v1/jobs/{id}`.
+`text/event-stream`. A `snapshot` event is always sent first, then the
+lifecycle events.
+
+Subscription scope:
+* `scope=processing` (default) — events up to the terminal **processing**
+  status (`completed`/`failed`/`cancelled`); the stream then ends with
+  `stream_end`. Retention events are not delivered in this scope.
+* `scope=retention` — continues into the retention lifecycle
+  (`release_pending`, `released`, `expired`) until it is terminal or the
+  stream hits its 10 minute cap (`stream_end` with
+  `reason=max_duration`).
+
+Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. Event
+rows are deleted with the job after the tombstone window (default
+10 min), so a cursor older than the retained window receives a
+`cursor_reset` event followed by a fresh `snapshot` — never a silent gap.
+The final answer is always `GET /v1/jobs/{id}`.
 
 
 ### Example
@@ -50,12 +61,13 @@ with parsedock_client.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = parsedock_client.EventsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
+    scope = 'processing' # str | How far into the lifecycle the stream follows the job. (optional) (default to 'processing')
     last_event_id = 'last_event_id_example' # str |  (optional)
     last_event_id2 = 56 # int |  (optional)
 
     try:
         # Server-sent events for one job
-        api_response = api_instance.job_events(id, last_event_id=last_event_id, last_event_id2=last_event_id2)
+        api_response = api_instance.job_events(id, scope=scope, last_event_id=last_event_id, last_event_id2=last_event_id2)
         print("The response of EventsApi->job_events:\n")
         pprint(api_response)
     except Exception as e:
@@ -70,6 +82,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
+ **scope** | **str**| How far into the lifecycle the stream follows the job. | [optional] [default to &#39;processing&#39;]
  **last_event_id** | **str**|  | [optional] 
  **last_event_id2** | **int**|  | [optional] 
 

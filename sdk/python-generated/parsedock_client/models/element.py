@@ -89,6 +89,11 @@ class Element(BaseModel):
         # override the default output from pydantic by calling `to_dict()` of source_location
         if self.source_location:
             _dict['source_location'] = self.source_location.to_dict()
+        # set to None if confidence (nullable) is None
+        # and model_fields_set contains the field
+        if self.confidence is None and "confidence" in self.model_fields_set:
+            _dict['confidence'] = None
+
         return _dict
 
     @classmethod

@@ -75,6 +75,7 @@ public class EventsApi {
     /**
      * Build call for jobEvents
      * @param id  (required)
+     * @param scope How far into the lifecycle the stream follows the job. (optional, default to processing)
      * @param lastEventID  (optional)
      * @param lastEventId  (optional)
      * @param _callback Callback for upload/download progress
@@ -89,7 +90,7 @@ public class EventsApi {
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
-    public okhttp3.Call jobEventsCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback _callback) throws ApiException {
+    public okhttp3.Call jobEventsCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback _callback) throws ApiException {
         String basePath = null;
         // Operation Servers
         String[] localBasePaths = new String[] {  };
@@ -114,6 +115,10 @@ public class EventsApi {
         Map<String, String> localVarHeaderParams = new HashMap<String, String>();
         Map<String, String> localVarCookieParams = new HashMap<String, String>();
         Map<String, Object> localVarFormParams = new HashMap<String, Object>();
+
+        if (scope != null) {
+            localVarQueryParams.addAll(localVarApiClient.parameterToPair("scope", scope));
+        }
 
         if (lastEventId != null) {
             localVarQueryParams.addAll(localVarApiClient.parameterToPair("last_event_id", lastEventId));
@@ -145,20 +150,21 @@ public class EventsApi {
     }
 
     @SuppressWarnings("rawtypes")
-    private okhttp3.Call jobEventsValidateBeforeCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback _callback) throws ApiException {
+    private okhttp3.Call jobEventsValidateBeforeCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback _callback) throws ApiException {
         // verify the required parameter 'id' is set
         if (id == null) {
             throw new ApiException("Missing the required parameter 'id' when calling jobEvents(Async)");
         }
 
-        return jobEventsCall(id, lastEventID, lastEventId, _callback);
+        return jobEventsCall(id, scope, lastEventID, lastEventId, _callback);
 
     }
 
     /**
      * Server-sent events for one job
-     * &#x60;text/event-stream&#x60;. A &#x60;snapshot&#x60; event is sent first, then lifecycle events (&#x60;created&#x60;, &#x60;running&#x60;, &#x60;retry_scheduled&#x60;, &#x60;completed&#x60;, &#x60;failed&#x60;, &#x60;release_pending&#x60;, &#x60;lease_expired&#x60;, &#x60;released&#x60;, &#x60;expired&#x60;, &#x60;cancelled&#x60;). Reconnect with &#x60;Last-Event-ID&#x60; (or &#x60;?last_event_id&#x3D;&#x60;) to resume. The stream ends with &#x60;stream_end&#x60; when the job reaches a terminal state; the final answer is always &#x60;GET /v1/jobs/{id}&#x60;. 
+     * &#x60;text/event-stream&#x60;. A &#x60;snapshot&#x60; event is always sent first, then the lifecycle events.  Subscription scope: * &#x60;scope&#x3D;processing&#x60; (default) — events up to the terminal **processing**   status (&#x60;completed&#x60;/&#x60;failed&#x60;/&#x60;cancelled&#x60;); the stream then ends with   &#x60;stream_end&#x60;. Retention events are not delivered in this scope. * &#x60;scope&#x3D;retention&#x60; — continues into the retention lifecycle   (&#x60;release_pending&#x60;, &#x60;released&#x60;, &#x60;expired&#x60;) until it is terminal or the   stream hits its 10 minute cap (&#x60;stream_end&#x60; with   &#x60;reason&#x3D;max_duration&#x60;).  Reconnect with &#x60;Last-Event-ID&#x60; (or &#x60;?last_event_id&#x3D;&#x60;) to resume. Event rows are deleted with the job after the tombstone window (default 10 min), so a cursor older than the retained window receives a &#x60;cursor_reset&#x60; event followed by a fresh &#x60;snapshot&#x60; — never a silent gap. The final answer is always &#x60;GET /v1/jobs/{id}&#x60;. 
      * @param id  (required)
+     * @param scope How far into the lifecycle the stream follows the job. (optional, default to processing)
      * @param lastEventID  (optional)
      * @param lastEventId  (optional)
      * @return String
@@ -172,15 +178,16 @@ public class EventsApi {
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
-    public String jobEvents(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId) throws ApiException {
-        ApiResponse<String> localVarResp = jobEventsWithHttpInfo(id, lastEventID, lastEventId);
+    public String jobEvents(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId) throws ApiException {
+        ApiResponse<String> localVarResp = jobEventsWithHttpInfo(id, scope, lastEventID, lastEventId);
         return localVarResp.getData();
     }
 
     /**
      * Server-sent events for one job
-     * &#x60;text/event-stream&#x60;. A &#x60;snapshot&#x60; event is sent first, then lifecycle events (&#x60;created&#x60;, &#x60;running&#x60;, &#x60;retry_scheduled&#x60;, &#x60;completed&#x60;, &#x60;failed&#x60;, &#x60;release_pending&#x60;, &#x60;lease_expired&#x60;, &#x60;released&#x60;, &#x60;expired&#x60;, &#x60;cancelled&#x60;). Reconnect with &#x60;Last-Event-ID&#x60; (or &#x60;?last_event_id&#x3D;&#x60;) to resume. The stream ends with &#x60;stream_end&#x60; when the job reaches a terminal state; the final answer is always &#x60;GET /v1/jobs/{id}&#x60;. 
+     * &#x60;text/event-stream&#x60;. A &#x60;snapshot&#x60; event is always sent first, then the lifecycle events.  Subscription scope: * &#x60;scope&#x3D;processing&#x60; (default) — events up to the terminal **processing**   status (&#x60;completed&#x60;/&#x60;failed&#x60;/&#x60;cancelled&#x60;); the stream then ends with   &#x60;stream_end&#x60;. Retention events are not delivered in this scope. * &#x60;scope&#x3D;retention&#x60; — continues into the retention lifecycle   (&#x60;release_pending&#x60;, &#x60;released&#x60;, &#x60;expired&#x60;) until it is terminal or the   stream hits its 10 minute cap (&#x60;stream_end&#x60; with   &#x60;reason&#x3D;max_duration&#x60;).  Reconnect with &#x60;Last-Event-ID&#x60; (or &#x60;?last_event_id&#x3D;&#x60;) to resume. Event rows are deleted with the job after the tombstone window (default 10 min), so a cursor older than the retained window receives a &#x60;cursor_reset&#x60; event followed by a fresh &#x60;snapshot&#x60; — never a silent gap. The final answer is always &#x60;GET /v1/jobs/{id}&#x60;. 
      * @param id  (required)
+     * @param scope How far into the lifecycle the stream follows the job. (optional, default to processing)
      * @param lastEventID  (optional)
      * @param lastEventId  (optional)
      * @return ApiResponse&lt;String&gt;
@@ -194,16 +201,17 @@ public class EventsApi {
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
-    public ApiResponse<String> jobEventsWithHttpInfo(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId) throws ApiException {
-        okhttp3.Call localVarCall = jobEventsValidateBeforeCall(id, lastEventID, lastEventId, null);
+    public ApiResponse<String> jobEventsWithHttpInfo(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId) throws ApiException {
+        okhttp3.Call localVarCall = jobEventsValidateBeforeCall(id, scope, lastEventID, lastEventId, null);
         Type localVarReturnType = new TypeToken<String>(){}.getType();
         return localVarApiClient.execute(localVarCall, localVarReturnType);
     }
 
     /**
      * Server-sent events for one job (asynchronously)
-     * &#x60;text/event-stream&#x60;. A &#x60;snapshot&#x60; event is sent first, then lifecycle events (&#x60;created&#x60;, &#x60;running&#x60;, &#x60;retry_scheduled&#x60;, &#x60;completed&#x60;, &#x60;failed&#x60;, &#x60;release_pending&#x60;, &#x60;lease_expired&#x60;, &#x60;released&#x60;, &#x60;expired&#x60;, &#x60;cancelled&#x60;). Reconnect with &#x60;Last-Event-ID&#x60; (or &#x60;?last_event_id&#x3D;&#x60;) to resume. The stream ends with &#x60;stream_end&#x60; when the job reaches a terminal state; the final answer is always &#x60;GET /v1/jobs/{id}&#x60;. 
+     * &#x60;text/event-stream&#x60;. A &#x60;snapshot&#x60; event is always sent first, then the lifecycle events.  Subscription scope: * &#x60;scope&#x3D;processing&#x60; (default) — events up to the terminal **processing**   status (&#x60;completed&#x60;/&#x60;failed&#x60;/&#x60;cancelled&#x60;); the stream then ends with   &#x60;stream_end&#x60;. Retention events are not delivered in this scope. * &#x60;scope&#x3D;retention&#x60; — continues into the retention lifecycle   (&#x60;release_pending&#x60;, &#x60;released&#x60;, &#x60;expired&#x60;) until it is terminal or the   stream hits its 10 minute cap (&#x60;stream_end&#x60; with   &#x60;reason&#x3D;max_duration&#x60;).  Reconnect with &#x60;Last-Event-ID&#x60; (or &#x60;?last_event_id&#x3D;&#x60;) to resume. Event rows are deleted with the job after the tombstone window (default 10 min), so a cursor older than the retained window receives a &#x60;cursor_reset&#x60; event followed by a fresh &#x60;snapshot&#x60; — never a silent gap. The final answer is always &#x60;GET /v1/jobs/{id}&#x60;. 
      * @param id  (required)
+     * @param scope How far into the lifecycle the stream follows the job. (optional, default to processing)
      * @param lastEventID  (optional)
      * @param lastEventId  (optional)
      * @param _callback The callback to be executed when the API call finishes
@@ -218,9 +226,9 @@ public class EventsApi {
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
-    public okhttp3.Call jobEventsAsync(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback<String> _callback) throws ApiException {
+    public okhttp3.Call jobEventsAsync(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback<String> _callback) throws ApiException {
 
-        okhttp3.Call localVarCall = jobEventsValidateBeforeCall(id, lastEventID, lastEventId, _callback);
+        okhttp3.Call localVarCall = jobEventsValidateBeforeCall(id, scope, lastEventID, lastEventId, _callback);
         Type localVarReturnType = new TypeToken<String>(){}.getType();
         localVarApiClient.executeAsync(localVarCall, localVarReturnType, _callback);
         return localVarCall;

@@ -210,7 +210,13 @@ class ParseDockClient:
         The version must be passed to :meth:`ack`; it identifies exactly these bytes.
         """
         resp = self._request("GET", f"/v1/jobs/{job_id}/result?format={fmt}", timeout=600)
-        version = resp.headers.get("X-Result-Version") or resp.headers.get("ETag", "").strip('"')
+        # Only X-Result-Version identifies the result for ACK. The ETag validates
+        # this representation's bytes and differs per format, so it must never be
+        # used as the release token (F05).
+        version = resp.headers.get("X-Result-Version", "")
+        if not version:
+            raise ParseDockError(500, "missing_result_version",
+                                 "server did not return X-Result-Version; cannot ACK safely")
         return resp.body, version
 
     def download_and_ack(
@@ -242,8 +248,15 @@ class ParseDockClient:
         return json.loads(self._request("POST", f"/v1/jobs/{job_id}/ack", body, headers,
                                         retry=True).body)
 
-    def cancel(self, job_id: str) -> dict[str, Any]:
-        return json.loads(self._request("POST", f"/v1/jobs/{job_id}/cancel", b"",
+    def cancel(self, job_id: str, result_version: str | None = None) -> dict[str, Any]:
+        """Cancel a queued/running job.
+
+        A completed job cannot be cancelled — it can only be released, which needs
+        the manifest version exactly like :meth:`ack`. Pass ``result_version`` for
+        that case (or call :meth:`ack`); without it the server returns ``409``.
+        """
+        body = json.dumps({"result_version": result_version}).encode() if result_version else b""
+        return json.loads(self._request("POST", f"/v1/jobs/{job_id}/cancel", body,
                                         {"Content-Type": "application/json"}).body)
 
     def parse_sync(

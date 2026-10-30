@@ -20,7 +20,6 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
-import java.time.OffsetDateTime;
 import java.util.Arrays;
 
 import com.google.gson.Gson;
@@ -48,58 +47,34 @@ import java.util.Set;
 import org.openapitools.client.JSON;
 
 /**
- * TaskHeartbeat200Response
+ * CancelJobRequest
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T08:08:44.774269377Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
-public class TaskHeartbeat200Response {
-  public static final String SERIALIZED_NAME_LEASE_UNTIL = "lease_until";
-  @SerializedName(SERIALIZED_NAME_LEASE_UNTIL)
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T09:08:43.398624024Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
+public class CancelJobRequest {
+  public static final String SERIALIZED_NAME_RESULT_VERSION = "result_version";
+  @SerializedName(SERIALIZED_NAME_RESULT_VERSION)
   @javax.annotation.Nullable
-  private OffsetDateTime leaseUntil;
+  private String resultVersion;
 
-  public static final String SERIALIZED_NAME_RENEW_EVERY = "renew_every";
-  @SerializedName(SERIALIZED_NAME_RENEW_EVERY)
-  @javax.annotation.Nullable
-  private String renewEvery;
-
-  public TaskHeartbeat200Response() {
+  public CancelJobRequest() {
   }
 
-  public TaskHeartbeat200Response leaseUntil(@javax.annotation.Nullable OffsetDateTime leaseUntil) {
-    this.leaseUntil = leaseUntil;
+  public CancelJobRequest resultVersion(@javax.annotation.Nullable String resultVersion) {
+    this.resultVersion = resultVersion;
     return this;
   }
 
   /**
-   * Get leaseUntil
-   * @return leaseUntil
+   * Required when the job is already completed.
+   * @return resultVersion
    */
   @javax.annotation.Nullable
-  public OffsetDateTime getLeaseUntil() {
-    return leaseUntil;
+  public String getResultVersion() {
+    return resultVersion;
   }
 
-  public void setLeaseUntil(@javax.annotation.Nullable OffsetDateTime leaseUntil) {
-    this.leaseUntil = leaseUntil;
-  }
-
-
-  public TaskHeartbeat200Response renewEvery(@javax.annotation.Nullable String renewEvery) {
-    this.renewEvery = renewEvery;
-    return this;
-  }
-
-  /**
-   * Get renewEvery
-   * @return renewEvery
-   */
-  @javax.annotation.Nullable
-  public String getRenewEvery() {
-    return renewEvery;
-  }
-
-  public void setRenewEvery(@javax.annotation.Nullable String renewEvery) {
-    this.renewEvery = renewEvery;
+  public void setResultVersion(@javax.annotation.Nullable String resultVersion) {
+    this.resultVersion = resultVersion;
   }
 
 
@@ -112,22 +87,20 @@ public class TaskHeartbeat200Response {
     if (o == null || getClass() != o.getClass()) {
       return false;
     }
-    TaskHeartbeat200Response taskHeartbeat200Response = (TaskHeartbeat200Response) o;
-    return Objects.equals(this.leaseUntil, taskHeartbeat200Response.leaseUntil) &&
-        Objects.equals(this.renewEvery, taskHeartbeat200Response.renewEvery);
+    CancelJobRequest cancelJobRequest = (CancelJobRequest) o;
+    return Objects.equals(this.resultVersion, cancelJobRequest.resultVersion);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(leaseUntil, renewEvery);
+    return Objects.hash(resultVersion);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
-    sb.append("class TaskHeartbeat200Response {\n");
-    sb.append("    leaseUntil: ").append(toIndentedString(leaseUntil)).append("\n");
-    sb.append("    renewEvery: ").append(toIndentedString(renewEvery)).append("\n");
+    sb.append("class CancelJobRequest {\n");
+    sb.append("    resultVersion: ").append(toIndentedString(resultVersion)).append("\n");
     sb.append("}");
     return sb.toString();
   }
@@ -146,7 +119,7 @@ public class TaskHeartbeat200Response {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("lease_until", "renew_every"));
+    openapiFields = new HashSet<String>(Arrays.asList("result_version"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(0);
@@ -156,25 +129,25 @@ public class TaskHeartbeat200Response {
    * Validates the JSON Element and throws an exception if issues found
    *
    * @param jsonElement JSON Element
-   * @throws IOException if the JSON Element is invalid with respect to TaskHeartbeat200Response
+   * @throws IOException if the JSON Element is invalid with respect to CancelJobRequest
    */
   public static void validateJsonElement(JsonElement jsonElement) throws IOException {
       if (jsonElement == null) {
-        if (!TaskHeartbeat200Response.openapiRequiredFields.isEmpty()) { // has required fields but JSON element is null
-          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The required field(s) %s in TaskHeartbeat200Response is not found in the empty JSON string", TaskHeartbeat200Response.openapiRequiredFields.toString()));
+        if (!CancelJobRequest.openapiRequiredFields.isEmpty()) { // has required fields but JSON element is null
+          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The required field(s) %s in CancelJobRequest is not found in the empty JSON string", CancelJobRequest.openapiRequiredFields.toString()));
         }
       }
 
       Set<Map.Entry<String, JsonElement>> entries = jsonElement.getAsJsonObject().entrySet();
       // check to see if the JSON string contains additional fields
       for (Map.Entry<String, JsonElement> entry : entries) {
-        if (!TaskHeartbeat200Response.openapiFields.contains(entry.getKey())) {
-          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The field `%s` in the JSON string is not defined in the `TaskHeartbeat200Response` properties. JSON: %s", entry.getKey(), jsonElement.toString()));
+        if (!CancelJobRequest.openapiFields.contains(entry.getKey())) {
+          throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "The field `%s` in the JSON string is not defined in the `CancelJobRequest` properties. JSON: %s", entry.getKey(), jsonElement.toString()));
         }
       }
         JsonObject jsonObj = jsonElement.getAsJsonObject();
-      if ((jsonObj.get("renew_every") != null && !jsonObj.get("renew_every").isJsonNull()) && !jsonObj.get("renew_every").isJsonPrimitive()) {
-        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `renew_every` to be a primitive type in the JSON string but got `%s`", jsonObj.get("renew_every").toString()));
+      if ((jsonObj.get("result_version") != null && !jsonObj.get("result_version").isJsonNull()) && !jsonObj.get("result_version").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `result_version` to be a primitive type in the JSON string but got `%s`", jsonObj.get("result_version").toString()));
       }
   }
 
@@ -182,22 +155,22 @@ public class TaskHeartbeat200Response {
     @SuppressWarnings("unchecked")
     @Override
     public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
-       if (!TaskHeartbeat200Response.class.isAssignableFrom(type.getRawType())) {
-         return null; // this class only serializes 'TaskHeartbeat200Response' and its subtypes
+       if (!CancelJobRequest.class.isAssignableFrom(type.getRawType())) {
+         return null; // this class only serializes 'CancelJobRequest' and its subtypes
        }
        final TypeAdapter<JsonElement> elementAdapter = gson.getAdapter(JsonElement.class);
-       final TypeAdapter<TaskHeartbeat200Response> thisAdapter
-                        = gson.getDelegateAdapter(this, TypeToken.get(TaskHeartbeat200Response.class));
+       final TypeAdapter<CancelJobRequest> thisAdapter
+                        = gson.getDelegateAdapter(this, TypeToken.get(CancelJobRequest.class));
 
-       return (TypeAdapter<T>) new TypeAdapter<TaskHeartbeat200Response>() {
+       return (TypeAdapter<T>) new TypeAdapter<CancelJobRequest>() {
            @Override
-           public void write(JsonWriter out, TaskHeartbeat200Response value) throws IOException {
+           public void write(JsonWriter out, CancelJobRequest value) throws IOException {
              JsonObject obj = thisAdapter.toJsonTree(value).getAsJsonObject();
              elementAdapter.write(out, obj);
            }
 
            @Override
-           public TaskHeartbeat200Response read(JsonReader in) throws IOException {
+           public CancelJobRequest read(JsonReader in) throws IOException {
              JsonElement jsonElement = elementAdapter.read(in);
              validateJsonElement(jsonElement);
              return thisAdapter.fromJsonTree(jsonElement);
@@ -208,18 +181,18 @@ public class TaskHeartbeat200Response {
   }
 
   /**
-   * Create an instance of TaskHeartbeat200Response given an JSON string
+   * Create an instance of CancelJobRequest given an JSON string
    *
    * @param jsonString JSON string
-   * @return An instance of TaskHeartbeat200Response
-   * @throws IOException if the JSON string is invalid with respect to TaskHeartbeat200Response
+   * @return An instance of CancelJobRequest
+   * @throws IOException if the JSON string is invalid with respect to CancelJobRequest
    */
-  public static TaskHeartbeat200Response fromJson(String jsonString) throws IOException {
-    return JSON.getGson().fromJson(jsonString, TaskHeartbeat200Response.class);
+  public static CancelJobRequest fromJson(String jsonString) throws IOException {
+    return JSON.getGson().fromJson(jsonString, CancelJobRequest.class);
   }
 
   /**
-   * Convert an instance of TaskHeartbeat200Response to an JSON string
+   * Convert an instance of CancelJobRequest to an JSON string
    *
    * @return JSON string
    */

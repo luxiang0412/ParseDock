@@ -22,7 +22,8 @@
 |**completedAt** | **OffsetDateTime** |  |  [optional] |
 |**updatedAt** | **OffsetDateTime** |  |  [optional] |
 |**resultExpiresAt** | **OffsetDateTime** | TTL measured from result commit, not upload. |  [optional] |
-|**maxLifetimeAt** | **OffsetDateTime** |  |  [optional] |
+|**processingDeadlineAt** | **OffsetDateTime** | Deadline for **queued/running** work only (created + max_job_lifetime). It does not bound a completed result: retention is governed by &#x60;result_expires_at&#x60;.  |  [optional] |
+|**maxLifetimeAt** | **OffsetDateTime** | Deprecated alias of &#x60;processing_deadline_at&#x60; (same value). |  [optional] |
 |**attempt** | **Integer** |  |  [optional] |
 |**requestedMode** | **String** |  |  [optional] |
 |**requestedDevice** | **String** |  |  [optional] |
@@ -30,7 +31,7 @@
 |**routingReason** | **String** | Human-readable routing decision |  [optional] |
 |**progressPercent** | **Integer** |  |  [optional] |
 |**progressStage** | **String** |  |  [optional] |
-|**resultVersion** | **String** | Manifest hash; echo it in the ACK. |  [optional] |
+|**resultVersion** | **String** | Manifest hash; echo it in the ACK (&#x60;X-Result-Version&#x60;). |  [optional] |
 |**resultUrls** | [**JobResultUrls**](JobResultUrls.md) |  |  [optional] |
 |**warningCount** | **Integer** |  |  [optional] |
 |**errorCode** | **String** |  |  [optional] |

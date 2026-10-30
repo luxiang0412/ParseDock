@@ -17,6 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, StrictStr
 from typing import Any, ClassVar, Dict, List, Optional
 from typing import Optional, Set
@@ -30,8 +31,10 @@ class CancelJob202Response(BaseModel):
     job_id: Optional[StrictStr] = None
     status: Optional[StrictStr] = None
     retention_status: Optional[StrictStr] = None
+    result_version: Optional[StrictStr] = None
+    processing_deadline_at: Optional[datetime] = None
     message: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["job_id", "status", "retention_status", "message"]
+    __properties: ClassVar[List[str]] = ["job_id", "status", "retention_status", "result_version", "processing_deadline_at", "message"]
 
     model_config = ConfigDict(
         validate_by_name=True,
@@ -72,6 +75,11 @@ class CancelJob202Response(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
+        # set to None if result_version (nullable) is None
+        # and model_fields_set contains the field
+        if self.result_version is None and "result_version" in self.model_fields_set:
+            _dict['result_version'] = None
+
         return _dict
 
     @classmethod
@@ -87,6 +95,8 @@ class CancelJob202Response(BaseModel):
             "job_id": obj.get("job_id"),
             "status": obj.get("status"),
             "retention_status": obj.get("retention_status"),
+            "result_version": obj.get("result_version"),
+            "processing_deadline_at": obj.get("processing_deadline_at"),
             "message": obj.get("message")
         })
         return _obj

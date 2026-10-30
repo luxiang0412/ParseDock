@@ -41,6 +41,7 @@ class EventsApi:
     def job_events(
         self,
         id: Annotated[str, Field(strict=True)],
+        scope: Annotated[Optional[StrictStr], Field(description="How far into the lifecycle the stream follows the job.")] = None,
         last_event_id: Optional[StrictStr] = None,
         last_event_id2: Optional[StrictInt] = None,
         _request_timeout: Union[
@@ -58,10 +59,12 @@ class EventsApi:
     ) -> str:
         """Server-sent events for one job
 
-        `text/event-stream`. A `snapshot` event is sent first, then lifecycle events (`created`, `running`, `retry_scheduled`, `completed`, `failed`, `release_pending`, `lease_expired`, `released`, `expired`, `cancelled`). Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. The stream ends with `stream_end` when the job reaches a terminal state; the final answer is always `GET /v1/jobs/{id}`. 
+        `text/event-stream`. A `snapshot` event is always sent first, then the lifecycle events.  Subscription scope: * `scope=processing` (default) — events up to the terminal **processing**   status (`completed`/`failed`/`cancelled`); the stream then ends with   `stream_end`. Retention events are not delivered in this scope. * `scope=retention` — continues into the retention lifecycle   (`release_pending`, `released`, `expired`) until it is terminal or the   stream hits its 10 minute cap (`stream_end` with   `reason=max_duration`).  Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. Event rows are deleted with the job after the tombstone window (default 10 min), so a cursor older than the retained window receives a `cursor_reset` event followed by a fresh `snapshot` — never a silent gap. The final answer is always `GET /v1/jobs/{id}`. 
 
         :param id: (required)
         :type id: str
+        :param scope: How far into the lifecycle the stream follows the job.
+        :type scope: str
         :param last_event_id:
         :type last_event_id: str
         :param last_event_id2:
@@ -90,6 +93,7 @@ class EventsApi:
 
         _param = self._job_events_serialize(
             id=id,
+            scope=scope,
             last_event_id=last_event_id,
             last_event_id2=last_event_id2,
             _request_auth=_request_auth,
@@ -118,6 +122,7 @@ class EventsApi:
     def job_events_with_http_info(
         self,
         id: Annotated[str, Field(strict=True)],
+        scope: Annotated[Optional[StrictStr], Field(description="How far into the lifecycle the stream follows the job.")] = None,
         last_event_id: Optional[StrictStr] = None,
         last_event_id2: Optional[StrictInt] = None,
         _request_timeout: Union[
@@ -135,10 +140,12 @@ class EventsApi:
     ) -> ApiResponse[str]:
         """Server-sent events for one job
 
-        `text/event-stream`. A `snapshot` event is sent first, then lifecycle events (`created`, `running`, `retry_scheduled`, `completed`, `failed`, `release_pending`, `lease_expired`, `released`, `expired`, `cancelled`). Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. The stream ends with `stream_end` when the job reaches a terminal state; the final answer is always `GET /v1/jobs/{id}`. 
+        `text/event-stream`. A `snapshot` event is always sent first, then the lifecycle events.  Subscription scope: * `scope=processing` (default) — events up to the terminal **processing**   status (`completed`/`failed`/`cancelled`); the stream then ends with   `stream_end`. Retention events are not delivered in this scope. * `scope=retention` — continues into the retention lifecycle   (`release_pending`, `released`, `expired`) until it is terminal or the   stream hits its 10 minute cap (`stream_end` with   `reason=max_duration`).  Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. Event rows are deleted with the job after the tombstone window (default 10 min), so a cursor older than the retained window receives a `cursor_reset` event followed by a fresh `snapshot` — never a silent gap. The final answer is always `GET /v1/jobs/{id}`. 
 
         :param id: (required)
         :type id: str
+        :param scope: How far into the lifecycle the stream follows the job.
+        :type scope: str
         :param last_event_id:
         :type last_event_id: str
         :param last_event_id2:
@@ -167,6 +174,7 @@ class EventsApi:
 
         _param = self._job_events_serialize(
             id=id,
+            scope=scope,
             last_event_id=last_event_id,
             last_event_id2=last_event_id2,
             _request_auth=_request_auth,
@@ -195,6 +203,7 @@ class EventsApi:
     def job_events_without_preload_content(
         self,
         id: Annotated[str, Field(strict=True)],
+        scope: Annotated[Optional[StrictStr], Field(description="How far into the lifecycle the stream follows the job.")] = None,
         last_event_id: Optional[StrictStr] = None,
         last_event_id2: Optional[StrictInt] = None,
         _request_timeout: Union[
@@ -212,10 +221,12 @@ class EventsApi:
     ) -> RESTResponseType:
         """Server-sent events for one job
 
-        `text/event-stream`. A `snapshot` event is sent first, then lifecycle events (`created`, `running`, `retry_scheduled`, `completed`, `failed`, `release_pending`, `lease_expired`, `released`, `expired`, `cancelled`). Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. The stream ends with `stream_end` when the job reaches a terminal state; the final answer is always `GET /v1/jobs/{id}`. 
+        `text/event-stream`. A `snapshot` event is always sent first, then the lifecycle events.  Subscription scope: * `scope=processing` (default) — events up to the terminal **processing**   status (`completed`/`failed`/`cancelled`); the stream then ends with   `stream_end`. Retention events are not delivered in this scope. * `scope=retention` — continues into the retention lifecycle   (`release_pending`, `released`, `expired`) until it is terminal or the   stream hits its 10 minute cap (`stream_end` with   `reason=max_duration`).  Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. Event rows are deleted with the job after the tombstone window (default 10 min), so a cursor older than the retained window receives a `cursor_reset` event followed by a fresh `snapshot` — never a silent gap. The final answer is always `GET /v1/jobs/{id}`. 
 
         :param id: (required)
         :type id: str
+        :param scope: How far into the lifecycle the stream follows the job.
+        :type scope: str
         :param last_event_id:
         :type last_event_id: str
         :param last_event_id2:
@@ -244,6 +255,7 @@ class EventsApi:
 
         _param = self._job_events_serialize(
             id=id,
+            scope=scope,
             last_event_id=last_event_id,
             last_event_id2=last_event_id2,
             _request_auth=_request_auth,
@@ -267,6 +279,7 @@ class EventsApi:
     def _job_events_serialize(
         self,
         id,
+        scope,
         last_event_id,
         last_event_id2,
         _request_auth,
@@ -293,6 +306,10 @@ class EventsApi:
         if id is not None:
             _path_params['id'] = id
         # process the query parameters
+        if scope is not None:
+            
+            _query_params.append(('scope', scope))
+            
         if last_event_id2 is not None:
             
             _query_params.append(('last_event_id', last_event_id2))

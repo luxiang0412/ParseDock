@@ -19,7 +19,6 @@ __version__ = "1.0.0"
 # Define package exports
 __all__ = [
     "EventsApi",
-    "InternalApi",
     "JobsApi",
     "ProbesApi",
     "SyncApi",
@@ -35,8 +34,7 @@ __all__ = [
     "AckJob202Response",
     "AckJobRequest",
     "CancelJob202Response",
-    "ClaimTaskRequest",
-    "ClaimedTask",
+    "CancelJobRequest",
     "DocumentIR",
     "DocumentIRMetrics",
     "DocumentIRRouting",
@@ -45,27 +43,18 @@ __all__ = [
     "Element",
     "Error",
     "ErrorError",
-    "FailTask200Response",
-    "FailTaskRequest",
     "Healthz200Response",
     "Job",
     "JobResultUrls",
     "Readiness",
-    "RegisterWorker200Response",
     "SourceLocation",
     "SourceLocationBbox",
-    "SubmitResult200Response",
-    "SubmitResultRequest",
     "Table",
     "TableCellsInner",
-    "TaskHeartbeat200Response",
-    "TaskHeartbeatRequest",
-    "WorkerRegistration",
 ]
 
 # import apis into sdk package
 from parsedock_client.api.events_api import EventsApi as EventsApi
-from parsedock_client.api.internal_api import InternalApi as InternalApi
 from parsedock_client.api.jobs_api import JobsApi as JobsApi
 from parsedock_client.api.probes_api import ProbesApi as ProbesApi
 from parsedock_client.api.sync_api import SyncApi as SyncApi
@@ -85,8 +74,7 @@ from parsedock_client.exceptions import ApiException as ApiException
 from parsedock_client.models.ack_job202_response import AckJob202Response as AckJob202Response
 from parsedock_client.models.ack_job_request import AckJobRequest as AckJobRequest
 from parsedock_client.models.cancel_job202_response import CancelJob202Response as CancelJob202Response
-from parsedock_client.models.claim_task_request import ClaimTaskRequest as ClaimTaskRequest
-from parsedock_client.models.claimed_task import ClaimedTask as ClaimedTask
+from parsedock_client.models.cancel_job_request import CancelJobRequest as CancelJobRequest
 from parsedock_client.models.document_ir import DocumentIR as DocumentIR
 from parsedock_client.models.document_ir_metrics import DocumentIRMetrics as DocumentIRMetrics
 from parsedock_client.models.document_ir_routing import DocumentIRRouting as DocumentIRRouting
@@ -95,20 +83,12 @@ from parsedock_client.models.document_ir_warnings_inner import DocumentIRWarning
 from parsedock_client.models.element import Element as Element
 from parsedock_client.models.error import Error as Error
 from parsedock_client.models.error_error import ErrorError as ErrorError
-from parsedock_client.models.fail_task200_response import FailTask200Response as FailTask200Response
-from parsedock_client.models.fail_task_request import FailTaskRequest as FailTaskRequest
 from parsedock_client.models.healthz200_response import Healthz200Response as Healthz200Response
 from parsedock_client.models.job import Job as Job
 from parsedock_client.models.job_result_urls import JobResultUrls as JobResultUrls
 from parsedock_client.models.readiness import Readiness as Readiness
-from parsedock_client.models.register_worker200_response import RegisterWorker200Response as RegisterWorker200Response
 from parsedock_client.models.source_location import SourceLocation as SourceLocation
 from parsedock_client.models.source_location_bbox import SourceLocationBbox as SourceLocationBbox
-from parsedock_client.models.submit_result200_response import SubmitResult200Response as SubmitResult200Response
-from parsedock_client.models.submit_result_request import SubmitResultRequest as SubmitResultRequest
 from parsedock_client.models.table import Table as Table
 from parsedock_client.models.table_cells_inner import TableCellsInner as TableCellsInner
-from parsedock_client.models.task_heartbeat200_response import TaskHeartbeat200Response as TaskHeartbeat200Response
-from parsedock_client.models.task_heartbeat_request import TaskHeartbeatRequest as TaskHeartbeatRequest
-from parsedock_client.models.worker_registration import WorkerRegistration as WorkerRegistration
 

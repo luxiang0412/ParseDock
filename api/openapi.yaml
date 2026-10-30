@@ -36,8 +36,6 @@ tags:
     description: Server-sent events
   - name: probes
     description: Liveness/readiness
-  - name: internal
-    description: Worker protocol (private network only, never exposed publicly)
 
 security:
   - bearerAuth: []
@@ -49,10 +47,14 @@ paths:
       operationId: createJob
       summary: Upload a document and enqueue a parse job
       description: |
-        `multipart/form-data`. Put scalar fields **before** the `file` part; the
-        implementation streams the file as soon as it encounters it (no full-body
-        buffering). The same fields may instead be supplied as query parameters,
-        which take precedence.
+        `multipart/form-data`. Parts may arrive in **any order**: the file is
+        streamed to the coordinator's staging area (never buffered in memory)
+        while scalar fields are collected, and the job is created once the body
+        has been read.
+
+        Precedence for `mode`/`device`/`priority`/`ttl_seconds`/`idempotency_key`:
+        query parameter → multipart field → default. The `Idempotency-Key`
+        header wins over both.
 
         Upload limits are enforced server-side: size (`max_upload_mb`), page count
         (`max_pages`), archive expansion ratio, OOXML structure and PDF markers.
@@ -163,9 +165,16 @@ paths:
         complete (renewed while streaming). An ACK during the stream does not
         truncate it; the cleaner waits for the lease to end before deleting.
 
-        Response headers: `ETag` and `X-Result-Version` carry the manifest hash,
-        `Content-Length` is always set, `X-Download-Lease` is the lease id.
-        Repeated downloads are allowed while `retention_status=active`.
+        Response headers:
+        * `ETag` — strong validator **of this representation** (`sha256` of the
+          markdown/text/json bytes). Different formats have different ETags.
+        * `X-Result-Version` — the manifest hash, identical for all three formats
+          and the only value `POST /ack` accepts.
+        * `Content-Length`, `X-Download-Lease`, `Vary: Accept-Encoding`.
+
+        Conditional requests: send `If-None-Match` with a previously received
+        `ETag` to get `304 Not Modified` (no body). Repeated downloads are
+        allowed while `retention_status=active`.
       parameters:
         - $ref: '#/components/parameters/JobId'
         - name: format
@@ -178,15 +187,20 @@ paths:
             `json` is the canonical Document IR (`doc-ir/0.1`); `markdown`/`text`
             are rendered from the IR.
       responses:
+        '304':
+          description: The client's `If-None-Match` matches the current artifact.
+          headers:
+            ETag: { schema: { type: string } }
+            X-Result-Version: { schema: { type: string } }
         '200':
           description: The requested representation.
           headers:
             ETag:
               schema: { type: string }
-              description: '"sha256:…" — identical to X-Result-Version.'
+              description: Strong validator of this representation (per-artifact sha256).
             X-Result-Version:
               schema: { type: string }
-              description: Manifest hash the client must echo in the ACK.
+              description: Manifest hash, identical for all formats; echo this in the ACK.
             X-Download-Lease:
               schema: { type: string }
             Content-Length:
@@ -272,16 +286,32 @@ paths:
     post:
       tags: [jobs]
       operationId: cancelJob
-      summary: Stop a queued/running job, or release a completed result
+      summary: Stop a queued/running job (completed results must be ACKed)
       description: |
-        Best effort and idempotent. A running job is marked `cancelled`; the worker
-        notices on its next heartbeat and aborts. Input files are cleaned up by the
-        normal retention path.
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes
+        `cancelled`, the worker sees `cancelled` on its next heartbeat, aborts the
+        engine and finalises cleanly, and files are removed by the normal
+        retention path.
+
+        A **completed** result is not cancelled. It is released, which is the same
+        operation as ACK and therefore requires `result_version`; without it the
+        call returns `409` and nothing is released. Use `POST /ack`.
       parameters:
         - $ref: '#/components/parameters/JobId'
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result_version:
+                  type: string
+                  description: Required when the job is already completed.
       responses:
         '202':
-          description: Cancellation accepted.
+          description: Cancellation (or release) accepted.
           content:
             application/json:
               schema:
@@ -290,9 +320,16 @@ paths:
                   job_id: { type: string }
                   status: { type: string }
                   retention_status: { type: string }
+                  result_version: { type: [string, 'null'] }
+                  processing_deadline_at: { type: string, format: date-time }
                   message: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: Job already completed — cancel needs `result_version`.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
   /v1/jobs/{id}/events:
     get:
@@ -300,14 +337,29 @@ paths:
       operationId: jobEvents
       summary: Server-sent events for one job
       description: |
-        `text/event-stream`. A `snapshot` event is sent first, then lifecycle
-        events (`created`, `running`, `retry_scheduled`, `completed`, `failed`,
-        `release_pending`, `lease_expired`, `released`, `expired`, `cancelled`).
-        Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume.
-        The stream ends with `stream_end` when the job reaches a terminal state;
-        the final answer is always `GET /v1/jobs/{id}`.
+        `text/event-stream`. A `snapshot` event is always sent first, then the
+        lifecycle events.
+
+        Subscription scope:
+        * `scope=processing` (default) — events up to the terminal **processing**
+          status (`completed`/`failed`/`cancelled`); the stream then ends with
+          `stream_end`. Retention events are not delivered in this scope.
+        * `scope=retention` — continues into the retention lifecycle
+          (`release_pending`, `released`, `expired`) until it is terminal or the
+          stream hits its 10 minute cap (`stream_end` with
+          `reason=max_duration`).
+
+        Reconnect with `Last-Event-ID` (or `?last_event_id=`) to resume. Event
+        rows are deleted with the job after the tombstone window (default
+        10 min), so a cursor older than the retained window receives a
+        `cursor_reset` event followed by a fresh `snapshot` — never a silent gap.
+        The final answer is always `GET /v1/jobs/{id}`.
       parameters:
         - $ref: '#/components/parameters/JobId'
+        - name: scope
+          in: query
+          schema: { type: string, enum: [processing, retention], default: processing }
+          description: How far into the lifecycle the stream follows the job.
         - name: Last-Event-ID
           in: header
           schema: { type: string }
@@ -410,214 +462,12 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Readiness' }
 
-  # ---------------------------------------------------------------- internal
-  /internal/workers/register:
-    post:
-      tags: [internal]
-      operationId: registerWorker
-      summary: Register worker capabilities
-      security:
-        - internalToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/WorkerRegistration' }
-      responses:
-        '200':
-          description: Registered.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  worker_id: { type: string }
-                  session_expires: { type: string, format: date-time }
-                  heartbeat_every: { type: string }
-
-  /internal/tasks/claim:
-    post:
-      tags: [internal]
-      operationId: claimTask
-      summary: Atomically lease one matching queued job
-      security:
-        - internalToken: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                worker_id: { type: string }
-                engines: { type: array, items: { type: string } }
-                device_type: { type: string, enum: [cpu, gpu] }
-      responses:
-        '200':
-          description: A leased task.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ClaimedTask' }
-        '204':
-          description: Nothing to do.
-
-  /internal/tasks/{id}/input:
-    get:
-      tags: [internal]
-      operationId: fetchInput
-      summary: Stream the input for a leased task
-      security:
-        - internalToken: []
-      parameters:
-        - $ref: '#/components/parameters/JobId'
-        - name: X-Lease-Token
-          in: header
-          required: true
-          schema: { type: string }
-      responses:
-        '200':
-          description: Raw input bytes.
-          headers:
-            X-Content-SHA256:
-              schema: { type: string }
-          content:
-            application/octet-stream:
-              schema: { type: string, format: binary }
-        '409':
-          description: Lease invalid or expired.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /internal/tasks/{id}/heartbeat:
-    post:
-      tags: [internal]
-      operationId: taskHeartbeat
-      summary: Renew the lease and report progress
-      security:
-        - internalToken: []
-      parameters:
-        - $ref: '#/components/parameters/JobId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [lease_token]
-              properties:
-                lease_token: { type: string }
-                progress_percent: { type: integer, minimum: 0, maximum: 100 }
-                stage: { type: string }
-      responses:
-        '200':
-          description: Lease renewed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  lease_until: { type: string, format: date-time }
-                  renew_every: { type: string }
-        '409':
-          description: Lease lost or the job was cancelled.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /internal/tasks/{id}/result:
-    put:
-      tags: [internal]
-      operationId: submitResult
-      summary: Submit the Document IR (fenced commit)
-      description: |
-        The coordinator renders Markdown/Text from the IR, writes artifacts
-        atomically and commits the job only if the lease is still valid. A
-        superseded attempt receives `409` and its files are discarded.
-      security:
-        - internalToken: []
-      parameters:
-        - $ref: '#/components/parameters/JobId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [lease_token, document]
-              properties:
-                lease_token: { type: string }
-                engine: { type: string }
-                engine_version: { type: string }
-                device_type: { type: string }
-                page_count: { type: integer }
-                document: { $ref: '#/components/schemas/DocumentIR' }
-      responses:
-        '200':
-          description: Result committed.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  job_id: { type: string }
-                  status: { type: string }
-                  result_version: { type: string }
-                  result_expires_at: { type: string, format: date-time }
-        '409':
-          description: Lease expired/superseded — result rejected.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
-  /internal/tasks/{id}/fail:
-    post:
-      tags: [internal]
-      operationId: failTask
-      summary: Report a classified failure
-      security:
-        - internalToken: []
-      parameters:
-        - $ref: '#/components/parameters/JobId'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [lease_token, code]
-              properties:
-                lease_token: { type: string }
-                code: { type: string }
-                message: { type: string }
-                retryable: { type: boolean }
-      responses:
-        '200':
-          description: Failure recorded (job may have been requeued).
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  job_id: { type: string }
-                  status: { type: string }
-        '409':
-          description: Lease lost.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       description: API token mapped to an owner id server-side.
-    internalToken:
-      type: apiKey
-      in: header
-      name: X-Internal-Token
-      description: Shared secret for the private coordinator/worker network.
 
   parameters:
     JobId:
@@ -631,8 +481,19 @@ components:
       in: query
       schema: { type: string, enum: [auto, fast, accurate], default: auto }
       description: |
-        `fast` prefers native text extraction; `accurate` requires a structured
-        engine; `auto` lets the router choose (and records the decision).
+        A **policy preference, not a per-document accuracy guarantee**:
+
+        * `fast` — fastest engine that can read the format (xberg for PDF/Office).
+        * `accurate` — requires an engine that declares structured output
+          (docling-rs: reading order, bbox, table spans, sheet names).
+        * `auto` — router picks by priority and records why.
+
+        Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in
+        every mode: it is orders of magnitude faster and decodes GB18030/UTF-16
+        correctly, which the ML engines do not. Measured counter-examples where
+        `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are
+        documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason
+        are always recorded in the job and the IR.
     DeviceQuery:
       name: device
       in: query
@@ -752,11 +613,21 @@ components:
         completed_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
         result_expires_at:
+          type: [string, 'null']
+          format: date-time
+          description: TTL measured from result commit, not upload.
+        processing_deadline_at:
           type: string
           format: date-time
-          nullable: true
-          description: TTL measured from result commit, not upload.
-        max_lifetime_at: { type: string, format: date-time }
+          description: |
+            Deadline for **queued/running** work only (created + max_job_lifetime).
+            It does not bound a completed result: retention is governed by
+            `result_expires_at`.
+        max_lifetime_at:
+          type: string
+          format: date-time
+          deprecated: true
+          description: Deprecated alias of `processing_deadline_at` (same value).
         attempt: { type: integer }
         requested_mode: { type: string }
         requested_device: { type: string }
@@ -765,12 +636,10 @@ components:
         progress_percent: { type: integer, minimum: 0, maximum: 100 }
         progress_stage: { type: string }
         result_version:
-          type: string
-          nullable: true
-          description: Manifest hash; echo it in the ACK.
+          type: [string, 'null']
+          description: Manifest hash; echo it in the ACK (`X-Result-Version`).
         result_urls:
-          type: object
-          nullable: true
+          type: [object, 'null']
           properties:
             markdown: { type: string }
             text: { type: string }
@@ -865,8 +734,8 @@ components:
             input_bytes: { type: integer, format: int64 }
             output_chars: { type: integer }
             pages: { type: integer }
-            peak_rss_mb: { type: integer, format: int64, nullable: true }
-            peak_vram_mb: { type: integer, format: int64, nullable: true }
+            peak_rss_mb: { type: [integer, 'null'], format: int64 }
+            peak_vram_mb: { type: [integer, 'null'], format: int64 }
 
     Element:
       type: object
@@ -894,7 +763,7 @@ components:
         text: { type: string }
         level: { type: integer, description: Heading level or list nesting; absent when 0 }
         reading_order: { type: integer }
-        confidence: { type: number, nullable: true, description: Only when the engine reports it }
+        confidence: { type: [number, 'null'], description: Only when the engine reports it }
         source_location: { $ref: '#/components/schemas/SourceLocation' }
         table_id: { type: string }
         image_ref: { type: string }
@@ -931,7 +800,7 @@ components:
         cols: { type: integer }
         header_rows: { type: integer }
         caption: { type: string }
-        confidence: { type: number, nullable: true }
+        confidence: { type: [number, 'null'] }
         source_location: { $ref: '#/components/schemas/SourceLocation' }
         cells:
           type: array
@@ -946,7 +815,7 @@ components:
               formula: { type: string }
               cached_value: { type: string }
               data_type: { type: string, enum: [string, number, date, bool] }
-              confidence: { type: number, nullable: true }
+              confidence: { type: [number, 'null'] }
 
     Readiness:
       type: object
@@ -962,35 +831,3 @@ components:
             accepting_uploads: true
             last_cleanup: '2026-10-30T07:51:55Z'
 
-    WorkerRegistration:
-      type: object
-      required: [engines, device_type, max_concurrency]
-      properties:
-        worker_id: { type: string, description: Generated by the server when empty }
-        host: { type: string }
-        engines: { type: array, items: { type: string }, example: [native, xberg, docling-rs] }
-        device_type: { type: string, enum: [cpu, gpu] }
-        gpu_model: { type: string }
-        gpu_memory_bytes: { type: integer, format: int64 }
-        cpu_cores: { type: integer }
-        memory_bytes: { type: integer, format: int64 }
-        max_concurrency: { type: integer, minimum: 1 }
-
-    ClaimedTask:
-      type: object
-      properties:
-        job_id: { type: string }
-        attempt_no: { type: integer }
-        lease_token: { type: string, description: Fencing token; required for heartbeat/result/fail }
-        lease_until: { type: string, format: date-time }
-        format: { type: string }
-        mime_type: { type: string }
-        input_name: { type: string }
-        input_sha256: { type: string }
-        input_size: { type: integer, format: int64 }
-        page_count: { type: integer }
-        requested_mode: { type: string }
-        requested_device: { type: string }
-        engine_hint: { type: string }
-        routing_reason: { type: string }
-        max_lifetime_at: { type: string, format: date-time }

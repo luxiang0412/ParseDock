@@ -3,6 +3,8 @@ package coordinator
 import (
 	"errors"
 	"fmt"
+	"net"
+	"strings"
 	"time"
 
 	"parsedock.dev/parsedock/internal/jobs"
@@ -113,6 +115,30 @@ func DefaultConfig() Config {
 		MaxAttempts:       3,
 		MaxUploadBytes:    64 << 20,
 	}
+}
+
+// ValidateInternalBinding refuses an internal listener that is reachable from
+// outside the host while no shared secret is configured. The coordinator trusts
+// X-Parsedock-Owner from whoever reaches it, so a public bind without a token is
+// an authentication bypass (F04). Loopback binds stay allowed for development.
+func ValidateInternalBinding(addr, token string, devInsecure bool) error {
+	if strings.TrimSpace(token) != "" || devInsecure {
+		return nil
+	}
+	host := addr
+	if h, _, err := net.SplitHostPort(addr); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+	if host == "localhost" {
+		return nil
+	}
+	// An empty host (":8081") binds every interface, which is the dangerous case.
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return nil
+	}
+	return fmt.Errorf("internal listener %q is not loopback but PARSEDOCK_INTERNAL_TOKEN is empty: "+
+		"set the token (required) or bind 127.0.0.1; --dev-insecure disables this check", addr)
 }
 
 func (c Config) String() string {

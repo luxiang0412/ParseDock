@@ -21,6 +21,7 @@ from typing_extensions import Annotated
 from parsedock_client.models.ack_job202_response import AckJob202Response
 from parsedock_client.models.ack_job_request import AckJobRequest
 from parsedock_client.models.cancel_job202_response import CancelJob202Response
+from parsedock_client.models.cancel_job_request import CancelJobRequest
 from parsedock_client.models.job import Job
 
 from parsedock_client.api_client import ApiClient, RequestSerialized
@@ -361,6 +362,8 @@ class JobsApi:
     def cancel_job(
         self,
         id: Annotated[str, Field(strict=True)],
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        cancel_job_request: Optional[CancelJobRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -374,12 +377,16 @@ class JobsApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> CancelJob202Response:
-        """Stop a queued/running job, or release a completed result
+        """Stop a queued/running job (completed results must be ACKed)
 
-        Best effort and idempotent. A running job is marked `cancelled`; the worker notices on its next heartbeat and aborts. Input files are cleaned up by the normal retention path. 
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled`, the worker sees `cancelled` on its next heartbeat, aborts the engine and finalises cleanly, and files are removed by the normal retention path.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires `result_version`; without it the call returns `409` and nothing is released. Use `POST /ack`. 
 
         :param id: (required)
         :type id: str
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :type idempotency_key: str
+        :param cancel_job_request:
+        :type cancel_job_request: CancelJobRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -404,6 +411,8 @@ class JobsApi:
 
         _param = self._cancel_job_serialize(
             id=id,
+            idempotency_key=idempotency_key,
+            cancel_job_request=cancel_job_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -414,6 +423,7 @@ class JobsApi:
             '202': "CancelJob202Response",
             '401': "Error",
             '404': "Error",
+            '409': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -430,6 +440,8 @@ class JobsApi:
     def cancel_job_with_http_info(
         self,
         id: Annotated[str, Field(strict=True)],
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        cancel_job_request: Optional[CancelJobRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -443,12 +455,16 @@ class JobsApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> ApiResponse[CancelJob202Response]:
-        """Stop a queued/running job, or release a completed result
+        """Stop a queued/running job (completed results must be ACKed)
 
-        Best effort and idempotent. A running job is marked `cancelled`; the worker notices on its next heartbeat and aborts. Input files are cleaned up by the normal retention path. 
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled`, the worker sees `cancelled` on its next heartbeat, aborts the engine and finalises cleanly, and files are removed by the normal retention path.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires `result_version`; without it the call returns `409` and nothing is released. Use `POST /ack`. 
 
         :param id: (required)
         :type id: str
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :type idempotency_key: str
+        :param cancel_job_request:
+        :type cancel_job_request: CancelJobRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -473,6 +489,8 @@ class JobsApi:
 
         _param = self._cancel_job_serialize(
             id=id,
+            idempotency_key=idempotency_key,
+            cancel_job_request=cancel_job_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -483,6 +501,7 @@ class JobsApi:
             '202': "CancelJob202Response",
             '401': "Error",
             '404': "Error",
+            '409': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -499,6 +518,8 @@ class JobsApi:
     def cancel_job_without_preload_content(
         self,
         id: Annotated[str, Field(strict=True)],
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        cancel_job_request: Optional[CancelJobRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -512,12 +533,16 @@ class JobsApi:
         _headers: Optional[Dict[StrictStr, Any]] = None,
         _host_index: Annotated[StrictInt, Field(ge=0, le=0)] = 0,
     ) -> RESTResponseType:
-        """Stop a queued/running job, or release a completed result
+        """Stop a queued/running job (completed results must be ACKed)
 
-        Best effort and idempotent. A running job is marked `cancelled`; the worker notices on its next heartbeat and aborts. Input files are cleaned up by the normal retention path. 
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled`, the worker sees `cancelled` on its next heartbeat, aborts the engine and finalises cleanly, and files are removed by the normal retention path.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires `result_version`; without it the call returns `409` and nothing is released. Use `POST /ack`. 
 
         :param id: (required)
         :type id: str
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :type idempotency_key: str
+        :param cancel_job_request:
+        :type cancel_job_request: CancelJobRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -542,6 +567,8 @@ class JobsApi:
 
         _param = self._cancel_job_serialize(
             id=id,
+            idempotency_key=idempotency_key,
+            cancel_job_request=cancel_job_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -552,6 +579,7 @@ class JobsApi:
             '202': "CancelJob202Response",
             '401': "Error",
             '404': "Error",
+            '409': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -563,6 +591,8 @@ class JobsApi:
     def _cancel_job_serialize(
         self,
         id,
+        idempotency_key,
+        cancel_job_request,
         _request_auth,
         _content_type,
         _headers,
@@ -588,8 +618,12 @@ class JobsApi:
             _path_params['id'] = id
         # process the query parameters
         # process the header parameters
+        if idempotency_key is not None:
+            self.api_client._set_header(_header_params, 'Idempotency-Key', idempotency_key)
         # process the form parameters
         # process the body parameter
+        if cancel_job_request is not None:
+            _body_params = cancel_job_request
 
 
         # set the HTTP header `Accept`
@@ -600,6 +634,19 @@ class JobsApi:
                 ]
             )
 
+        # set the HTTP header `Content-Type`
+        if _content_type:
+            self.api_client._set_header(_header_params, 'Content-Type', _content_type)
+        else:
+            _default_content_type = (
+                self.api_client.select_header_content_type(
+                    [
+                        'application/json'
+                    ]
+                )
+            )
+            if _default_content_type is not None:
+                self.api_client._set_header(_header_params, 'Content-Type', _default_content_type)
 
         # authentication setting
         _auth_settings: List[str] = [
@@ -628,7 +675,7 @@ class JobsApi:
     def create_job(
         self,
         file: Annotated[Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]], Field(description="The document. Required.")],
-        mode: Annotated[Optional[StrictStr], Field(description="`fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). ")] = None,
+        mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
         ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum.")] = None,
         priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue.")] = None,
@@ -652,11 +699,11 @@ class JobsApi:
     ) -> Job:
         """Upload a document and enqueue a parse job
 
-        `multipart/form-data`. Put scalar fields **before** the `file` part; the implementation streams the file as soon as it encounters it (no full-body buffering). The same fields may instead be supplied as query parameters, which take precedence.  Upload limits are enforced server-side: size (`max_upload_mb`), page count (`max_pages`), archive expansion ratio, OOXML structure and PDF markers. The declared `Content-Type` of the file part is **not** trusted. 
+        `multipart/form-data`. Parts may arrive in **any order**: the file is streamed to the coordinator's staging area (never buffered in memory) while scalar fields are collected, and the job is created once the body has been read.  Precedence for `mode`/`device`/`priority`/`ttl_seconds`/`idempotency_key`: query parameter → multipart field → default. The `Idempotency-Key` header wins over both.  Upload limits are enforced server-side: size (`max_upload_mb`), page count (`max_pages`), archive expansion ratio, OOXML structure and PDF markers. The declared `Content-Type` of the file part is **not** trusted. 
 
         :param file: The document. Required. (required)
         :type file: bytes
-        :param mode: `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). 
+        :param mode: A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
@@ -740,7 +787,7 @@ class JobsApi:
     def create_job_with_http_info(
         self,
         file: Annotated[Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]], Field(description="The document. Required.")],
-        mode: Annotated[Optional[StrictStr], Field(description="`fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). ")] = None,
+        mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
         ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum.")] = None,
         priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue.")] = None,
@@ -764,11 +811,11 @@ class JobsApi:
     ) -> ApiResponse[Job]:
         """Upload a document and enqueue a parse job
 
-        `multipart/form-data`. Put scalar fields **before** the `file` part; the implementation streams the file as soon as it encounters it (no full-body buffering). The same fields may instead be supplied as query parameters, which take precedence.  Upload limits are enforced server-side: size (`max_upload_mb`), page count (`max_pages`), archive expansion ratio, OOXML structure and PDF markers. The declared `Content-Type` of the file part is **not** trusted. 
+        `multipart/form-data`. Parts may arrive in **any order**: the file is streamed to the coordinator's staging area (never buffered in memory) while scalar fields are collected, and the job is created once the body has been read.  Precedence for `mode`/`device`/`priority`/`ttl_seconds`/`idempotency_key`: query parameter → multipart field → default. The `Idempotency-Key` header wins over both.  Upload limits are enforced server-side: size (`max_upload_mb`), page count (`max_pages`), archive expansion ratio, OOXML structure and PDF markers. The declared `Content-Type` of the file part is **not** trusted. 
 
         :param file: The document. Required. (required)
         :type file: bytes
-        :param mode: `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). 
+        :param mode: A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
@@ -852,7 +899,7 @@ class JobsApi:
     def create_job_without_preload_content(
         self,
         file: Annotated[Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]], Field(description="The document. Required.")],
-        mode: Annotated[Optional[StrictStr], Field(description="`fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). ")] = None,
+        mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
         ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum.")] = None,
         priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue.")] = None,
@@ -876,11 +923,11 @@ class JobsApi:
     ) -> RESTResponseType:
         """Upload a document and enqueue a parse job
 
-        `multipart/form-data`. Put scalar fields **before** the `file` part; the implementation streams the file as soon as it encounters it (no full-body buffering). The same fields may instead be supplied as query parameters, which take precedence.  Upload limits are enforced server-side: size (`max_upload_mb`), page count (`max_pages`), archive expansion ratio, OOXML structure and PDF markers. The declared `Content-Type` of the file part is **not** trusted. 
+        `multipart/form-data`. Parts may arrive in **any order**: the file is streamed to the coordinator's staging area (never buffered in memory) while scalar fields are collected, and the job is created once the body has been read.  Precedence for `mode`/`device`/`priority`/`ttl_seconds`/`idempotency_key`: query parameter → multipart field → default. The `Idempotency-Key` header wins over both.  Upload limits are enforced server-side: size (`max_upload_mb`), page count (`max_pages`), archive expansion ratio, OOXML structure and PDF markers. The declared `Content-Type` of the file part is **not** trusted. 
 
         :param file: The document. Required. (required)
         :type file: bytes
-        :param mode: `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). 
+        :param mode: A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
@@ -1088,7 +1135,7 @@ class JobsApi:
     ) -> str:
         """Download a derived view of the committed result
 
-        Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: `ETag` and `X-Result-Version` carry the manifest hash, `Content-Length` is always set, `X-Download-Lease` is the lease id. Repeated downloads are allowed while `retention_status=active`. 
+        Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: * `ETag` — strong validator **of this representation** (`sha256` of the   markdown/text/json bytes). Different formats have different ETags. * `X-Result-Version` — the manifest hash, identical for all three formats   and the only value `POST /ack` accepts. * `Content-Length`, `X-Download-Lease`, `Vary: Accept-Encoding`.  Conditional requests: send `If-None-Match` with a previously received `ETag` to get `304 Not Modified` (no body). Repeated downloads are allowed while `retention_status=active`. 
 
         :param id: (required)
         :type id: str
@@ -1126,6 +1173,7 @@ class JobsApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
+            '304': None,
             '200': "str",
             '401': "Error",
             '404': "Error",
@@ -1163,7 +1211,7 @@ class JobsApi:
     ) -> ApiResponse[str]:
         """Download a derived view of the committed result
 
-        Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: `ETag` and `X-Result-Version` carry the manifest hash, `Content-Length` is always set, `X-Download-Lease` is the lease id. Repeated downloads are allowed while `retention_status=active`. 
+        Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: * `ETag` — strong validator **of this representation** (`sha256` of the   markdown/text/json bytes). Different formats have different ETags. * `X-Result-Version` — the manifest hash, identical for all three formats   and the only value `POST /ack` accepts. * `Content-Length`, `X-Download-Lease`, `Vary: Accept-Encoding`.  Conditional requests: send `If-None-Match` with a previously received `ETag` to get `304 Not Modified` (no body). Repeated downloads are allowed while `retention_status=active`. 
 
         :param id: (required)
         :type id: str
@@ -1201,6 +1249,7 @@ class JobsApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
+            '304': None,
             '200': "str",
             '401': "Error",
             '404': "Error",
@@ -1238,7 +1287,7 @@ class JobsApi:
     ) -> RESTResponseType:
         """Download a derived view of the committed result
 
-        Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: `ETag` and `X-Result-Version` carry the manifest hash, `Content-Length` is always set, `X-Download-Lease` is the lease id. Repeated downloads are allowed while `retention_status=active`. 
+        Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: * `ETag` — strong validator **of this representation** (`sha256` of the   markdown/text/json bytes). Different formats have different ETags. * `X-Result-Version` — the manifest hash, identical for all three formats   and the only value `POST /ack` accepts. * `Content-Length`, `X-Download-Lease`, `Vary: Accept-Encoding`.  Conditional requests: send `If-None-Match` with a previously received `ETag` to get `304 Not Modified` (no body). Repeated downloads are allowed while `retention_status=active`. 
 
         :param id: (required)
         :type id: str
@@ -1276,6 +1325,7 @@ class JobsApi:
         )
 
         _response_types_map: Dict[str, Optional[str]] = {
+            '304': None,
             '200': "str",
             '401': "Error",
             '404': "Error",

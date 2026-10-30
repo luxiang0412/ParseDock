@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import org.openapitools.client.model.JobResultUrls;
+import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -51,7 +52,7 @@ import org.openapitools.client.JSON;
 /**
  * Job
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T08:08:44.774269377Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T09:08:43.398624024Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
 public class Job {
   public static final String SERIALIZED_NAME_JOB_ID = "job_id";
   @SerializedName(SERIALIZED_NAME_JOB_ID)
@@ -246,7 +247,13 @@ public class Job {
   @javax.annotation.Nullable
   private OffsetDateTime resultExpiresAt;
 
+  public static final String SERIALIZED_NAME_PROCESSING_DEADLINE_AT = "processing_deadline_at";
+  @SerializedName(SERIALIZED_NAME_PROCESSING_DEADLINE_AT)
+  @javax.annotation.Nullable
+  private OffsetDateTime processingDeadlineAt;
+
   public static final String SERIALIZED_NAME_MAX_LIFETIME_AT = "max_lifetime_at";
+  @Deprecated
   @SerializedName(SERIALIZED_NAME_MAX_LIFETIME_AT)
   @javax.annotation.Nullable
   private OffsetDateTime maxLifetimeAt;
@@ -619,20 +626,43 @@ public class Job {
   }
 
 
+  public Job processingDeadlineAt(@javax.annotation.Nullable OffsetDateTime processingDeadlineAt) {
+    this.processingDeadlineAt = processingDeadlineAt;
+    return this;
+  }
+
+  /**
+   * Deadline for **queued/running** work only (created + max_job_lifetime). It does not bound a completed result: retention is governed by &#x60;result_expires_at&#x60;. 
+   * @return processingDeadlineAt
+   */
+  @javax.annotation.Nullable
+  public OffsetDateTime getProcessingDeadlineAt() {
+    return processingDeadlineAt;
+  }
+
+  public void setProcessingDeadlineAt(@javax.annotation.Nullable OffsetDateTime processingDeadlineAt) {
+    this.processingDeadlineAt = processingDeadlineAt;
+  }
+
+
+  @Deprecated
   public Job maxLifetimeAt(@javax.annotation.Nullable OffsetDateTime maxLifetimeAt) {
     this.maxLifetimeAt = maxLifetimeAt;
     return this;
   }
 
   /**
-   * Get maxLifetimeAt
+   * Deprecated alias of &#x60;processing_deadline_at&#x60; (same value).
    * @return maxLifetimeAt
+   * @deprecated
    */
+  @Deprecated
   @javax.annotation.Nullable
   public OffsetDateTime getMaxLifetimeAt() {
     return maxLifetimeAt;
   }
 
+  @Deprecated
   public void setMaxLifetimeAt(@javax.annotation.Nullable OffsetDateTime maxLifetimeAt) {
     this.maxLifetimeAt = maxLifetimeAt;
   }
@@ -779,7 +809,7 @@ public class Job {
   }
 
   /**
-   * Manifest hash; echo it in the ACK.
+   * Manifest hash; echo it in the ACK (&#x60;X-Result-Version&#x60;).
    * @return resultVersion
    */
   @javax.annotation.Nullable
@@ -969,6 +999,7 @@ public class Job {
         Objects.equals(this.completedAt, job.completedAt) &&
         Objects.equals(this.updatedAt, job.updatedAt) &&
         Objects.equals(this.resultExpiresAt, job.resultExpiresAt) &&
+        Objects.equals(this.processingDeadlineAt, job.processingDeadlineAt) &&
         Objects.equals(this.maxLifetimeAt, job.maxLifetimeAt) &&
         Objects.equals(this.attempt, job.attempt) &&
         Objects.equals(this.requestedMode, job.requestedMode) &&
@@ -988,9 +1019,20 @@ public class Job {
         Objects.equals(this.cancelUrl, job.cancelUrl);
   }
 
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+  }
+
   @Override
   public int hashCode() {
-    return Objects.hash(jobId, status, processingStatus, retentionStatus, inputName, format, mimeType, inputSize, inputSha256, pageCount, createdAt, startedAt, completedAt, updatedAt, resultExpiresAt, maxLifetimeAt, attempt, requestedMode, requestedDevice, engine, routingReason, progressPercent, progressStage, resultVersion, resultUrls, warningCount, errorCode, errorMessage, statusUrl, eventsUrl, ackUrl, cancelUrl);
+    return Objects.hash(jobId, status, processingStatus, retentionStatus, inputName, format, mimeType, inputSize, inputSha256, pageCount, createdAt, startedAt, completedAt, updatedAt, resultExpiresAt, processingDeadlineAt, maxLifetimeAt, attempt, requestedMode, requestedDevice, engine, routingReason, progressPercent, progressStage, resultVersion, resultUrls, warningCount, errorCode, errorMessage, statusUrl, eventsUrl, ackUrl, cancelUrl);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -1012,6 +1054,7 @@ public class Job {
     sb.append("    completedAt: ").append(toIndentedString(completedAt)).append("\n");
     sb.append("    updatedAt: ").append(toIndentedString(updatedAt)).append("\n");
     sb.append("    resultExpiresAt: ").append(toIndentedString(resultExpiresAt)).append("\n");
+    sb.append("    processingDeadlineAt: ").append(toIndentedString(processingDeadlineAt)).append("\n");
     sb.append("    maxLifetimeAt: ").append(toIndentedString(maxLifetimeAt)).append("\n");
     sb.append("    attempt: ").append(toIndentedString(attempt)).append("\n");
     sb.append("    requestedMode: ").append(toIndentedString(requestedMode)).append("\n");
@@ -1047,7 +1090,7 @@ public class Job {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"));
+    openapiFields = new HashSet<String>(Arrays.asList("job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "processing_deadline_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("job_id", "status", "retention_status", "created_at", "status_url"));

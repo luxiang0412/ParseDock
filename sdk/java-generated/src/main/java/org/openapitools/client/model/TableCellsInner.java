@@ -22,6 +22,7 @@ import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -50,7 +51,7 @@ import org.openapitools.client.JSON;
 /**
  * TableCellsInner
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T08:08:44.774269377Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T09:08:43.398624024Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
 public class TableCellsInner {
   public static final String SERIALIZED_NAME_ROW = "row";
   @SerializedName(SERIALIZED_NAME_ROW)
@@ -348,9 +349,20 @@ public class TableCellsInner {
         Objects.equals(this.confidence, tableCellsInner.confidence);
   }
 
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
+  }
+
   @Override
   public int hashCode() {
     return Objects.hash(row, col, rowSpan, colSpan, text, formula, cachedValue, dataType, confidence);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override

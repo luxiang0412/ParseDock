@@ -22,6 +22,7 @@ import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Arrays;
 import org.openapitools.client.model.JobResultUrls;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -157,6 +158,14 @@ public class JobTest {
     @Test
     public void resultExpiresAtTest() {
         // TODO: test resultExpiresAt
+    }
+
+    /**
+     * Test the property 'processingDeadlineAt'
+     */
+    @Test
+    public void processingDeadlineAtTest() {
+        // TODO: test processingDeadlineAt
     }
 
     /**

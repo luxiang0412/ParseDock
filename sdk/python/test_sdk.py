@@ -135,11 +135,19 @@ def main() -> int:
             assert again["retention_status"] in ("released", "release_pending"), again
             print("[ok] repeat ACK idempotent")
 
-            # 8. cancel path
+            # 8. cancel path. A queued/running job is cancelled; if the mock
+            # worker already finished it, cancel must refuse and point at ACK.
             job2 = c.create_job(FIXTURE)
-            res = c.cancel(job2["job_id"])
-            assert res["status"] in ("cancelled", "completed"), res
-            print(f"[ok] cancel accepted ({res['status']})")
+            try:
+                res = c.cancel(job2["job_id"])
+                assert res["status"] in ("cancelled", "completed"), res
+                print(f"[ok] cancel accepted ({res['status']})")
+            except ParseDockError as e:
+                assert e.status == 409, e
+                done2 = c.wait(job2["job_id"], timeout=60)
+                released = c.cancel(job2["job_id"], result_version=done2["result_version"])
+                assert released["retention_status"] in ("release_pending", "released"), released
+                print("[ok] cancel on a completed job needs result_version (409), then releases")
 
             # 9. sync parse returns the IR
             ir = c.parse_sync(FIXTURE, mode="fast")

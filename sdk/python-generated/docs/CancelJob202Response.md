@@ -8,6 +8,8 @@ Name | Type | Description | Notes
 **job_id** | **str** |  | [optional] 
 **status** | **str** |  | [optional] 
 **retention_status** | **str** |  | [optional] 
+**result_version** | **str** |  | [optional] 
+**processing_deadline_at** | **datetime** |  | [optional] 
 **message** | **str** |  | [optional] 
 
 ## Example

@@ -24,41 +24,25 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
- * Model tests for TaskHeartbeatRequest
+ * Model tests for CancelJobRequest
  */
-public class TaskHeartbeatRequestTest {
-    private final TaskHeartbeatRequest model = new TaskHeartbeatRequest();
+public class CancelJobRequestTest {
+    private final CancelJobRequest model = new CancelJobRequest();
 
     /**
-     * Model tests for TaskHeartbeatRequest
+     * Model tests for CancelJobRequest
      */
     @Test
-    public void testTaskHeartbeatRequest() {
-        // TODO: test TaskHeartbeatRequest
+    public void testCancelJobRequest() {
+        // TODO: test CancelJobRequest
     }
 
     /**
-     * Test the property 'leaseToken'
+     * Test the property 'resultVersion'
      */
     @Test
-    public void leaseTokenTest() {
-        // TODO: test leaseToken
-    }
-
-    /**
-     * Test the property 'progressPercent'
-     */
-    @Test
-    public void progressPercentTest() {
-        // TODO: test progressPercent
-    }
-
-    /**
-     * Test the property 'stage'
-     */
-    @Test
-    public void stageTest() {
-        // TODO: test stage
+    public void resultVersionTest() {
+        // TODO: test resultVersion
     }
 
 }

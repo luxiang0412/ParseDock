@@ -62,30 +62,12 @@ type CreateParams struct {
 // CreateJob streams the upload, validates it, routes it and persists a queued job.
 // The returned bool reports whether a new job was created (false = idempotent replay).
 func (s *Service) CreateJob(ctx context.Context, p CreateParams) (*jobs.Job, bool, error) {
-	mode, err := jobs.ValidateMode(p.Mode)
-	if err != nil {
-		return nil, false, NewError(400, jobs.ErrInvalidRequest, err.Error())
-	}
-	device, err := jobs.ValidateDevice(p.Device)
-	if err != nil {
-		return nil, false, NewError(400, jobs.ErrInvalidRequest, err.Error())
-	}
-	if p.OwnerID == "" {
-		return nil, false, NewError(401, jobs.ErrUnauthorized, "missing owner")
-	}
-	if p.IdempotencyKey != "" {
-		key := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
-		if existing, err := s.findByIdemKey(ctx, p.OwnerID, key); err == nil && existing != nil {
-			return existing, false, nil
-		}
-	}
+	jobID := jobs.NewJobID()
 	if s.Cfg.MaxUploadBytes > 0 {
 		if err := s.Store.CheckSpace(s.Cfg.MaxUploadBytes); err != nil {
 			return nil, false, NewError(507, jobs.ErrInsufficientSpace, "storage below safety watermark")
 		}
 	}
-
-	jobID := jobs.NewJobID()
 	writer, err := s.Store.NewInputWriter(jobID, s.Cfg.MaxUploadBytes)
 	if err != nil {
 		return nil, false, NewError(507, jobs.ErrInsufficientSpace, err.Error())
@@ -97,6 +79,49 @@ func (s *Service) CreateJob(ctx context.Context, p CreateParams) (*jobs.Job, boo
 				fmt.Sprintf("upload exceeds %d bytes", s.Cfg.MaxUploadBytes))
 		}
 		return nil, false, NewError(400, jobs.ErrInvalidRequest, "upload interrupted: "+err.Error())
+	}
+	return s.CreateJobStaged(ctx, p, jobID, writer)
+}
+
+// StageInput prepares a streaming writer for an upload whose metadata is not
+// known yet. The HTTP layer uses it to accept multipart parts in any order
+// without buffering the document in memory (F06).
+func (s *Service) StageInput(jobID string) (*storage.InputWriter, error) {
+	if s.Cfg.MaxUploadBytes > 0 {
+		if err := s.Store.CheckSpace(s.Cfg.MaxUploadBytes); err != nil {
+			return nil, NewError(507, jobs.ErrInsufficientSpace, "storage below safety watermark")
+		}
+	}
+	w, err := s.Store.NewInputWriter(jobID, s.Cfg.MaxUploadBytes)
+	if err != nil {
+		return nil, NewError(507, jobs.ErrInsufficientSpace, err.Error())
+	}
+	return w, nil
+}
+
+// CreateJobStaged validates an already-staged upload and creates the job.
+// Idempotency is evaluated here because the key may arrive after the file.
+func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID string, writer *storage.InputWriter) (*jobs.Job, bool, error) {
+	mode, err := jobs.ValidateMode(p.Mode)
+	if err != nil {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, err.Error())
+	}
+	device, err := jobs.ValidateDevice(p.Device)
+	if err != nil {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, err.Error())
+	}
+	if p.OwnerID == "" {
+		writer.Abort()
+		return nil, false, NewError(401, jobs.ErrUnauthorized, "missing owner")
+	}
+	if p.IdempotencyKey != "" {
+		key := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
+		if existing, err := s.findByIdemKey(ctx, p.OwnerID, key); err == nil && existing != nil {
+			writer.Abort() // the staged bytes are a duplicate
+			return existing, false, nil
+		}
 	}
 	if writer.Size() == 0 {
 		writer.Abort()
@@ -248,9 +273,32 @@ func validationErr(err error) error {
 	return NewError(422, jobs.ErrMalformed, err.Error())
 }
 
+// textFormats are handled by the native engine in every mode. ML engines are
+// slower by orders of magnitude and get encodings (GB18030, UTF-16) wrong, so
+// mode=accurate must not route them away from native.
+func isTextFormat(format string) bool {
+	switch format {
+	case "txt", "md", "csv", "tsv":
+		return true
+	}
+	return false
+}
+
 // route chooses the engine hint and records why. It never silently degrades a
 // gpu_required request.
 func (s *Service) route(ctx context.Context, format, mode, device string) (string, string, error) {
+	// F02: text formats are always served by native when it is configured.
+	// gpu_required is exempt on purpose: an explicit GPU request must never be
+	// satisfied by a CPU engine.
+	if isTextFormat(format) && device != jobs.DeviceGPURequired {
+		for _, e := range s.Cfg.Engines {
+			if e.Name == "native" && e.Supports(format, jobs.ModeAuto) {
+				return e.Name, fmt.Sprintf(
+					"format=%s mode=%s device=%s -> native (%s); text formats always use the native engine (encoding-correct, no model load)",
+					format, mode, device, e.Version), nil
+			}
+		}
+	}
 	cands := make([]EngineSpec, 0, len(s.Cfg.Engines))
 	for _, e := range s.Cfg.Engines {
 		switch device {
@@ -280,10 +328,18 @@ func (s *Service) route(ctx context.Context, format, mode, device string) (strin
 		return "", "", NewError(415, jobs.ErrUnsupportedType,
 			fmt.Sprintf("no engine available for format %q in mode %q", format, mode))
 	}
+	// Device preference is explicit:
+	//   auto         - no device preference, order by priority (a GPU host must
+	//                  not silently change routing for callers who did not ask)
+	//   gpu_preferred- GPU engines first, then priority
+	//   gpu_required - GPU engines only (filtered above)
+	//   cpu          - CPU engines only (filtered above)
 	sort.SliceStable(cands, func(i, j int) bool {
-		gi, gj := cands[i].GPU(), cands[j].GPU()
-		if device != jobs.DeviceCPU && gi != gj {
-			return gi
+		if device == jobs.DeviceGPUPreferred {
+			gi, gj := cands[i].GPU(), cands[j].GPU()
+			if gi != gj {
+				return gi
+			}
 		}
 		if cands[i].Priority != cands[j].Priority {
 			return cands[i].Priority > cands[j].Priority
@@ -504,14 +560,35 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress int, stage string) (time.Time, error) {
 	now := nowUTC()
 	until := now.Add(s.Cfg.WorkerLeaseTTL)
+
+	// Look the attempt up by token first: a cancelled attempt must be reported
+	// as "cancelled" (actionable) instead of "lease lost", which is what made
+	// the worker's cancel path unreachable.
+	var state, leaseUntil string
+	err := s.DB.QueryRowContext(ctx, `SELECT state, lease_until FROM attempts
+		WHERE job_id = ? AND lease_token = ?`, jobID, token).Scan(&state, &leaseUntil)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "unknown lease token")
+	}
+	if err != nil {
+		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if state == jobs.AttemptCancelled {
+		return time.Time{}, NewError(409, jobs.ErrCancelled, "job was cancelled")
+	}
+	if state != jobs.AttemptRunning {
+		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "attempt is no longer running")
+	}
+	if u, perr := parseTS(leaseUntil); perr != nil || u.Before(now) {
+		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "lease expired")
+	}
 	res, err := s.DB.ExecContext(ctx, `UPDATE attempts SET lease_until = ?, last_heartbeat_at = ?
 		WHERE job_id = ? AND lease_token = ? AND state = 'running'`,
 		ts(until), ts(now), jobID, token)
 	if err != nil {
 		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
 	}
-	n, _ := res.RowsAffected()
-	if n == 0 {
+	if n, _ := res.RowsAffected(); n == 0 {
 		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "lease is not valid (expired or superseded)")
 	}
 	if progress >= 0 {
@@ -635,6 +712,21 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 
 // Fail records a classified failure, retrying transient ones with backoff.
 func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retryable bool) (*jobs.Job, error) {
+	// A cancelled attempt cannot pass the lease check, but the worker still has
+	// to finish cleanly. Treat it as an idempotent no-op: the job is already
+	// cancelled and no further state change is allowed.
+	var state string
+	err := s.DB.QueryRowContext(ctx, `SELECT state FROM attempts WHERE job_id = ? AND lease_token = ?`,
+		jobID, token).Scan(&state)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, NewError(409, jobs.ErrLeaseLost, "unknown lease token")
+	}
+	if err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if state == jobs.AttemptCancelled {
+		return s.GetJob(ctx, jobID, "")
+	}
 	if err := s.checkLease(ctx, jobID, token); err != nil {
 		return nil, err
 	}
@@ -746,8 +838,12 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 	return job, nil
 }
 
-// Cancel stops a job and moves it to cleanup. Repeat calls are idempotent.
-func (s *Service) Cancel(ctx context.Context, jobID, ownerID string) (*jobs.Job, error) {
+// Cancel stops a queued/running job.
+//
+// A *completed* result is not cancelled: it is released, and releasing storage
+// requires the same proof as ACK (`result_version`), otherwise cancel would be a
+// way to bypass the ACK guard. Repeat calls are idempotent.
+func (s *Service) Cancel(ctx context.Context, jobID, ownerID, resultVersion string) (*jobs.Job, error) {
 	job, err := s.GetJob(ctx, jobID, ownerID)
 	if err != nil {
 		return nil, err
@@ -764,11 +860,21 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID string) (*jobs.Job,
 		s.appendEvent(ctx, jobID, "cancelled", map[string]any{"reason": "client_request"})
 	case jobs.StatusCompleted:
 		if job.RetentionStatus == jobs.RetentionActive {
-			if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
-				WHERE id = ? AND retention_status = 'active'`, ts(now), jobID); err != nil {
+			if resultVersion == "" {
+				return nil, NewError(409, jobs.ErrConflict,
+					"job already completed: cancel would release the result and requires result_version (or call POST /ack with the manifest version)")
+			}
+			if job.ResultVersion != "" && resultVersion != job.ResultVersion {
+				return nil, NewError(409, jobs.ErrConflict, "result_version does not match the current result")
+			}
+			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
+				WHERE id = ? AND owner_id = ? AND retention_status = 'active'`, ts(now), jobID, job.OwnerID)
+			if err != nil {
 				return nil, NewError(500, jobs.ErrInternal, err.Error())
 			}
-			s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "cancel_after_complete"})
+			if n, _ := res.RowsAffected(); n > 0 {
+				s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "cancel_after_complete"})
+			}
 		}
 	}
 	return s.GetJob(ctx, jobID, ownerID)
@@ -794,9 +900,20 @@ func (s *Service) BeginDownload(ctx context.Context, jobID, ownerID string) (*jo
 	now := nowUTC()
 	exp := now.Add(s.Cfg.DownloadLeaseTTL)
 	leaseID := jobs.NewLeaseID()
-	if _, err := s.DB.ExecContext(ctx, `INSERT INTO download_leases(lease_id, job_id, created_at, expires_at, last_renewed_at)
-		VALUES(?,?,?,?,?)`, leaseID, jobID, ts(now), ts(exp), ts(now)); err != nil {
+	// One statement: the lease only exists if the job is still downloadable at
+	// this instant. A separate check-then-insert let the cleaner flip the job to
+	// 'deleting' in between and produce a lease for a vanished artifact.
+	res, err := s.DB.ExecContext(ctx, `INSERT INTO download_leases
+			(lease_id, job_id, created_at, expires_at, last_renewed_at)
+		SELECT ?, ?, ?, ?, ?
+		WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ? AND processing_status = 'completed'
+		              AND retention_status = 'active' AND result_version IS NOT NULL)`,
+		leaseID, jobID, ts(now), ts(exp), ts(now), jobID)
+	if err != nil {
 		return nil, "", time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, "", time.Time{}, NewError(410, jobs.ErrGone, "result released or expired")
 	}
 	return job, leaseID, exp, nil
 }
@@ -896,6 +1013,18 @@ func (s *Service) appendEvent(ctx context.Context, jobID, typ string, payload ma
 	}
 	_, _ = s.DB.ExecContext(ctx, `INSERT INTO job_events(job_id, type, payload, created_at) VALUES(?,?,?,?)`,
 		jobID, typ, string(b), ts(nowUTC()))
+}
+
+// OldestEventID reports the oldest retained event for a job, so a client cursor
+// older than that can be told its replay window is gone (F07). Zero means no
+// events are retained (job purged or never had events).
+func (s *Service) OldestEventID(ctx context.Context, jobID string) (int64, error) {
+	var id sql.NullInt64
+	if err := s.DB.QueryRowContext(ctx, `SELECT MIN(event_id) FROM job_events WHERE job_id = ?`, jobID).
+		Scan(&id); err != nil {
+		return 0, err
+	}
+	return id.Int64, nil
 }
 
 // Events returns events with id > afterID for the job (owner-checked upstream).

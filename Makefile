@@ -19,8 +19,23 @@ fmt: ## gofmt
 vet: ## go vet
 	$(GO) vet ./...
 
-test: vet ## unit tests (Go)
+test: vet ## unit + integration tests (Go)
 	$(GO) test ./... -count=1
+	python3 tests/unit/test_score.py
+
+contract: ## PR-00: OpenAPI/SDK/router contract checks
+	python3 tests/contract/openapi_contract.py
+
+pr00: contract ## PR-00: runtime contract checks (10 scenarios)
+	python3 tests/integration/pr00_contract.py
+	python3 tests/integration/backup_restore.py
+
+score: ## regenerate benchmark scores + docs tables
+	$(PY_FIX) benchmark/scripts/score.py --write
+	python3 tests/unit/test_score.py
+
+license-audit: ## SBOM + GPL gate for the built images (external distribution)
+	bash scripts/license_audit.sh parsedock:0.1.0 parsedock-worker-cpu:0.1.0
 
 fixtures: ## regenerate the synthetic benchmark corpus (needs venv-fixtures)
 	$(PY_FIX) benchmark/scripts/gen_fixtures.py

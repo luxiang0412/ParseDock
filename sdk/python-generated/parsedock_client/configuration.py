@@ -115,7 +115,6 @@ AuthSettings = TypedDict(
     "AuthSettings",
     {
         "bearerAuth": BearerAuthSetting,
-        "internalToken": APIKeyAuthSetting,
     },
     total=False,
 )
@@ -183,25 +182,6 @@ class Configuration:
     :param date_format: Date format string for serialization.
 
     :Example:
-
-    API Key Authentication Example.
-    Given the following security scheme in the OpenAPI specification:
-      components:
-        securitySchemes:
-          cookieAuth:         # name for the security scheme
-            type: apiKey
-            in: cookie
-            name: JSESSIONID  # cookie name
-
-    You can programmatically set the cookie:
-
-conf = parsedock_client.Configuration(
-    api_key={'cookieAuth': 'abc123'}
-    api_key_prefix={'cookieAuth': 'JSESSIONID'}
-)
-
-    The following cookie will be added to the HTTP request:
-       Cookie: JSESSIONID abc123
     """
 
     _default: ClassVar[Optional[Self]] = None
@@ -570,15 +550,6 @@ conf = parsedock_client.Configuration(
                 'in': 'header',
                 'key': 'Authorization',
                 'value': 'Bearer ' + self.access_token
-            }
-        if 'internalToken' in self.api_key:
-            auth['internalToken'] = {
-                'type': 'api_key',
-                'in': 'header',
-                'key': 'X-Internal-Token',
-                'value': self.get_api_key_with_prefix(
-                    'internalToken',
-                ),
             }
         return auth
 

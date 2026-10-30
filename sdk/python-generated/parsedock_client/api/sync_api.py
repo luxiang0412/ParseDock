@@ -42,7 +42,7 @@ class SyncApi:
     def parse_sync(
         self,
         file: Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]],
-        mode: Annotated[Optional[StrictStr], Field(description="`fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). ")] = None,
+        mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
         timeout_ms: Optional[Annotated[int, Field(le=120000, strict=True, ge=100)]] = None,
         _request_timeout: Union[
@@ -64,7 +64,7 @@ class SyncApi:
 
         :param file: (required)
         :type file: bytes
-        :param mode: `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). 
+        :param mode: A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
@@ -126,7 +126,7 @@ class SyncApi:
     def parse_sync_with_http_info(
         self,
         file: Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]],
-        mode: Annotated[Optional[StrictStr], Field(description="`fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). ")] = None,
+        mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
         timeout_ms: Optional[Annotated[int, Field(le=120000, strict=True, ge=100)]] = None,
         _request_timeout: Union[
@@ -148,7 +148,7 @@ class SyncApi:
 
         :param file: (required)
         :type file: bytes
-        :param mode: `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). 
+        :param mode: A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
@@ -210,7 +210,7 @@ class SyncApi:
     def parse_sync_without_preload_content(
         self,
         file: Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]],
-        mode: Annotated[Optional[StrictStr], Field(description="`fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). ")] = None,
+        mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
         timeout_ms: Optional[Annotated[int, Field(le=120000, strict=True, ge=100)]] = None,
         _request_timeout: Union[
@@ -232,7 +232,7 @@ class SyncApi:
 
         :param file: (required)
         :type file: bytes
-        :param mode: `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision). 
+        :param mode: A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str

@@ -102,7 +102,6 @@ public class ApiClient {
 
         // Setup authentications (key: authentication name, value: authentication).
         authentications.put("bearerAuth", new HttpBearerAuth("bearer"));
-        authentications.put("internalToken", new ApiKeyAuth("header", "X-Internal-Token"));
         // Prevent the authentications from being modified.
         authentications = Collections.unmodifiableMap(authentications);
     }
@@ -119,7 +118,6 @@ public class ApiClient {
 
         // Setup authentications (key: authentication name, value: authentication).
         authentications.put("bearerAuth", new HttpBearerAuth("bearer"));
-        authentications.put("internalToken", new ApiKeyAuth("header", "X-Internal-Token"));
         // Prevent the authentications from being modified.
         authentications = Collections.unmodifiableMap(authentications);
     }

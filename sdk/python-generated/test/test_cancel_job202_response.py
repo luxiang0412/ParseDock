@@ -38,6 +38,8 @@ class TestCancelJob202Response(unittest.TestCase):
                 job_id = '',
                 status = '',
                 retention_status = '',
+                result_version = '',
+                processing_deadline_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 message = ''
             )
         else:

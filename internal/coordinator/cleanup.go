@@ -101,11 +101,20 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				final = jobs.RetentionExpired
 			}
 			// Mark deleting first: a crash here is recovered because the
-			// cleaner re-scans 'deleting' rows on the next pass.
-			if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting', updated_at = ?
-				WHERE id = ? AND retention_status IN ('release_pending','expiry_pending','deleting')`,
-				ts(nowUTC()), p.id); err != nil {
+			// cleaner re-scans 'deleting' rows on the next pass. The lease check
+			// is inside the UPDATE so a download that starts concurrently cannot
+			// be deleted underneath (F03).
+			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting', updated_at = ?
+				WHERE id = ? AND retention_status IN ('release_pending','expiry_pending','deleting')
+				  AND NOT EXISTS (SELECT 1 FROM download_leases
+				                  WHERE job_id = ? AND expires_at > ?)`,
+				ts(nowUTC()), p.id, p.id, ts(nowUTC()))
+			if err != nil {
 				rep.Errors = append(rep.Errors, "mark deleting: "+err.Error())
+				continue
+			}
+			if n, _ := res.RowsAffected(); n == 0 {
+				rep.SkippedBusy++
 				continue
 			}
 			if err := s.Store.DeleteJob(p.id); err != nil {

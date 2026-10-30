@@ -45,7 +45,8 @@ class Job(BaseModel):
     completed_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     result_expires_at: Optional[datetime] = Field(default=None, description="TTL measured from result commit, not upload.")
-    max_lifetime_at: Optional[datetime] = None
+    processing_deadline_at: Optional[datetime] = Field(default=None, description="Deadline for **queued/running** work only (created + max_job_lifetime). It does not bound a completed result: retention is governed by `result_expires_at`. ")
+    max_lifetime_at: Optional[datetime] = Field(default=None, description="Deprecated alias of `processing_deadline_at` (same value).")
     attempt: Optional[StrictInt] = None
     requested_mode: Optional[StrictStr] = None
     requested_device: Optional[StrictStr] = None
@@ -53,7 +54,7 @@ class Job(BaseModel):
     routing_reason: Optional[StrictStr] = Field(default=None, description="Human-readable routing decision")
     progress_percent: Optional[Annotated[int, Field(le=100, strict=True, ge=0)]] = None
     progress_stage: Optional[StrictStr] = None
-    result_version: Optional[StrictStr] = Field(default=None, description="Manifest hash; echo it in the ACK.")
+    result_version: Optional[StrictStr] = Field(default=None, description="Manifest hash; echo it in the ACK (`X-Result-Version`).")
     result_urls: Optional[JobResultUrls] = None
     warning_count: Optional[StrictInt] = None
     error_code: Optional[StrictStr] = None
@@ -62,7 +63,7 @@ class Job(BaseModel):
     events_url: Optional[StrictStr] = None
     ack_url: Optional[StrictStr] = None
     cancel_url: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"]
+    __properties: ClassVar[List[str]] = ["job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "processing_deadline_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -120,6 +121,21 @@ class Job(BaseModel):
         # override the default output from pydantic by calling `to_dict()` of result_urls
         if self.result_urls:
             _dict['result_urls'] = self.result_urls.to_dict()
+        # set to None if result_expires_at (nullable) is None
+        # and model_fields_set contains the field
+        if self.result_expires_at is None and "result_expires_at" in self.model_fields_set:
+            _dict['result_expires_at'] = None
+
+        # set to None if result_version (nullable) is None
+        # and model_fields_set contains the field
+        if self.result_version is None and "result_version" in self.model_fields_set:
+            _dict['result_version'] = None
+
+        # set to None if result_urls (nullable) is None
+        # and model_fields_set contains the field
+        if self.result_urls is None and "result_urls" in self.model_fields_set:
+            _dict['result_urls'] = None
+
         return _dict
 
     @classmethod
@@ -147,6 +163,7 @@ class Job(BaseModel):
             "completed_at": obj.get("completed_at"),
             "updated_at": obj.get("updated_at"),
             "result_expires_at": obj.get("result_expires_at"),
+            "processing_deadline_at": obj.get("processing_deadline_at"),
             "max_lifetime_at": obj.get("max_lifetime_at"),
             "attempt": obj.get("attempt"),
             "requested_mode": obj.get("requested_mode"),

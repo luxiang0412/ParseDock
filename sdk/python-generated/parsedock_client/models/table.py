@@ -87,6 +87,11 @@ class Table(BaseModel):
             for _item_cells in self.cells:
                 _items.append(_item_cells.to_dict() if _item_cells is not None else None)
             _dict['cells'] = _items
+        # set to None if confidence (nullable) is None
+        # and model_fields_set contains the field
+        if self.confidence is None and "confidence" in self.model_fields_set:
+            _dict['confidence'] = None
+
         return _dict
 
     @classmethod

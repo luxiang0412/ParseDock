@@ -17,6 +17,7 @@ import org.openapitools.client.ApiException;
 import org.openapitools.client.model.AckJob202Response;
 import org.openapitools.client.model.AckJobRequest;
 import org.openapitools.client.model.CancelJob202Response;
+import org.openapitools.client.model.CancelJobRequest;
 import org.openapitools.client.model.DocumentIR;
 import org.openapitools.client.model.Error;
 import java.io.File;
@@ -54,23 +55,25 @@ public class JobsApiTest {
     }
 
     /**
-     * Stop a queued/running job, or release a completed result
+     * Stop a queued/running job (completed results must be ACKed)
      *
-     * Best effort and idempotent. A running job is marked &#x60;cancelled&#x60;; the worker notices on its next heartbeat and aborts. Input files are cleaned up by the normal retention path. 
+     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60;, the worker sees &#x60;cancelled&#x60; on its next heartbeat, aborts the engine and finalises cleanly, and files are removed by the normal retention path.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
      *
      * @throws ApiException if the Api call fails
      */
     @Test
     public void cancelJobTest() throws ApiException {
         String id = null;
-        CancelJob202Response response = api.cancelJob(id);
+        String idempotencyKey = null;
+        CancelJobRequest cancelJobRequest = null;
+        CancelJob202Response response = api.cancelJob(id, idempotencyKey, cancelJobRequest);
         // TODO: test validations
     }
 
     /**
      * Upload a document and enqueue a parse job
      *
-     * &#x60;multipart/form-data&#x60;. Put scalar fields **before** the &#x60;file&#x60; part; the implementation streams the file as soon as it encounters it (no full-body buffering). The same fields may instead be supplied as query parameters, which take precedence.  Upload limits are enforced server-side: size (&#x60;max_upload_mb&#x60;), page count (&#x60;max_pages&#x60;), archive expansion ratio, OOXML structure and PDF markers. The declared &#x60;Content-Type&#x60; of the file part is **not** trusted. 
+     * &#x60;multipart/form-data&#x60;. Parts may arrive in **any order**: the file is streamed to the coordinator&#39;s staging area (never buffered in memory) while scalar fields are collected, and the job is created once the body has been read.  Precedence for &#x60;mode&#x60;/&#x60;device&#x60;/&#x60;priority&#x60;/&#x60;ttl_seconds&#x60;/&#x60;idempotency_key&#x60;: query parameter → multipart field → default. The &#x60;Idempotency-Key&#x60; header wins over both.  Upload limits are enforced server-side: size (&#x60;max_upload_mb&#x60;), page count (&#x60;max_pages&#x60;), archive expansion ratio, OOXML structure and PDF markers. The declared &#x60;Content-Type&#x60; of the file part is **not** trusted. 
      *
      * @throws ApiException if the Api call fails
      */
@@ -93,7 +96,7 @@ public class JobsApiTest {
     /**
      * Download a derived view of the committed result
      *
-     * Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: &#x60;ETag&#x60; and &#x60;X-Result-Version&#x60; carry the manifest hash, &#x60;Content-Length&#x60; is always set, &#x60;X-Download-Lease&#x60; is the lease id. Repeated downloads are allowed while &#x60;retention_status&#x3D;active&#x60;. 
+     * Streams the artifact and holds a **download lease** until the body is complete (renewed while streaming). An ACK during the stream does not truncate it; the cleaner waits for the lease to end before deleting.  Response headers: * &#x60;ETag&#x60; — strong validator **of this representation** (&#x60;sha256&#x60; of the   markdown/text/json bytes). Different formats have different ETags. * &#x60;X-Result-Version&#x60; — the manifest hash, identical for all three formats   and the only value &#x60;POST /ack&#x60; accepts. * &#x60;Content-Length&#x60;, &#x60;X-Download-Lease&#x60;, &#x60;Vary: Accept-Encoding&#x60;.  Conditional requests: send &#x60;If-None-Match&#x60; with a previously received &#x60;ETag&#x60; to get &#x60;304 Not Modified&#x60; (no body). Repeated downloads are allowed while &#x60;retention_status&#x3D;active&#x60;. 
      *
      * @throws ApiException if the Api call fails
      */

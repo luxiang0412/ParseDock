@@ -20,7 +20,9 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -49,7 +51,7 @@ import org.openapitools.client.JSON;
 /**
  * CancelJob202Response
  */
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T08:08:44.774269377Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-10-30T09:08:43.398624024Z[Etc/UTC]", comments = "Generator version: 7.27.0-SNAPSHOT")
 public class CancelJob202Response {
   public static final String SERIALIZED_NAME_JOB_ID = "job_id";
   @SerializedName(SERIALIZED_NAME_JOB_ID)
@@ -65,6 +67,16 @@ public class CancelJob202Response {
   @SerializedName(SERIALIZED_NAME_RETENTION_STATUS)
   @javax.annotation.Nullable
   private String retentionStatus;
+
+  public static final String SERIALIZED_NAME_RESULT_VERSION = "result_version";
+  @SerializedName(SERIALIZED_NAME_RESULT_VERSION)
+  @javax.annotation.Nullable
+  private String resultVersion;
+
+  public static final String SERIALIZED_NAME_PROCESSING_DEADLINE_AT = "processing_deadline_at";
+  @SerializedName(SERIALIZED_NAME_PROCESSING_DEADLINE_AT)
+  @javax.annotation.Nullable
+  private OffsetDateTime processingDeadlineAt;
 
   public static final String SERIALIZED_NAME_MESSAGE = "message";
   @SerializedName(SERIALIZED_NAME_MESSAGE)
@@ -131,6 +143,44 @@ public class CancelJob202Response {
   }
 
 
+  public CancelJob202Response resultVersion(@javax.annotation.Nullable String resultVersion) {
+    this.resultVersion = resultVersion;
+    return this;
+  }
+
+  /**
+   * Get resultVersion
+   * @return resultVersion
+   */
+  @javax.annotation.Nullable
+  public String getResultVersion() {
+    return resultVersion;
+  }
+
+  public void setResultVersion(@javax.annotation.Nullable String resultVersion) {
+    this.resultVersion = resultVersion;
+  }
+
+
+  public CancelJob202Response processingDeadlineAt(@javax.annotation.Nullable OffsetDateTime processingDeadlineAt) {
+    this.processingDeadlineAt = processingDeadlineAt;
+    return this;
+  }
+
+  /**
+   * Get processingDeadlineAt
+   * @return processingDeadlineAt
+   */
+  @javax.annotation.Nullable
+  public OffsetDateTime getProcessingDeadlineAt() {
+    return processingDeadlineAt;
+  }
+
+  public void setProcessingDeadlineAt(@javax.annotation.Nullable OffsetDateTime processingDeadlineAt) {
+    this.processingDeadlineAt = processingDeadlineAt;
+  }
+
+
   public CancelJob202Response message(@javax.annotation.Nullable String message) {
     this.message = message;
     return this;
@@ -163,12 +213,25 @@ public class CancelJob202Response {
     return Objects.equals(this.jobId, cancelJob202Response.jobId) &&
         Objects.equals(this.status, cancelJob202Response.status) &&
         Objects.equals(this.retentionStatus, cancelJob202Response.retentionStatus) &&
+        Objects.equals(this.resultVersion, cancelJob202Response.resultVersion) &&
+        Objects.equals(this.processingDeadlineAt, cancelJob202Response.processingDeadlineAt) &&
         Objects.equals(this.message, cancelJob202Response.message);
+  }
+
+  private static <T> boolean equalsNullable(JsonNullable<T> a, JsonNullable<T> b) {
+    return a == b || (a != null && b != null && a.isPresent() && b.isPresent() && Objects.deepEquals(a.get(), b.get()));
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(jobId, status, retentionStatus, message);
+    return Objects.hash(jobId, status, retentionStatus, resultVersion, processingDeadlineAt, message);
+  }
+
+  private static <T> int hashCodeNullable(JsonNullable<T> a) {
+    if (a == null) {
+      return 1;
+    }
+    return a.isPresent() ? Arrays.deepHashCode(new Object[]{a.get()}) : 31;
   }
 
   @Override
@@ -178,6 +241,8 @@ public class CancelJob202Response {
     sb.append("    jobId: ").append(toIndentedString(jobId)).append("\n");
     sb.append("    status: ").append(toIndentedString(status)).append("\n");
     sb.append("    retentionStatus: ").append(toIndentedString(retentionStatus)).append("\n");
+    sb.append("    resultVersion: ").append(toIndentedString(resultVersion)).append("\n");
+    sb.append("    processingDeadlineAt: ").append(toIndentedString(processingDeadlineAt)).append("\n");
     sb.append("    message: ").append(toIndentedString(message)).append("\n");
     sb.append("}");
     return sb.toString();
@@ -197,7 +262,7 @@ public class CancelJob202Response {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("job_id", "status", "retention_status", "message"));
+    openapiFields = new HashSet<String>(Arrays.asList("job_id", "status", "retention_status", "result_version", "processing_deadline_at", "message"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(0);
@@ -232,6 +297,9 @@ public class CancelJob202Response {
       }
       if ((jsonObj.get("retention_status") != null && !jsonObj.get("retention_status").isJsonNull()) && !jsonObj.get("retention_status").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `retention_status` to be a primitive type in the JSON string but got `%s`", jsonObj.get("retention_status").toString()));
+      }
+      if ((jsonObj.get("result_version") != null && !jsonObj.get("result_version").isJsonNull()) && !jsonObj.get("result_version").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `result_version` to be a primitive type in the JSON string but got `%s`", jsonObj.get("result_version").toString()));
       }
       if ((jsonObj.get("message") != null && !jsonObj.get("message").isJsonNull()) && !jsonObj.get("message").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `message` to be a primitive type in the JSON string but got `%s`", jsonObj.get("message").toString()));

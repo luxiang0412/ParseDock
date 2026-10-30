@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,6 +42,10 @@ type Config struct {
 	HeartbeatInterval time.Duration
 	MaxParseTime      time.Duration
 	MaxInputBytes     int64
+	// WorkMaxAge is how long an attempt directory may live before the scrubber
+	// removes it (crash leftovers). WorkScrubInterval is the scrubber period.
+	WorkMaxAge        time.Duration
+	WorkScrubInterval time.Duration
 	Engines           []string // engine names this worker will accept
 	Host              string
 }
@@ -55,6 +60,10 @@ type Worker struct {
 	inFlight atomic.Int64
 	claimed  atomic.Int64
 	failed   atomic.Int64
+
+	// activeScratch holds attempt directories currently in use, so the scrubber
+	// never deletes a live attempt (F09).
+	activeScratch sync.Map
 }
 
 // New builds a worker.
@@ -68,6 +77,12 @@ func New(cfg Config, reg *engines.Registry, log *slog.Logger) *Worker {
 	if cfg.MaxConcurrency <= 0 {
 		cfg.MaxConcurrency = 1
 	}
+	if cfg.WorkMaxAge <= 0 {
+		cfg.WorkMaxAge = time.Hour
+	}
+	if cfg.WorkScrubInterval <= 0 {
+		cfg.WorkScrubInterval = 10 * time.Minute
+	}
 	if cfg.DeviceType == "" {
 		cfg.DeviceType = "cpu"
 	}
@@ -79,6 +94,14 @@ func New(cfg Config, reg *engines.Registry, log *slog.Logger) *Worker {
 
 // Run registers the worker and keeps claim loops alive until ctx is done.
 func (w *Worker) Run(ctx context.Context) error {
+	// Recover scratch space left behind by a previous crash before claiming work.
+	if n, err := SweepScratch(w.Cfg.WorkDir, w.Cfg.WorkMaxAge, w.isActiveScratch); err != nil {
+		w.Log.Warn("startup scratch sweep failed", "err", err)
+	} else if n > 0 {
+		w.Log.Info("startup scratch sweep removed stale attempt dirs", "removed", n)
+	}
+	go w.scrubLoop(ctx)
+
 	if err := w.register(ctx); err != nil {
 		w.Log.Warn("initial registration failed; will retry", "err", err)
 	}
@@ -92,6 +115,83 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 	wg.Wait()
 	return ctx.Err()
+}
+
+// scrubLoop periodically removes stale attempt directories.
+func (w *Worker) scrubLoop(ctx context.Context) {
+	t := time.NewTicker(w.Cfg.WorkScrubInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			n, err := SweepScratch(w.Cfg.WorkDir, w.Cfg.WorkMaxAge, w.isActiveScratch)
+			if err != nil {
+				w.Log.Warn("scratch sweep failed", "err", err)
+				continue
+			}
+			if n > 0 {
+				w.Log.Info("scratch sweep removed stale attempt dirs", "removed", n)
+			}
+		}
+	}
+}
+
+func (w *Worker) isActiveScratch(dir string) bool {
+	_, ok := w.activeScratch.Load(dir)
+	return ok
+}
+
+// SweepScratch removes attempt directories under root that are older than maxAge
+// and not currently in use. Layout is <root>/<job>/<attempt>/.
+//
+// It is exported so the behaviour is testable without starting a worker, and so
+// an operator can run it from a maintenance job.
+func SweepScratch(root string, maxAge time.Duration, isActive func(string) bool) (int, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	cutoff := time.Now().Add(-maxAge)
+	removed := 0
+	for _, jobEntry := range entries {
+		if !jobEntry.IsDir() {
+			continue
+		}
+		jobDir := filepath.Join(root, jobEntry.Name())
+		attempts, err := os.ReadDir(jobDir)
+		if err != nil {
+			continue
+		}
+		for _, att := range attempts {
+			if !att.IsDir() {
+				continue
+			}
+			dir := filepath.Join(jobDir, att.Name())
+			if isActive != nil && isActive(dir) {
+				continue
+			}
+			info, err := att.Info()
+			if err != nil || info.ModTime().After(cutoff) {
+				continue
+			}
+			if err := os.RemoveAll(dir); err == nil {
+				removed++
+			}
+		}
+		// Remove the job directory once it is empty. It only becomes empty after
+		// its attempts are gone, so no age check is needed (and its mtime is
+		// updated by the deletions above).
+		if isActive != nil && isActive(jobDir) {
+			continue
+		}
+		_ = os.Remove(jobDir) // fails harmlessly when still in use
+	}
+	return removed, nil
 }
 
 func (w *Worker) register(ctx context.Context) error {
@@ -193,7 +293,13 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return w.fail(ctx, task, jobs.ErrInternal, "worker scratch dir: "+err.Error(), false)
 	}
-	defer os.RemoveAll(workDir)
+	w.activeScratch.Store(workDir, struct{}{})
+	defer func() {
+		w.activeScratch.Delete(workDir)
+		_ = os.RemoveAll(workDir)
+		// Best effort: drop the per-job directory once the attempt is gone.
+		_ = os.Remove(filepath.Dir(workDir))
+	}()
 
 	// Hard deadline from the job's absolute max lifetime.
 	deadline := time.Now().Add(w.Cfg.MaxParseTime)
@@ -260,6 +366,12 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	cancelHB()
 	if perr != nil {
 		if e, ok := hbErr.Load().(error); ok && e != nil {
+			// A cancelled job is a clean stop, not a failure: the coordinator has
+			// already moved it to `cancelled` and marked this attempt cancelled.
+			if isCancelled(e) {
+				w.Log.Info("task cancelled by coordinator", "job", task.JobID)
+				return nil
+			}
 			return w.fail(ctx, task, jobs.ErrCancelled, e.Error(), false)
 		}
 		var ee *engines.Error
@@ -440,6 +552,12 @@ func (w *Worker) postJSONOptional(ctx context.Context, path string, in any, out 
 		}
 	}
 	return true, nil
+}
+
+// isCancelled reports whether the coordinator rejected the heartbeat because the
+// job was cancelled (as opposed to the lease being lost).
+func isCancelled(err error) bool {
+	return strings.Contains(err.Error(), jobs.ErrCancelled)
 }
 
 func sleepJitter(ctx context.Context, d time.Duration) {

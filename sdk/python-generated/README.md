@@ -99,12 +99,13 @@ with parsedock_client.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = parsedock_client.EventsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
+    scope = 'processing' # str | How far into the lifecycle the stream follows the job. (optional) (default to 'processing')
     last_event_id = 'last_event_id_example' # str |  (optional)
     last_event_id2 = 56 # int |  (optional)
 
     try:
         # Server-sent events for one job
-        api_response = api_instance.job_events(id, last_event_id=last_event_id, last_event_id2=last_event_id2)
+        api_response = api_instance.job_events(id, scope=scope, last_event_id=last_event_id, last_event_id2=last_event_id2)
         print("The response of EventsApi->job_events:\n")
         pprint(api_response)
     except ApiException as e:
@@ -119,14 +120,8 @@ All URIs are relative to *http://localhost:8080*
 Class | Method | HTTP request | Description
 ------------ | ------------- | ------------- | -------------
 *EventsApi* | [**job_events**](docs/EventsApi.md#job_events) | **GET** /v1/jobs/{id}/events | Server-sent events for one job
-*InternalApi* | [**claim_task**](docs/InternalApi.md#claim_task) | **POST** /internal/tasks/claim | Atomically lease one matching queued job
-*InternalApi* | [**fail_task**](docs/InternalApi.md#fail_task) | **POST** /internal/tasks/{id}/fail | Report a classified failure
-*InternalApi* | [**fetch_input**](docs/InternalApi.md#fetch_input) | **GET** /internal/tasks/{id}/input | Stream the input for a leased task
-*InternalApi* | [**register_worker**](docs/InternalApi.md#register_worker) | **POST** /internal/workers/register | Register worker capabilities
-*InternalApi* | [**submit_result**](docs/InternalApi.md#submit_result) | **PUT** /internal/tasks/{id}/result | Submit the Document IR (fenced commit)
-*InternalApi* | [**task_heartbeat**](docs/InternalApi.md#task_heartbeat) | **POST** /internal/tasks/{id}/heartbeat | Renew the lease and report progress
 *JobsApi* | [**ack_job**](docs/JobsApi.md#ack_job) | **POST** /v1/jobs/{id}/ack | Accept that the client consumed the result, release storage asynchronously
-*JobsApi* | [**cancel_job**](docs/JobsApi.md#cancel_job) | **POST** /v1/jobs/{id}/cancel | Stop a queued/running job, or release a completed result
+*JobsApi* | [**cancel_job**](docs/JobsApi.md#cancel_job) | **POST** /v1/jobs/{id}/cancel | Stop a queued/running job (completed results must be ACKed)
 *JobsApi* | [**create_job**](docs/JobsApi.md#create_job) | **POST** /v1/jobs | Upload a document and enqueue a parse job
 *JobsApi* | [**download_result**](docs/JobsApi.md#download_result) | **GET** /v1/jobs/{id}/result | Download a derived view of the committed result
 *JobsApi* | [**get_job**](docs/JobsApi.md#get_job) | **GET** /v1/jobs/{id} | Job status, retention state and result availability
@@ -140,8 +135,7 @@ Class | Method | HTTP request | Description
  - [AckJob202Response](docs/AckJob202Response.md)
  - [AckJobRequest](docs/AckJobRequest.md)
  - [CancelJob202Response](docs/CancelJob202Response.md)
- - [ClaimTaskRequest](docs/ClaimTaskRequest.md)
- - [ClaimedTask](docs/ClaimedTask.md)
+ - [CancelJobRequest](docs/CancelJobRequest.md)
  - [DocumentIR](docs/DocumentIR.md)
  - [DocumentIRMetrics](docs/DocumentIRMetrics.md)
  - [DocumentIRRouting](docs/DocumentIRRouting.md)
@@ -150,22 +144,14 @@ Class | Method | HTTP request | Description
  - [Element](docs/Element.md)
  - [Error](docs/Error.md)
  - [ErrorError](docs/ErrorError.md)
- - [FailTask200Response](docs/FailTask200Response.md)
- - [FailTaskRequest](docs/FailTaskRequest.md)
  - [Healthz200Response](docs/Healthz200Response.md)
  - [Job](docs/Job.md)
  - [JobResultUrls](docs/JobResultUrls.md)
  - [Readiness](docs/Readiness.md)
- - [RegisterWorker200Response](docs/RegisterWorker200Response.md)
  - [SourceLocation](docs/SourceLocation.md)
  - [SourceLocationBbox](docs/SourceLocationBbox.md)
- - [SubmitResult200Response](docs/SubmitResult200Response.md)
- - [SubmitResultRequest](docs/SubmitResultRequest.md)
  - [Table](docs/Table.md)
  - [TableCellsInner](docs/TableCellsInner.md)
- - [TaskHeartbeat200Response](docs/TaskHeartbeat200Response.md)
- - [TaskHeartbeatRequest](docs/TaskHeartbeatRequest.md)
- - [WorkerRegistration](docs/WorkerRegistration.md)
 
 
 <a id="documentation-for-authorization"></a>
@@ -177,13 +163,6 @@ Authentication schemes defined for the API:
 ### bearerAuth
 
 - **Type**: Bearer authentication
-
-<a id="internalToken"></a>
-### internalToken
-
-- **Type**: API key
-- **API key parameter name**: X-Internal-Token
-- **Location**: HTTP header
 
 
 ## Author

@@ -36,7 +36,7 @@ class TestJobsApi(unittest.TestCase):
     def test_cancel_job(self) -> None:
         """Test case for cancel_job
 
-        Stop a queued/running job, or release a completed result
+        Stop a queued/running job (completed results must be ACKed)
         """
         pass
 

@@ -45,7 +45,7 @@ Invariants:
 
 | Timer | Default | Starts | Enforced by |
 | --- | --- | --- | --- |
-| `max_lifetime_at` | created + 24 h | upload | claim filter, engine deadline, cleaner |
+| `processing_deadline_at` (`max_lifetime_at` = deprecated alias) | created + 24 h | upload | claim filter, engine deadline, cleaner — **queued/running only** |
 | `result_expires_at` | commit + `result_ttl` (client may request up to `max_result_ttl`) | **result commit**, not upload | cleaner |
 | failed retention | `updated_at + 10 min` | terminal failure | cleaner |
 | download lease | 60 s, renewed every 20 s while streaming | each `GET …/result` | cleaner (skips busy jobs) |
@@ -53,7 +53,9 @@ Invariants:
 | tombstone | 10 min | released/expired | cleaner |
 
 Result TTL measured from commit matters: a 20-minute parse must not produce a
-result that is already expired when it appears.
+result that is already expired when it appears. PR-00 renamed the API field to
+`processing_deadline_at` because it never bounded a completed result; the old name
+is still returned as a deprecated alias (F03).
 
 ## 3. Submit → parse → download (defaults, measured)
 
@@ -82,6 +84,10 @@ Content-Type: application/json
 
 * `result_version` is mandatory for the first ACK and must equal the current
   manifest version; a mismatch is `409 conflict` and releases nothing.
+* **Cancel does not bypass this.** `POST /cancel` on an already-completed job is a
+  release, so it requires the same `result_version`; without it the call returns
+  `409` and nothing changes (PR-00 / F03). Cancel remains a cancellation for
+  `queued`/`running` jobs only.
 * Response `202` with `retention_status=release_pending` means **intent accepted**,
   not "deleted". Poll `GET /v1/jobs/{id}` for `released`.
 * Repeat ACK → `202` again, no state change, no other job touched (T06).
@@ -92,6 +98,10 @@ Content-Type: application/json
   the stream and gone after the 5 s lease + cleanup).
 * ACK racing TTL → exactly one terminal retention state, no orphan files (T07 ran
   4 races; all ended `released` or `expired` with zero files).
+* ACK racing a **new download** → the lease insert is one conditional SQL statement
+  against `retention_status='active'`, and the cleaner's `deleting` transition is a
+  single `UPDATE … AND NOT EXISTS(live lease)`. There is no check-then-write window
+  (PR-00 / F03, `TestDownloadLeaseIsAtomicWithRetention`).
 
 Why no automatic ACK: an HTTP 200 means the bytes left the server, not that the
 client consumed them. SDKs expose `ack()` and an opt-in `download_and_ack()` that
@@ -109,6 +119,7 @@ only fires after the caller's own sink reports success.
 | repeated ACK | 202, idempotent | T06 |
 | Coordinator `SIGKILL` during cleanup | restart resumes `deleting`, files removed | T08 (3 jobs, 6 files left at kill, all gone after restart) |
 | Worker `SIGKILL` mid-task | lease expires, job requeued, attempt 2 succeeds; stale token rejected | T09 (attempts: expired → succeeded; stale result/heartbeat `409`) |
+| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and calls `/fail`, which is an idempotent no-op; the job stays `cancelled` | `TestCancelledAttemptFinalisation`, PR00-03 |
 | No GPU and `device=gpu_required` | `409 gpu_unavailable`, **no job row created** | T12 |
 | Invalid/adversarial upload | `4xx` with stable code, service stays healthy | T13 |
 | Disk below watermark | new upload `507`, existing results still downloadable | T14 |
@@ -151,8 +162,14 @@ data/
 ```
 
 `result_version = "sha256:" + H("name:size:sha256\n" for each file, sorted)`.
-It is the value clients echo in ACK and the ETag of every result response, so a
-client can prove *which* bytes it consumed.
+It is the value clients echo in ACK and is returned as `X-Result-Version`.
+
+**ETag is a different thing (PR-00 / F05).** `ETag` is the strong validator of the
+requested representation: `"sha256:<artifact sha256>"` for `result.md`,
+`result.txt` or `result.json`. The manifest hash cannot validate one representation
+(the files differ), so reusing it as an ETag would let a cache answer `304` for the
+wrong body. `If-None-Match` is honoured; `Vary: Accept-Encoding` is set so a future
+gzip/br encoder cannot poison caches. The ACK never accepts an ETag.
 
 ## 8. Disk watermark behaviour
 
@@ -167,4 +184,5 @@ HTTP 200.
 * Reference counting / multiple consumers per result (single logical result owner).
 * Chunked/resumable uploads (would need a different contract, not an object store).
 * Server-side webhooks (`P1`; would need HMAC + SSRF controls).
+* Multiple representations sharing one ETag (they must not, see above).
 * Automatic ACK anywhere in the server.

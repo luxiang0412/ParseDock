@@ -79,6 +79,8 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--cleanup-interval` | `PARSEDOCK_CLEANUP_INTERVAL` | `60s` | cleaner period |
 | `--download-lease` | `PARSEDOCK_DOWNLOAD_LEASE` | `60s` | download lease |
 | `--worker-lease` | `PARSEDOCK_WORKER_LEASE` | `60s` | worker lease |
+| `--work-max-age` | `PARSEDOCK_WORK_MAX_AGE` | `1h` | remove crashed attempt dirs older than this |
+| `--work-scrub-interval` | `PARSEDOCK_WORK_SCRUB_INTERVAL` | `10m` | periodic worker scratch sweep |
 | `--heartbeat` | `PARSEDOCK_HEARTBEAT` | `10s` | worker heartbeat |
 | `--tombstone-ttl` | `PARSEDOCK_TOMBSTONE_TTL` | `10m` | 410 window |
 | `--max-upload-mb` | `PARSEDOCK_MAX_UPLOAD_MB` | `64` | upload cap |
@@ -106,6 +108,15 @@ supposed to reclaim space.
 
 ## 6. Backup, restore, retention
 
+PR-00 added offline backup/restore scripts and a test:
+`scripts/backup.sh <data-dir> <backup-dir>`, `scripts/restore.sh <backup> <data-dir>`,
+`python tests/integration/backup_restore.py`. The backup contains the SQLite file
+and **only artifacts of `retention_status=active` jobs** — a released or expired
+result must not come back from a backup, because ACK is a deletion request. The
+restore script purges non-active artifact directories and the cleaner finishes any
+pending retention work on start; the test asserts a released job returns `410`
+after a restore while an active job still downloads.
+
 * Back up `data/coordinator.db*` **and** the `inputs/`+`results/` trees together;
   a DB without files yields `410` results, files without a DB are orphaned and swept.
 * The cleanest backup point is a stopped coordinator, or `sqlite3 coordinator.db ".backup …"`
@@ -117,8 +128,13 @@ supposed to reclaim space.
 
 ## 7. Known deployment gaps
 
-* `--internal-token` is a shared static secret (mTLS is P1).
+* `--internal-token` is a shared static secret (mTLS is P1). The coordinator refuses
+  to bind a non-loopback internal address without it.
 * No automatic Coordinator failover; the orchestrator must restart the single replica.
 * No TLS termination inside ParseDock; put it behind the ingress/load balancer.
 * No GPU image built in Phase 0 (recipe and acceptance steps in `GPU-REPORT.md` §4).
 * `apache/tika:latest-full` is a moving tag in the PoC; pin the digest in production.
+* **Distribution gate.** `make license-audit` writes `build/sbom/<image>.json` and
+  fails when an image contains a GPL library. `parsedock-worker-cpu` currently fails
+  because the xberg release tarball bundles `libx265`; external distribution is
+  BLOCKED until licence item L1 is signed off (`docs/LICENSE-REVIEW.md`).

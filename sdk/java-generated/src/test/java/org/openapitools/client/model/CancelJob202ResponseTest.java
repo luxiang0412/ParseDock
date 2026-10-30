@@ -19,7 +19,9 @@ import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
 import java.io.IOException;
+import java.time.OffsetDateTime;
 import java.util.Arrays;
+import org.openapitools.jackson.nullable.JsonNullable;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
@@ -59,6 +61,22 @@ public class CancelJob202ResponseTest {
     @Test
     public void retentionStatusTest() {
         // TODO: test retentionStatus
+    }
+
+    /**
+     * Test the property 'resultVersion'
+     */
+    @Test
+    public void resultVersionTest() {
+        // TODO: test resultVersion
+    }
+
+    /**
+     * Test the property 'processingDeadlineAt'
+     */
+    @Test
+    public void processingDeadlineAtTest() {
+        // TODO: test processingDeadlineAt
     }
 
     /**

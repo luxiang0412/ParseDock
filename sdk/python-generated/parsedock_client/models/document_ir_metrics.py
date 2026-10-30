@@ -74,6 +74,16 @@ class DocumentIRMetrics(BaseModel):
             exclude=excluded_fields,
             exclude_none=True,
         )
+        # set to None if peak_rss_mb (nullable) is None
+        # and model_fields_set contains the field
+        if self.peak_rss_mb is None and "peak_rss_mb" in self.model_fields_set:
+            _dict['peak_rss_mb'] = None
+
+        # set to None if peak_vram_mb (nullable) is None
+        # and model_fields_set contains the field
+        if self.peak_vram_mb is None and "peak_vram_mb" in self.model_fields_set:
+            _dict['peak_vram_mb'] = None
+
         return _dict
 
     @classmethod

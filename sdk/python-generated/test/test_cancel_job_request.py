@@ -14,60 +14,38 @@
 
 import unittest
 
-from parsedock_client.api.internal_api import InternalApi
+from parsedock_client.models.cancel_job_request import CancelJobRequest
 
+class TestCancelJobRequest(unittest.TestCase):
+    """CancelJobRequest unit test stubs"""
 
-class TestInternalApi(unittest.TestCase):
-    """InternalApi unit test stubs"""
-
-    def setUp(self) -> None:
-        self.api = InternalApi()
-
-    def tearDown(self) -> None:
+    def setUp(self):
         pass
 
-    def test_claim_task(self) -> None:
-        """Test case for claim_task
+    def tearDown(self):
+        pass
 
-        Atomically lease one matching queued job
+    def make_instance(self, include_optional) -> CancelJobRequest:
+        """Test CancelJobRequest
+            include_optional is a boolean, when False only required
+            params are included, when True both required and
+            optional params are included """
+        # uncomment below to create an instance of `CancelJobRequest`
         """
-        pass
-
-    def test_fail_task(self) -> None:
-        """Test case for fail_task
-
-        Report a classified failure
+        model = CancelJobRequest()
+        if include_optional:
+            return CancelJobRequest(
+                result_version = ''
+            )
+        else:
+            return CancelJobRequest(
+        )
         """
-        pass
 
-    def test_fetch_input(self) -> None:
-        """Test case for fetch_input
-
-        Stream the input for a leased task
-        """
-        pass
-
-    def test_register_worker(self) -> None:
-        """Test case for register_worker
-
-        Register worker capabilities
-        """
-        pass
-
-    def test_submit_result(self) -> None:
-        """Test case for submit_result
-
-        Submit the Document IR (fenced commit)
-        """
-        pass
-
-    def test_task_heartbeat(self) -> None:
-        """Test case for task_heartbeat
-
-        Renew the lease and report progress
-        """
-        pass
-
+    def testCancelJobRequest(self):
+        """Test CancelJobRequest"""
+        # inst_req_only = self.make_instance(include_optional=False)
+        # inst_req_and_optional = self.make_instance(include_optional=True)
 
 if __name__ == '__main__':
     unittest.main()

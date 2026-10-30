@@ -69,6 +69,8 @@ type flags struct {
 	workerConcurrency int
 	deviceType        string
 	maxParseMinutes   int
+	workMaxAge        time.Duration
+	workScrubInterval time.Duration
 
 	xbergBin        string
 	xbergLibDir     string
@@ -132,6 +134,8 @@ func parseFlags() *flags {
 	fs.IntVar(&f.workerConcurrency, "worker-concurrency", intEnv("PARSEDOCK_WORKER_CONCURRENCY", 1), "concurrent tasks per worker")
 	fs.StringVar(&f.deviceType, "device-type", env("PARSEDOCK_DEVICE_TYPE", "cpu"), "cpu|gpu")
 	fs.IntVar(&f.maxParseMinutes, "max-parse-minutes", intEnv("PARSEDOCK_MAX_PARSE_MINUTES", 30), "engine time budget")
+	fs.DurationVar(&f.workMaxAge, "work-max-age", durEnv("PARSEDOCK_WORK_MAX_AGE", time.Hour), "remove crashed attempt dirs older than this")
+	fs.DurationVar(&f.workScrubInterval, "work-scrub-interval", durEnv("PARSEDOCK_WORK_SCRUB_INTERVAL", 10*time.Minute), "periodic scratch sweep interval")
 
 	fs.StringVar(&f.xbergBin, "xberg-bin", env("PARSEDOCK_XBERG_BIN", ""), "path to xberg CLI")
 	fs.StringVar(&f.xbergLibDir, "xberg-lib-dir", env("PARSEDOCK_XBERG_LIB_DIR", ""), "dir with xberg shared libs")
@@ -208,6 +212,9 @@ func run(f *flags) error {
 }
 
 func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *slog.Logger, ready chan<- struct{}) error {
+	if err := coordinator.ValidateInternalBinding(f.internalListen, f.internalToken, f.devInsecure); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(f.dataDir, 0o750); err != nil {
 		return err
 	}
@@ -301,6 +308,8 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 		HeartbeatInterval: f.heartbeat,
 		MaxParseTime:      time.Duration(f.maxParseMinutes) * time.Minute,
 		MaxInputBytes:     f.maxUploadMB << 20,
+		WorkMaxAge:        f.workMaxAge,
+		WorkScrubInterval: f.workScrubInterval,
 		Engines:           reg.Names(),
 		Host:              hostname(),
 	}
