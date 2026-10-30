@@ -21,17 +21,28 @@ RUN /opt/mineru/bin/mineru telemetry disable || true
 FROM parsedock:0.1.0
 USER root
 COPY --from=mineru /opt/mineru /opt/mineru
+# The venv's python3 is a symlink to /usr/bin/python3, so the interpreter binary and
+# libpython from the Ubuntu stage have to come along; copying only the stdlib leaves
+# every entry point with a broken shebang ("mineru: not found").
+COPY --from=mineru /usr/bin/python3.12 /usr/bin/python3.12
 COPY --from=mineru /usr/lib/python3.12 /usr/lib/python3.12
 COPY --from=mineru /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
-RUN useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin parsedock || true \
+COPY --from=mineru /usr/lib/python3 /usr/lib/python3
+RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 \
+ && ln -sf /usr/bin/python3.12 /usr/bin/python \
+ && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin parsedock || true \
  && mkdir -p /work/mineru-home && chown -R 10001:10001 /work
 ENV PATH="/opt/mineru/bin:${PATH}" \
     MINERU_HOME=/work/mineru-home \
     PARSEDOCK_MINERU_BIN=/opt/mineru/bin/mineru \
+    PARSEDOCK_WORK_ROOT=/work \
     PARSEDOCK_ENGINES=mineru \
     PARSEDOCK_DEVICE_TYPE=gpu
-USER 10001:10001
+# Stays root only until the entrypoint has prepared a mounted work volume; the
+# entrypoint immediately re-executes itself as uid 10001 via setpriv.
+USER root
 # MinerU needs its local daemon; the entrypoint starts it, then the worker.
-COPY docker/gpu-entrypoint.sh /usr/local/bin/gpu-entrypoint.sh
-RUN chmod 0755 /usr/local/bin/gpu-entrypoint.sh
+# --chmod avoids a chmod layer, which fails on some build hosts when the base
+# image's /usr/local/bin is not writable by the build user.
+COPY --chmod=0755 docker/gpu-entrypoint.sh /usr/local/bin/gpu-entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/gpu-entrypoint.sh"]

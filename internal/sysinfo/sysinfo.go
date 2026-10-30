@@ -47,6 +47,37 @@ type GPU struct {
 	ComputeCap string `json:"compute_cap,omitempty"`
 }
 
+// FreeVRAMMB returns the sum of memory.free across visible GPUs. The boolean is
+// false when the value is unknown (no nvidia-smi, driver error), which callers must
+// treat as "no information", not as "no memory".
+func FreeVRAMMB(ctx context.Context) (int64, bool) {
+	if _, err := exec.LookPath("nvidia-smi"); err != nil {
+		return 0, false
+	}
+	c, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(c, "nvidia-smi",
+		"--query-gpu=memory.free", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return 0, false
+	}
+	var total int64
+	parsed := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if v, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64); err == nil {
+			total += v
+			parsed++
+		}
+	}
+	if parsed == 0 {
+		// nvidia-smi ran but printed nothing usable ("[N/A]", MIG without
+		// permissions, ...). Report unknown rather than "zero bytes free", which
+		// would make the coordinator refuse every GPU job.
+		return 0, false
+	}
+	return total, true
+}
+
 // DetectGPU probes nvidia-smi with a short timeout. Absence is not an error:
 // ParseDock's CPU path must work on machines without a GPU or CUDA toolkit.
 func DetectGPU(ctx context.Context) ([]GPU, error) {

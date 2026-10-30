@@ -1022,3 +1022,47 @@ func TestConcurrentWritesDoNotBusySnapshot(t *testing.T) {
 		}
 	}
 }
+
+// PR-08: gpu_required must not be handed to a GPU host with no room for the model.
+func TestGPUAdmissionRespectsFreeVRAM(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Engines = []EngineSpec{{Name: "mineru", Device: "gpu", Priority: 10,
+			Formats: []string{"pdf"}, Modes: []string{"accurate"}, MinVRAMMB: 8192}}
+	})
+	ctx := context.Background()
+	reg := func(freeMB int64) {
+		err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "gpu-1", Host: "h", DeviceType: "gpu",
+			Engines: []string{"mineru"}, GPUMemoryBytes: 16 << 30, FreeVRAMBytes: freeMB << 20})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No worker at all.
+	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
+		t.Fatalf("no worker: want gpu_unavailable, got %v", err)
+	}
+	// A worker that is registered but full.
+	reg(1024)
+	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
+		t.Fatalf("full GPU: want gpu_unavailable, got %v", err)
+	}
+	// Enough free VRAM.
+	reg(12288)
+	if engine, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); err != nil || engine != "mineru" {
+		t.Fatalf("enough VRAM: engine=%q err=%v", engine, err)
+	}
+	// Unknown memory (-1) is accepted: an unmeasurable host must stay usable.
+	reg(-1)
+	if engine, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); err != nil || engine != "mineru" {
+		t.Fatalf("unknown VRAM: engine=%q err=%v", engine, err)
+	}
+	// A stale heartbeat frees the slot again.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE workers SET heartbeat_at = ? WHERE worker_id = 'gpu-1'`,
+		ts(nowUTC().Add(-10*time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
+		t.Fatalf("stale worker: want gpu_unavailable, got %v", err)
+	}
+}

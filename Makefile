@@ -57,6 +57,9 @@ pr00: contract ## runtime contract checks (PR-00/PR-02/PR-07 scenarios)
 load: ## cluster-lite load check (mock engine): make load JOBS=200 CONC=32
 	bash scripts/cluster-lite-load.sh $(or $(JOBS),120) $(or $(CONC),12)
 
+gpu-check: ## GPU worker image end-to-end (needs a GPU host): make gpu-check
+	python3 tests/integration/pr08_gpu.py --build
+
 score: ## regenerate benchmark scores + docs tables
 	$(PY_FIX) benchmark/scripts/score.py --write
 	python3 tests/unit/test_score.py

@@ -1,4 +1,4 @@
-# GPU REPORT — Phase 0
+# GPU REPORT
 
 > Host GPU: NVIDIA GeForce RTX 2080 Ti, 22 528 MiB, compute capability 7.5,
 > driver 595.99.02, CUDA 13.2. Measurements by
@@ -60,29 +60,52 @@ Interpretation:
 | Docling CUDA execution + VRAM measurement | ✅ verified |
 | MinerU flash on GPU + resident VRAM | ✅ verified |
 | `gpu_required` routing without GPU worker | ✅ verified (T12) |
-| `deploy/compose.gpu.yaml` (MinerU worker image) | ⚠️ file provided, **image not built in Phase 0** — see §4 |
+| `parsedock-worker-gpu:0.1.0` built and running MinerU on the GPU | ✅ verified (PR-08, `tests/integration/pr08_gpu.py`, 4/4) |
+| GPU worker registers `device_type=gpu` + measurable free VRAM | ✅ verified (18 832 MiB reported by heartbeat) |
+| `device=gpu_required` completes on the GPU worker (scanned PDF) | ✅ verified (`engine=mineru`, `routing.reason` names gpu_required) |
+| VRAM-aware admission (refuse a GPU job when free VRAM < requirement) | ✅ unit-tested (`TestGPUAdmissionRespectsFreeVRAM`); not measured on a genuinely full card |
 | GPU throughput at concurrency > 1 for docling-serve | ⚠️ not measured (docling-serve device switch not wired) |
 
-## 4. Blocked / deferred, with the exact commands to finish
+## 4. GPU worker image (built in PR-08)
 
-**GPU worker image.** `docker/Dockerfile.worker-gpu` builds on
-`nvidia/cuda:13.2.0-runtime-ubuntu24.04` and installs `mineru==4.1.2`. It was not
-built during Phase 0 because the resulting image is several GB and the PoC already
-verified the same runtime natively. To finish it:
+`docker/Dockerfile.worker-gpu` builds `parsedock-worker-gpu:0.1.0` on
+`nvidia/cuda:13.2.0-runtime-ubuntu24.04` (digest-pinned) with `mineru==4.1.2` and the
+control-plane binary; the image is **1.0 GB**. `tests/integration/pr08_gpu.py` runs the
+whole path on a GPU host:
 
 ```bash
-docker build -f docker/Dockerfile.worker-gpu -t parsedock-worker-gpu:0.1.0 .
-docker compose -f deploy/compose.cpu.yaml -f deploy/compose.gpu.yaml --profile gpu up -d
-docker compose -f deploy/compose.cpu.yaml exec worker-gpu nvidia-smi
-curl -H "Authorization: Bearer $KEY" -F "file=@scan.pdf" -F "device=gpu_required" http://localhost:8080/v1/jobs
+make build && python3 tests/integration/pr08_gpu.py --build
+# PR08-01 PASS mineru inside the image → MinerU version: 4.1.2
+# PR08-02 PASS device_type=gpu free_vram=18832MiB model=NVIDIA GeForce RTX 2080 Ti
+# PR08-03 PASS gpu_required → completed
+# PR08-04 PASS engine=mineru reason=format=pdf mode=accurate device=gpu_required -> mineru/mineru (both)
 ```
 
-Acceptance to add once built: GPU worker registers `device_type=gpu`, a
-`device=gpu_preferred` job routes to it (`routing.reason` shows the GPU engine), and
-with the GPU worker stopped, `device=gpu_required` returns `409` (already covered by
-T12 on CPU-only stacks).
+Three real defects were found and fixed while building it — all would have shipped a
+GPU image that registers but cannot parse:
 
-**docling-serve GPU.** The installed 1.38.2 build exposes no documented
+1. **Broken shebang.** The MinerU venv's `python3` is a symlink to `/usr/bin/python3`,
+   but only the stdlib and `site-packages` were copied into the final stage, so every
+   entry point died with "mineru: not found". The interpreter binary, `libpython`, and
+   `/usr/bin/python3` symlink are now copied explicitly.
+2. **Mounted volume owned by root.** The image-time `chown` cannot apply to a volume
+   mounted at run time, so MinerU got `Permission denied` writing its scratch files.
+   The entrypoint now prepares `/work`, `chown`s it, and re-executes itself as uid 10001
+   via `setpriv` (privileges are dropped before any parser runs).
+3. **`HOME=/root`.** MinerU/HuggingFace tried to write `/root/.cache/huggingface/token`.
+   `HOME`, `HF_HOME` and `XDG_CACHE_HOME` now point inside the work volume, which also
+   makes the model cache survive container restarts.
+
+**MinerU telemetry** is disabled at build time (`mineru telemetry disable`) and again by
+the entrypoint. Engine egress can additionally be blocked with `--sandbox=unshare-net`,
+which fails closed when namespaces are unavailable.
+
+**Free VRAM reporting.** Workers now send `free_vram_bytes` on every register/heartbeat
+(`-1` = unknown, `0` = genuinely full). The coordinator refuses `gpu_required` when no
+live GPU worker has `--engine-min-vram-mb <engine>:<MiB>` free, with a message naming the
+requirement instead of queueing forever.
+
+**docling-serve GPU (still open).** The installed 1.38.2 build exposes no documented
 `device` request option in the tested configuration; the Python Docling CLI was used
 for the CUDA measurement instead. To wire it: run docling-serve with a CUDA-enabled
 torch and configure its accelerator options (P1 task, needs upstream docs review),
@@ -94,7 +117,8 @@ then repeat the `gpu_bench.py` matrix against `:15001`.
   registration carries `gpu_model`, `gpu_memory_bytes`, `device_type`, and the claim
   query excludes `gpu_required` jobs for CPU workers.
 * VRAM planning: Docling CUDA peaks at ~1.5 GB for 30 pages at 1 worker; MinerU flash
-  holds ~0.9 GB resident per daemon. A 22 GB card can host several workers, but
+  holds ~0.9 GB resident per daemon plus the model cache on disk (first run downloads
+  several GB into `HF_HOME`, so give the work volume room and a warm-up run). A 22 GB card can host several workers, but
   model-load memory is per process — prefer one daemon with concurrency over N daemons.
 * GPU time is not "free speed": the 30-page Docling run used 65 % GPU at ~7.5 s; the
   same work on CPU used 8 P-cores for 13.8 s. Choose per workload, and record the
