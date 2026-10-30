@@ -1,0 +1,192 @@
+{
+  "profile": "lifecycle",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T06:51:52.429194+00:00",
+  "finished_at": "2026-10-30T06:52:50.906784+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "dc2b41d4bc57ce9f61f32bebd33992d3dcd95ba653b81e508b983a5d192b3169",
+  "cases": [
+    {
+      "id": "T03",
+      "name": "ACK releases the result and later downloads return 410",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ525Q6XYZ10Z1HPV56G7MW",
+        "result_version": "sha256:bcc64bffe974930638b88c90f15c1ae2e8b48a27b5ba4311d15846fc85a47c6d",
+        "files_before": {
+          "inputs/job_06GRQ525Q6XYZ10Z1HPV56G7MW/meta.json": 106,
+          "inputs/job_06GRQ525Q6XYZ10Z1HPV56G7MW/input.bin": 134,
+          "results/job_06GRQ525Q6XYZ10Z1HPV56G7MW/result.txt": 104,
+          "results/job_06GRQ525Q6XYZ10Z1HPV56G7MW/result.md": 107,
+          "results/job_06GRQ525Q6XYZ10Z1HPV56G7MW/result.json": 797,
+          "results/job_06GRQ525Q6XYZ10Z1HPV56G7MW/manifest.json": 691
+        },
+        "files_after": {},
+        "ack_http": 202,
+        "post_ack_download": 410,
+        "final_retention": "released",
+        "elapsed_s": 2.05
+      },
+      "error": ""
+    },
+    {
+      "id": "T04",
+      "name": "no ACK: TTL expires the result, 410 inside tombstone, metadata purged later",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 446, in t04\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.01
+      },
+      "error": "KeyError: 'job_id'"
+    },
+    {
+      "id": "T05",
+      "name": "ACK during an active download waits for the download lease",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ52DS6R5WFTB6EX31GXR00",
+        "lease_id": "dl_06GRQ52K5KANFCQ9CFFJZ51Z50",
+        "first_download_bytes": 8388747,
+        "ack_http": 202,
+        "second_download_http": 410,
+        "files_during_ack": {
+          "inputs/job_06GRQ52DS6R5WFTB6EX31GXR00/meta.json": 107,
+          "inputs/job_06GRQ52DS6R5WFTB6EX31GXR00/input.bin": 746,
+          "results/job_06GRQ52DS6R5WFTB6EX31GXR00/result.txt": 8388743,
+          "results/job_06GRQ52DS6R5WFTB6EX31GXR00/result.md": 8388747,
+          "results/job_06GRQ52DS6R5WFTB6EX31GXR00/result.json": 8522657,
+          "results/job_06GRQ52DS6R5WFTB6EX31GXR00/manifest.json": 703
+        },
+        "final_retention": "released",
+        "elapsed_s": 5.07
+      },
+      "error": ""
+    },
+    {
+      "id": "T06",
+      "name": "repeated ACK is idempotent and does not touch other jobs",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 506, in t06\n    a = stack.create_job(FIX / \"csv_utf8.csv\").json()[\"job_id\"]\n        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.01
+      },
+      "error": "KeyError: 'job_id'"
+    },
+    {
+      "id": "T07",
+      "name": "ACK racing TTL yields exactly one final state and no orphan files",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 527, in t07\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.0
+      },
+      "error": "KeyError: 'job_id'"
+    },
+    {
+      "id": "T08",
+      "name": "SIGKILL during cleanup: restart finishes the job with no orphan data",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 546, in t08\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.0
+      },
+      "error": "KeyError: 'job_id'"
+    },
+    {
+      "id": "T09",
+      "name": "worker SIGKILL: lease expires, job retries, stale token cannot submit",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ531KW2Q1N83BM3DNXT228",
+        "attempts": [
+          {
+            "attempt_no": 1,
+            "state": "expired"
+          },
+          {
+            "attempt_no": 2,
+            "state": "succeeded"
+          }
+        ],
+        "stale_result_http": 409,
+        "stale_heartbeat_http": 409,
+        "final_status": "completed",
+        "result_version": "sha256:e03a8afb0dc8eee7f27831fc38b41499560dfabe516e088b0c327ae85d7b5b94",
+        "elapsed_s": 50.05
+      },
+      "error": ""
+    },
+    {
+      "id": "T10",
+      "name": "two API replicas: any replica can query, download and ACK the same job",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ594AP1ASVM2442K7ZPTPM",
+        "create_port": 42529,
+        "query_port": 60241,
+        "sse_content_type": "text/event-stream",
+        "sse_events": [
+          "event: snapshot"
+        ],
+        "ack_port": 60241,
+        "ack_http": 202,
+        "elapsed_s": 1.23
+      },
+      "error": ""
+    },
+    {
+      "id": "T12",
+      "name": "device=gpu_required without a GPU worker is an explicit failure, never silent CPU",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 688, in t12\n    assert n == 0, \"gpu_required rejection still persisted a job\"\n           ^^^^^^\nAssertionError: gpu_required rejection still persisted a job\n",
+        "elapsed_s": 0.01
+      },
+      "error": "AssertionError: gpu_required rejection still persisted a job"
+    },
+    {
+      "id": "T13",
+      "name": "invalid and adversarial uploads are rejected without crashing",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 707, in t13\n    assert 400 <= r.status < 500, f\"{name} was not rejected: {r.status} {r.text()[:200]}\"\n           ^^^^^^^^^^^^^^^^^^^^^\nAssertionError: corrupt was not rejected: 500 {\"error\":{\"code\":\"internal_error\",\"message\":\"insert job: constraint failed: UNIQUE constraint failed: jobs.owner_id, jobs.idempotency_key (2067)\"}}\n\n",
+        "elapsed_s": 0.01
+      },
+      "error": "AssertionError: corrupt was not rejected: 500 {\"error\":{\"code\":\"internal_error\",\"message\":\"insert job: constraint failed: UNIQUE constraint failed: jobs.owner_id, jobs.idempotency_key (2067)\"}}\n"
+    },
+    {
+      "id": "T14",
+      "name": "disk watermark blocks new uploads but keeps live results readable",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 721, in t14\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.0
+      },
+      "error": "KeyError: 'job_id'"
+    },
+    {
+      "id": "T15",
+      "name": "stale attempt writes are rejected by lease fencing",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 750, in t15\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.0
+      },
+      "error": "KeyError: 'job_id'"
+    },
+    {
+      "id": "T16",
+      "name": "released/expired jobs return 410 during the tombstone window",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 887, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 784, in t16\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n",
+        "elapsed_s": 0.0
+      },
+      "error": "KeyError: 'job_id'"
+    }
+  ]
+}

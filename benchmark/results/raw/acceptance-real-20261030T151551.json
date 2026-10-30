@@ -1,0 +1,82 @@
+{
+  "profile": "real",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T07:09:46.886950+00:00",
+  "finished_at": "2026-10-30T07:15:51.640005+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "fd7a2cf90eeba898bbbc78ce108366de2f848808a97a17a55ff866274d1ec48d",
+  "cases": [
+    {
+      "id": "T01",
+      "name": "real upload+parse of a PDF produces a correct, readable result",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 957, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 448, in t01\n    final = stack.wait_status(jid, {\"completed\"}, timeout=180)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 328, in wait_status\n    raise AssertionError(f\"job {job_id} did not reach {want}; last={last}\")\nAssertionError: job job_06GRQ95ATRM1ZBAFA0WCDTG09G did not reach {'completed'}; last={'ack_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G/ack', 'attempt': 1, 'cancel_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G/cancel', 'completed_at': '2026-10-30T07:09:48.340698Z', 'created_at': '2026-10-30T07:09:47.098854Z', 'engine': '', 'error_code': 'malformed_file', 'error_message': 'xberg exit 1: 026-10-30T07:09:48.338803Z ERROR xberg_native_pdf::document: PDF open failed error_code=\"invalid_header\"\\nError: Failed to extract input \\'/home/luxiang/project/work/ParseDock/runtime/acceptance/real-937803/work/job_06GRQ95ATRM1ZBAFA0WCDTG09G/a1/input.pdf\\'\\n\\nCaused by:\\n    Parsing error: xberg_native_pdf: failed to load bytes: Invalid PDF header: expected \\'%PDF-\\', found \\'File is empty (0 bytes read)\\'', 'events_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G/events', 'format': 'pdf', 'input_name': 'pdf_text_en_3p.pdf', 'input_sha256': '2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd', 'input_size': 4855, 'job_id': 'job_06GRQ95ATRM1ZBAFA0WCDTG09G', 'max_lifetime_at': '2026-10-31T07:09:47.098854Z', 'mime_type': 'application/pdf', 'page_count': 3, 'processing_status': 'failed', 'progress_percent': 0, 'progress_stage': 'claimed', 'requested_device': 'auto', 'requested_mode': 'auto', 'result_expires_at': None, 'result_urls': None, 'result_version': None, 'retention_status': 'active', 'routing_reason': 'format=pdf mode=auto device=auto -> xberg/xberg (cpu)', 'started_at': '2026-10-30T07:09:48.320183Z', 'status': 'failed', 'status_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G', 'updated_at': '2026-10-30T07:09:48.340698Z'}\n",
+        "elapsed_s": 180.33
+      },
+      "error": "AssertionError: job job_06GRQ95ATRM1ZBAFA0WCDTG09G did not reach {'completed'}; last={'ack_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G/ack', 'attempt': 1, 'cancel_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G/cancel', 'completed_at': '2026-10-30T07:09:48.340698Z', 'created_at': '2026-10-30T07:09:47.098854Z', 'engine': '', 'error_code': 'malformed_file', 'error_message': 'xberg exit 1: 026-10-30T07:09:48.338803Z ERROR xberg_native_pdf::document: PDF open failed error_code=\"invalid_header\"\\nError: Failed to extract input \\'/home/luxiang/project/work/ParseDock/runtime/acceptance/real-937803/work/job_06GRQ95ATRM1ZBAFA0WCDTG09G/a1/input.pdf\\'\\n\\nCaused by:\\n    Parsing error: xberg_native_pdf: failed to load bytes: Invalid PDF header: expected \\'%PDF-\\', found \\'File is empty (0 bytes read)\\'', 'events_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G/events', 'format': 'pdf', 'input_name': 'pdf_text_en_3p.pdf', 'input_sha256': '2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd', 'input_size': 4855, 'job_id': 'job_06GRQ95ATRM1ZBAFA0WCDTG09G', 'max_lifetime_at': '2026-10-31T07:09:47.098854Z', 'mime_type': 'application/pdf', 'page_count': 3, 'processing_status': 'failed', 'progress_percent': 0, 'progress_stage': 'claimed', 'requested_device': 'auto', 'requested_mode': 'auto', 'result_expires_at': None, 'result_urls': None, 'result_version': None, 'retention_status': 'active', 'routing_reason': 'format=pdf mode=auto device=auto -> xberg/xberg (cpu)', 'started_at': '2026-10-30T07:09:48.320183Z', 'status': 'failed', 'status_url': '/v1/jobs/job_06GRQ95ATRM1ZBAFA0WCDTG09G', 'updated_at': '2026-10-30T07:09:48.340698Z'}"
+    },
+    {
+      "id": "T02",
+      "name": "core formats parse or fail with an explicit unsupported error",
+      "status": "PASS",
+      "detail": {
+        "docx": {
+          "job_id": "job_06GRQ9VAET9RSVM9X6AVFHN1TM",
+          "status": "failed",
+          "engine": "",
+          "error_code": "malformed_file"
+        },
+        "xlsx": {
+          "create_status": 415,
+          "error": {
+            "code": "unsupported_type",
+            "message": "archive does not match docx structure"
+          }
+        },
+        "csv": {
+          "job_id": "job_06GRQ9VC9C8QW6RA9JRANM52G8",
+          "status": "completed",
+          "engine": "native",
+          "error_code": null,
+          "markdown_bytes": 210,
+          "has_text": true
+        },
+        "md": {
+          "job_id": "job_06GRQ9VHN9J25VP1Q37M5E29HG",
+          "status": "completed",
+          "engine": "native",
+          "error_code": null,
+          "markdown_bytes": 557,
+          "has_text": true
+        },
+        "png": {
+          "job_id": "job_06GRQ9VPE44QDRGC64MNEXE70R",
+          "status": "failed",
+          "engine": "",
+          "error_code": "malformed_file"
+        },
+        "unsupported": {
+          "create_status": 422,
+          "code": "malformed_file"
+        },
+        "elapsed_s": 4.3
+      },
+      "error": ""
+    },
+    {
+      "id": "T11",
+      "name": "CPU-only node: no GPU/CUDA dependency in the parse path",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 957, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 740, in t11\n    final = stack.wait_status(jid, {\"completed\"}, timeout=180)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 328, in wait_status\n    raise AssertionError(f\"job {job_id} did not reach {want}; last={last}\")\nAssertionError: job job_06GRQ9VV86YJE8N3NY0QDNPDR0 did not reach {'completed'}; last={'ack_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0/ack', 'attempt': 1, 'cancel_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0/cancel', 'completed_at': '2026-10-30T07:12:52.934112Z', 'created_at': '2026-10-30T07:12:51.525864Z', 'engine': '', 'error_code': 'malformed_file', 'error_message': 'xberg exit 1: 026-10-30T07:12:52.933446Z ERROR xberg_native_pdf::document: PDF open failed error_code=\"invalid_header\"\\nError: Failed to extract input \\'/home/luxiang/project/work/ParseDock/runtime/acceptance/real-937803/work/job_06GRQ9VV86YJE8N3NY0QDNPDR0/a1/input.pdf\\'\\n\\nCaused by:\\n    Parsing error: xberg_native_pdf: failed to load bytes: Invalid PDF header: expected \\'%PDF-\\', found \\'File is empty (0 bytes read)\\'', 'events_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0/events', 'format': 'pdf', 'input_name': 'pdf_text_en_3p.pdf', 'input_sha256': '2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd', 'input_size': 4855, 'job_id': 'job_06GRQ9VV86YJE8N3NY0QDNPDR0', 'max_lifetime_at': '2026-10-31T07:12:51.525864Z', 'mime_type': 'application/pdf', 'page_count': 3, 'processing_status': 'failed', 'progress_percent': 0, 'progress_stage': 'claimed', 'requested_device': 'cpu', 'requested_mode': 'auto', 'result_expires_at': None, 'result_urls': None, 'result_version': None, 'retention_status': 'active', 'routing_reason': 'format=pdf mode=auto device=cpu -> xberg/xberg (cpu)', 'started_at': '2026-10-30T07:12:52.920503Z', 'status': 'failed', 'status_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0', 'updated_at': '2026-10-30T07:12:52.934112Z'}\n",
+        "elapsed_s": 180.11
+      },
+      "error": "AssertionError: job job_06GRQ9VV86YJE8N3NY0QDNPDR0 did not reach {'completed'}; last={'ack_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0/ack', 'attempt': 1, 'cancel_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0/cancel', 'completed_at': '2026-10-30T07:12:52.934112Z', 'created_at': '2026-10-30T07:12:51.525864Z', 'engine': '', 'error_code': 'malformed_file', 'error_message': 'xberg exit 1: 026-10-30T07:12:52.933446Z ERROR xberg_native_pdf::document: PDF open failed error_code=\"invalid_header\"\\nError: Failed to extract input \\'/home/luxiang/project/work/ParseDock/runtime/acceptance/real-937803/work/job_06GRQ9VV86YJE8N3NY0QDNPDR0/a1/input.pdf\\'\\n\\nCaused by:\\n    Parsing error: xberg_native_pdf: failed to load bytes: Invalid PDF header: expected \\'%PDF-\\', found \\'File is empty (0 bytes read)\\'', 'events_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0/events', 'format': 'pdf', 'input_name': 'pdf_text_en_3p.pdf', 'input_sha256': '2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd', 'input_size': 4855, 'job_id': 'job_06GRQ9VV86YJE8N3NY0QDNPDR0', 'max_lifetime_at': '2026-10-31T07:12:51.525864Z', 'mime_type': 'application/pdf', 'page_count': 3, 'processing_status': 'failed', 'progress_percent': 0, 'progress_stage': 'claimed', 'requested_device': 'cpu', 'requested_mode': 'auto', 'result_expires_at': None, 'result_urls': None, 'result_version': None, 'retention_status': 'active', 'routing_reason': 'format=pdf mode=auto device=cpu -> xberg/xberg (cpu)', 'started_at': '2026-10-30T07:12:52.920503Z', 'status': 'failed', 'status_url': '/v1/jobs/job_06GRQ9VV86YJE8N3NY0QDNPDR0', 'updated_at': '2026-10-30T07:12:52.934112Z'}"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+.git
+runtime/
+test_data/
+benchmark/results/
+benchmark/fixtures/
+docs/
+tests/
+*.md

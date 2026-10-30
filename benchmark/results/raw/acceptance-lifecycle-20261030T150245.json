@@ -1,0 +1,276 @@
+{
+  "profile": "lifecycle",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T07:00:37.247502+00:00",
+  "finished_at": "2026-10-30T07:02:45.416476+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "fd7a2cf90eeba898bbbc78ce108366de2f848808a97a17a55ff866274d1ec48d",
+  "cases": [
+    {
+      "id": "T03",
+      "name": "ACK releases the result and later downloads return 410",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ727SVVTSVGEB4NPR6ENE4",
+        "result_version": "sha256:3e4a5a1834e98fe5d24eee1b38d9b16ee50c88404b9f07d463b71d006cc15fa2",
+        "files_before": {
+          "inputs/job_06GRQ727SVVTSVGEB4NPR6ENE4/meta.json": 106,
+          "inputs/job_06GRQ727SVVTSVGEB4NPR6ENE4/input.bin": 134,
+          "results/job_06GRQ727SVVTSVGEB4NPR6ENE4/result.txt": 104,
+          "results/job_06GRQ727SVVTSVGEB4NPR6ENE4/result.md": 107,
+          "results/job_06GRQ727SVVTSVGEB4NPR6ENE4/result.json": 797,
+          "results/job_06GRQ727SVVTSVGEB4NPR6ENE4/manifest.json": 689
+        },
+        "files_after": {},
+        "ack_http": 202,
+        "post_ack_download": 410,
+        "final_retention": "released",
+        "elapsed_s": 2.05
+      },
+      "error": ""
+    },
+    {
+      "id": "T04",
+      "name": "no ACK: TTL expires the result, 410 inside tombstone, metadata purged later",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ72F0D0N1AX2RC608HKA0W",
+        "result_expires_at": "2026-10-30T07:00:42.059676Z",
+        "first_download": 200,
+        "after_ttl": 410,
+        "retention": "expired",
+        "tombstone_purged_404": true,
+        "files_left": {},
+        "elapsed_s": 24.16
+      },
+      "error": ""
+    },
+    {
+      "id": "T05",
+      "name": "ACK during an active download waits for the download lease",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ75E6DXZ1SBJJDBH2BG8M0",
+        "lease_id": "dl_06GRQ75KJMTHXA43Z8JTS67168",
+        "first_download_bytes": 8388747,
+        "ack_http": 202,
+        "second_download_http": 410,
+        "files_during_ack": {
+          "inputs/job_06GRQ75E6DXZ1SBJJDBH2BG8M0/meta.json": 107,
+          "inputs/job_06GRQ75E6DXZ1SBJJDBH2BG8M0/input.bin": 746,
+          "results/job_06GRQ75E6DXZ1SBJJDBH2BG8M0/result.txt": 8388743,
+          "results/job_06GRQ75E6DXZ1SBJJDBH2BG8M0/result.md": 8388747,
+          "results/job_06GRQ75E6DXZ1SBJJDBH2BG8M0/result.json": 8522657,
+          "results/job_06GRQ75E6DXZ1SBJJDBH2BG8M0/manifest.json": 703
+        },
+        "final_retention": "released",
+        "elapsed_s": 5.06
+      },
+      "error": ""
+    },
+    {
+      "id": "T06",
+      "name": "repeated ACK is idempotent and does not touch other jobs",
+      "status": "PASS",
+      "detail": {
+        "job_a": "job_06GRQ7614SS6W0WKFHS6542D0C",
+        "job_b": "job_06GRQ7615E5MAJ5TE4X73KKVP4",
+        "ack1": 202,
+        "ack2": 202,
+        "ack_stale_version": 202,
+        "other_job_download": 200,
+        "elapsed_s": 1.85
+      },
+      "error": ""
+    },
+    {
+      "id": "T07",
+      "name": "ACK racing TTL yields exactly one final state and no orphan files",
+      "status": "PASS",
+      "detail": {
+        "races": [
+          {
+            "job_id": "job_06GRQ768BNNZ41X0PZTQ82XJQG",
+            "final": "released",
+            "files": {}
+          },
+          {
+            "job_id": "job_06GRQ76M09S8M94X70NCW922X0",
+            "final": "released",
+            "files": {}
+          },
+          {
+            "job_id": "job_06GRQ76ZMTJM5KN01AKAQ3DNZ4",
+            "final": "released",
+            "files": {}
+          },
+          {
+            "job_id": "job_06GRQ77FDFH85BX8T8F68C9220",
+            "final": "released",
+            "files": {}
+          }
+        ],
+        "elapsed_s": 14.04
+      },
+      "error": ""
+    },
+    {
+      "id": "T08",
+      "name": "SIGKILL during cleanup: restart finishes the job with no orphan data",
+      "status": "PASS",
+      "detail": {
+        "jobs": [
+          "job_06GRQ77Z6YVEF5TM3V6XXC85F0",
+          "job_06GRQ7856FGGK9MW5P8CFTFQWC",
+          "job_06GRQ78AJTR3KQW5QW8RN0MNWM"
+        ],
+        "files_after_sigkill": {
+          "job_06GRQ77Z6YVEF5TM3V6XXC85F0": {},
+          "job_06GRQ7856FGGK9MW5P8CFTFQWC": {},
+          "job_06GRQ78AJTR3KQW5QW8RN0MNWM": {
+            "inputs/job_06GRQ78AJTR3KQW5QW8RN0MNWM/meta.json": 106,
+            "inputs/job_06GRQ78AJTR3KQW5QW8RN0MNWM/input.bin": 134,
+            "results/job_06GRQ78AJTR3KQW5QW8RN0MNWM/result.txt": 104,
+            "results/job_06GRQ78AJTR3KQW5QW8RN0MNWM/result.md": 107,
+            "results/job_06GRQ78AJTR3KQW5QW8RN0MNWM/result.json": 797,
+            "results/job_06GRQ78AJTR3KQW5QW8RN0MNWM/manifest.json": 691
+          }
+        },
+        "files_after_restart": {
+          "job_06GRQ77Z6YVEF5TM3V6XXC85F0": {},
+          "job_06GRQ7856FGGK9MW5P8CFTFQWC": {},
+          "job_06GRQ78AJTR3KQW5QW8RN0MNWM": {}
+        },
+        "retention_after_restart": {
+          "job_06GRQ77Z6YVEF5TM3V6XXC85F0": "released",
+          "job_06GRQ7856FGGK9MW5P8CFTFQWC": "released",
+          "job_06GRQ78AJTR3KQW5QW8RN0MNWM": "released"
+        },
+        "elapsed_s": 8.15
+      },
+      "error": ""
+    },
+    {
+      "id": "T09",
+      "name": "worker SIGKILL: lease expires, job retries, stale token cannot submit",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ78ZV7F81GEQ9ZWDS2YQGC",
+        "attempts": [
+          {
+            "attempt_no": 1,
+            "state": "expired"
+          },
+          {
+            "attempt_no": 2,
+            "state": "succeeded"
+          }
+        ],
+        "stale_result_http": 409,
+        "stale_heartbeat_http": 409,
+        "final_status": "completed",
+        "result_version": "sha256:1f7d6af2091d3b745205902b568bac6e83728835a1b38267ed1521b21f97bb88",
+        "elapsed_s": 49.39
+      },
+      "error": ""
+    },
+    {
+      "id": "T10",
+      "name": "two API replicas: any replica can query, download and ACK the same job",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRQ7EZZ7ADWG389WTW332HPC",
+        "create_port": 44001,
+        "query_port": 47407,
+        "sse_content_type": "text/event-stream",
+        "sse_events": [
+          "event: snapshot"
+        ],
+        "ack_port": 47407,
+        "ack_http": 202,
+        "elapsed_s": 0.33
+      },
+      "error": ""
+    },
+    {
+      "id": "T12",
+      "name": "device=gpu_required without a GPU worker is an explicit failure, never silent CPU",
+      "status": "PASS",
+      "detail": {
+        "create_status": 409,
+        "error_code": "gpu_unavailable",
+        "gpu_jobs_persisted": 0,
+        "elapsed_s": 0.01
+      },
+      "error": ""
+    },
+    {
+      "id": "T13",
+      "name": "invalid and adversarial uploads are rejected without crashing",
+      "status": "PASS",
+      "detail": {
+        "empty": {
+          "http": 400,
+          "code": "malformed_file"
+        },
+        "corrupt": {
+          "http": 422,
+          "code": "malformed_file"
+        },
+        "wrong_ext": {
+          "http": 415,
+          "code": "unsupported_type"
+        },
+        "password": {
+          "http": 422,
+          "code": "encrypted_file"
+        },
+        "zipbomb": {
+          "http": 422,
+          "code": "suspicious_compression"
+        },
+        "fake_zip": {
+          "http": 422,
+          "code": "malformed_file"
+        },
+        "still_alive": true,
+        "elapsed_s": 1.55
+      },
+      "error": ""
+    },
+    {
+      "id": "T14",
+      "name": "disk watermark blocks new uploads but keeps live results readable",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 920, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 762, in t14\n    wait_port_free(stack.port_coord)\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 88, in wait_port_free\n    raise RuntimeError(f\"port {port} still in use\")\nRuntimeError: port 60841 still in use\n",
+        "elapsed_s": 21.57
+      },
+      "error": "RuntimeError: port 60841 still in use"
+    },
+    {
+      "id": "T15",
+      "name": "stale attempt writes are rejected by lease fencing",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 920, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 782, in t15\n    r = stack.create_job(FIX / \"txt_plain.txt\")\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 299, in create_job\n    return http_request(port or self.api, \"POST\", \"/v1/jobs\", body, h)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 127, in http_request\n    conn.request(method, path, body=body, headers=headers or {})\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n",
+        "elapsed_s": 0.0
+      },
+      "error": "ConnectionRefusedError: [Errno 111] Connection refused"
+    },
+    {
+      "id": "T16",
+      "name": "released/expired jobs return 410 during the tombstone window",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 920, in main\n    c.detail = fn(stack) or {}\n               ^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 816, in t16\n    r = stack.create_job(FIX / \"csv_utf8.csv\")\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 299, in create_job\n    return http_request(port or self.api, \"POST\", \"/v1/jobs\", body, h)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 127, in http_request\n    conn.request(method, path, body=body, headers=headers or {})\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1411, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1360, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1120, in _send_output\n    self.send(msg)\n  File \"/usr/lib/python3.12/http/client.py\", line 1064, in send\n    self.connect()\n  File \"/usr/lib/python3.12/http/client.py\", line 1030, in connect\n    self.sock = self._create_connection(\n                ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.12/socket.py\", line 852, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.12/socket.py\", line 837, in create_connection\n    sock.connect(sa)\nConnectionRefusedError: [Errno 111] Connection refused\n",
+        "elapsed_s": 0.0
+      },
+      "error": "ConnectionRefusedError: [Errno 111] Connection refused"
+    }
+  ]
+}

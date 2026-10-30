@@ -1,0 +1,5 @@
+region,pallets,on_time_pct,cost_per_pallet
+North,48120,97.4,3.85
+Central,41600,95.1,4.02
+South,38680,93.8,4.31
+Total,128400,95.7,4.03

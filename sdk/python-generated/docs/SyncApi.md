@@ -1,0 +1,105 @@
+# parsedock_client.SyncApi
+
+All URIs are relative to *http://localhost:8080*
+
+Method | HTTP request | Description
+------------- | ------------- | -------------
+[**parse_sync**](SyncApi.md#parse_sync) | **POST** /v1/parse | Bounded synchronous parse (small documents)
+
+
+# **parse_sync**
+> DocumentIR parse_sync(file, mode=mode, device=device, timeout_ms=timeout_ms)
+
+Bounded synchronous parse (small documents)
+
+Same validation and pipeline as `POST /v1/jobs`, but waits up to
+`timeout_ms` (default 30 s, max 2 min) for completion.
+* finished → `200` with the Document IR and the result is released immediately
+  (the body was fully written, so no retention window is needed);
+* deadline reached → `202` with the job resource; it keeps running asynchronously;
+* failure → `422` with the stable error code.
+Intended for interactive callers; prefer `/v1/jobs` for anything large.
+
+
+### Example
+
+* Bearer Authentication (bearerAuth):
+
+```python
+import parsedock_client
+from parsedock_client.models.document_ir import DocumentIR
+from parsedock_client.rest import ApiException
+from pprint import pprint
+
+# Defining the host is optional and defaults to http://localhost:8080
+# See configuration.py for a list of all supported configuration parameters.
+configuration = parsedock_client.Configuration(
+    host = "http://localhost:8080"
+)
+
+# The client must configure the authentication and authorization parameters
+# in accordance with the API server security policy.
+# Examples for each auth method are provided below, use the example that
+# satisfies your auth use case.
+
+# Configure Bearer authorization: bearerAuth
+configuration = parsedock_client.Configuration(
+    access_token = os.environ["BEARER_TOKEN"]
+)
+
+# Enter a context with an instance of the API client
+with parsedock_client.ApiClient(configuration) as api_client:
+    # Create an instance of the API class
+    api_instance = parsedock_client.SyncApi(api_client)
+    file = None # bytes | 
+    mode = 'auto' # str | `fast` prefers native text extraction; `accurate` requires a structured engine; `auto` lets the router choose (and records the decision).  (optional) (default to 'auto')
+    device = 'auto' # str | `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device.  (optional) (default to 'auto')
+    timeout_ms = 30000 # int |  (optional) (default to 30000)
+
+    try:
+        # Bounded synchronous parse (small documents)
+        api_response = api_instance.parse_sync(file, mode=mode, device=device, timeout_ms=timeout_ms)
+        print("The response of SyncApi->parse_sync:\n")
+        pprint(api_response)
+    except Exception as e:
+        print("Exception when calling SyncApi->parse_sync: %s\n" % e)
+```
+
+
+
+### Parameters
+
+
+Name | Type | Description  | Notes
+------------- | ------------- | ------------- | -------------
+ **file** | **bytes**|  | 
+ **mode** | **str**| &#x60;fast&#x60; prefers native text extraction; &#x60;accurate&#x60; requires a structured engine; &#x60;auto&#x60; lets the router choose (and records the decision).  | [optional] [default to &#39;auto&#39;]
+ **device** | **str**| &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  | [optional] [default to &#39;auto&#39;]
+ **timeout_ms** | **int**|  | [optional] [default to 30000]
+
+### Return type
+
+[**DocumentIR**](DocumentIR.md)
+
+### Authorization
+
+[bearerAuth](../README.md#bearerAuth)
+
+### HTTP request headers
+
+ - **Content-Type**: multipart/form-data
+ - **Accept**: application/json
+
+### HTTP response details
+
+| Status code | Description | Response headers |
+|-------------|-------------|------------------|
+**200** | Parsed document (IR). |  -  |
+**202** | Still running; the job continues in the background. |  -  |
+**400** | Invalid parameters. |  -  |
+**401** | Missing/invalid token. |  -  |
+**413** | Upload exceeds the configured limit. |  -  |
+**422** | Parse failed or the document is unsupported. |  -  |
+
+[[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
+

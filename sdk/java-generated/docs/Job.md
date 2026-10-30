@@ -1,0 +1,69 @@
+
+
+# Job
+
+
+## Properties
+
+| Name | Type | Description | Notes |
+|------------ | ------------- | ------------- | -------------|
+|**jobId** | **String** |  |  |
+|**status** | [**StatusEnum**](#StatusEnum) | Processing dimension. |  |
+|**processingStatus** | **String** | Alias of &#x60;status&#x60; (both are returned). |  [optional] |
+|**retentionStatus** | [**RetentionStatusEnum**](#RetentionStatusEnum) | Retention dimension, independent of &#x60;status&#x60;. |  |
+|**inputName** | **String** |  |  [optional] |
+|**format** | **String** |  |  [optional] |
+|**mimeType** | **String** |  |  [optional] |
+|**inputSize** | **Long** |  |  [optional] |
+|**inputSha256** | **String** |  |  [optional] |
+|**pageCount** | **Integer** | Engine-reported when available |  [optional] |
+|**createdAt** | **OffsetDateTime** |  |  |
+|**startedAt** | **OffsetDateTime** |  |  [optional] |
+|**completedAt** | **OffsetDateTime** |  |  [optional] |
+|**updatedAt** | **OffsetDateTime** |  |  [optional] |
+|**resultExpiresAt** | **OffsetDateTime** | TTL measured from result commit, not upload. |  [optional] |
+|**maxLifetimeAt** | **OffsetDateTime** |  |  [optional] |
+|**attempt** | **Integer** |  |  [optional] |
+|**requestedMode** | **String** |  |  [optional] |
+|**requestedDevice** | **String** |  |  [optional] |
+|**engine** | **String** | Engine that actually produced the result |  [optional] |
+|**routingReason** | **String** | Human-readable routing decision |  [optional] |
+|**progressPercent** | **Integer** |  |  [optional] |
+|**progressStage** | **String** |  |  [optional] |
+|**resultVersion** | **String** | Manifest hash; echo it in the ACK. |  [optional] |
+|**resultUrls** | [**JobResultUrls**](JobResultUrls.md) |  |  [optional] |
+|**warningCount** | **Integer** |  |  [optional] |
+|**errorCode** | **String** |  |  [optional] |
+|**errorMessage** | **String** |  |  [optional] |
+|**statusUrl** | **String** |  |  |
+|**eventsUrl** | **String** |  |  [optional] |
+|**ackUrl** | **String** |  |  [optional] |
+|**cancelUrl** | **String** |  |  [optional] |
+
+
+
+## Enum: StatusEnum
+
+| Name | Value |
+|---- | -----|
+| QUEUED | &quot;queued&quot; |
+| RUNNING | &quot;running&quot; |
+| COMPLETED | &quot;completed&quot; |
+| FAILED | &quot;failed&quot; |
+| CANCELLED | &quot;cancelled&quot; |
+
+
+
+## Enum: RetentionStatusEnum
+
+| Name | Value |
+|---- | -----|
+| ACTIVE | &quot;active&quot; |
+| RELEASE_PENDING | &quot;release_pending&quot; |
+| EXPIRY_PENDING | &quot;expiry_pending&quot; |
+| DELETING | &quot;deleting&quot; |
+| RELEASED | &quot;released&quot; |
+| EXPIRED | &quot;expired&quot; |
+
+
+

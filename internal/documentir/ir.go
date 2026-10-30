@@ -1,0 +1,189 @@
+// Package documentir defines ParseDock's engine-independent Document IR v0.1.
+//
+// The IR is the single source of truth for parse output. Markdown/plain text
+// are derived views (see export.go); JSON is the IR itself. Nothing in the IR
+// may invent precision that an engine did not provide: missing coordinates,
+// page numbers or confidences are represented as absent (nil / empty), never
+// as fabricated values.
+package documentir
+
+import "time"
+
+// SchemaVersion is the IR contract version. Bump on breaking changes.
+const SchemaVersion = "doc-ir/0.1"
+
+// Element types. Keep this list closed so downstream consumers can switch on it.
+const (
+	ElTitle     = "title"
+	ElSection   = "section"
+	ElParagraph = "paragraph"
+	ElList      = "list"
+	ElListItem  = "list_item"
+	ElTable     = "table"
+	ElImage     = "image"
+	ElFormula   = "formula"
+	ElCaption   = "caption"
+	ElFootnote  = "footnote"
+	ElHeader    = "header"
+	ElFooter    = "footer"
+	ElCode      = "code"
+	ElPageBreak = "page_break"
+	ElUnknown   = "unknown"
+)
+
+// Document is the root object.
+type Document struct {
+	SchemaVersion string    `json:"schema_version"`
+	Source        Source    `json:"source"`
+	ParserEngine  string    `json:"parser_engine"`
+	ParserVersion string    `json:"parser_version"`
+	Routing       Routing   `json:"routing"`
+	PageCount     int       `json:"page_count"` // PDF pages / slides / sheets; 0 when not applicable
+	PageKind      string    `json:"page_kind"`  // "pdf" | "sheet" | "slide" | "none"
+	Elements      []Element `json:"elements"`
+	Tables        []Table   `json:"tables,omitempty"`
+	Warnings      []Warning `json:"warnings"`
+	Metrics       Metrics   `json:"metrics"`
+}
+
+// Source identifies the input without leaking its bytes.
+type Source struct {
+	FileName  string `json:"file_name"` // original client filename (sanitized, display only)
+	MimeType  string `json:"mime_type"`
+	Format    string `json:"format"` // pdf | docx | xlsx | ...
+	SizeBytes int64  `json:"size_bytes"`
+	SHA256    string `json:"sha256"`
+}
+
+// Routing records why this engine was selected for the job (auditability).
+type Routing struct {
+	RequestedMode   string `json:"requested_mode"`
+	RequestedDevice string `json:"requested_device"`
+	ActualDevice    string `json:"actual_device"`
+	Engine          string `json:"engine"`
+	Fallback        bool   `json:"fallback"`
+	Reason          string `json:"reason"`
+}
+
+// Element is one addressable unit of reading order.
+type Element struct {
+	ID           string            `json:"id"`
+	Type         string            `json:"type"`
+	Text         string            `json:"text"`
+	Level        int               `json:"level,omitempty"` // heading level, list nesting
+	ReadingOrder int               `json:"reading_order"`
+	Confidence   *float64          `json:"confidence,omitempty"`
+	Loc          *SourceLocation   `json:"source_location,omitempty"`
+	TableID      string            `json:"table_id,omitempty"`
+	ImageRef     string            `json:"image_ref,omitempty"` // artifact-relative ref, never inline bytes
+	Metadata     map[string]string `json:"metadata,omitempty"`
+}
+
+// SourceLocation declares which coordinate system a box belongs to.
+type SourceLocation struct {
+	Kind  string `json:"kind"` // pdf | sheet | slide | none
+	Page  int    `json:"page,omitempty"`
+	BBox  *BBox  `json:"bbox,omitempty"`
+	Sheet string `json:"sheet,omitempty"`
+	Range string `json:"cell_range,omitempty"` // A1:F20
+	Line  int    `json:"line,omitempty"`       // plain-text sources
+}
+
+// BBox is axis-aligned; Coord names the coordinate space so consumers never
+// mix PDF user space with image pixel space.
+type BBox struct {
+	Coord string  `json:"coord"` // pdf_user_space_v1 | image_px_v1
+	X0    float64 `json:"x0"`
+	Y0    float64 `json:"y0"`
+	X1    float64 `json:"x1"`
+	Y1    float64 `json:"y1"`
+}
+
+// Table is a structured grid; cells may carry formulas and cached values.
+type Table struct {
+	ID         string          `json:"id"`
+	Rows       int             `json:"rows"`
+	Cols       int             `json:"cols"`
+	HeaderRows int             `json:"header_rows"`
+	Cells      []Cell          `json:"cells"`
+	Loc        *SourceLocation `json:"source_location,omitempty"`
+	Caption    string          `json:"caption,omitempty"`
+	Confidence *float64        `json:"confidence,omitempty"`
+}
+
+// Cell is one grid cell. Merged cells appear once at their anchor position.
+type Cell struct {
+	Row         int      `json:"row"`
+	Col         int      `json:"col"`
+	RowSpan     int      `json:"row_span"`
+	ColSpan     int      `json:"col_span"`
+	Text        string   `json:"text"`
+	Formula     string   `json:"formula,omitempty"`
+	CachedValue string   `json:"cached_value,omitempty"`
+	DataType    string   `json:"data_type,omitempty"` // string|number|date|bool
+	Confidence  *float64 `json:"confidence,omitempty"`
+}
+
+// Warning codes are stable strings; the message is human-readable.
+const (
+	WarnOCRNotRun        = "ocr_not_run"
+	WarnOCRLowConfidence = "ocr_low_confidence"
+	WarnNoTextLayer      = "no_text_layer"
+	WarnTruncated        = "truncated"
+	WarnPageLimit        = "page_limit_reached"
+	WarnPartialContent   = "partial_content"
+	WarnEncrypted        = "encrypted"
+	WarnDegraded         = "degraded_conversion"
+	WarnUnsupported      = "unsupported_element"
+	WarnLayoutHeuristic  = "layout_heuristic"
+	WarnNoCoordinates    = "no_coordinates"
+)
+
+// Warning is a non-fatal observation about the parse.
+type Warning struct {
+	Code     string          `json:"code"`
+	Message  string          `json:"message"`
+	Loc      *SourceLocation `json:"source_location,omitempty"`
+	Severity string          `json:"severity"` // info | warn | error
+}
+
+// Metrics are engine-measured, not estimated.
+type Metrics struct {
+	ParseMs     int64      `json:"parse_ms"`
+	InputBytes  int64      `json:"input_bytes"`
+	OutputChars int        `json:"output_chars"`
+	Pages       int        `json:"pages"`
+	PeakRSSMB   *int64     `json:"peak_rss_mb,omitempty"`
+	PeakVRAMMB  *int64     `json:"peak_vram_mb,omitempty"`
+	ModelLoadMs *int64     `json:"model_load_ms,omitempty"`
+	StartedAt   *time.Time `json:"started_at,omitempty"`
+	FinishedAt  *time.Time `json:"finished_at,omitempty"`
+}
+
+// New returns a Document with schema version and non-nil slices.
+func New() *Document {
+	return &Document{
+		SchemaVersion: SchemaVersion,
+		PageKind:      "none",
+		Elements:      []Element{},
+		Warnings:      []Warning{},
+	}
+}
+
+// AddWarning appends a warning with severity.
+func (d *Document) AddWarning(code, msg, severity string) {
+	d.Warnings = append(d.Warnings, Warning{Code: code, Message: msg, Severity: severity})
+}
+
+// Finalize fills derived counters and renumbers reading order defensively.
+func (d *Document) Finalize() {
+	chars := 0
+	for i := range d.Elements {
+		d.Elements[i].ReadingOrder = i
+		chars += len([]rune(d.Elements[i].Text))
+	}
+	d.Metrics.OutputChars = chars
+	if d.Metrics.Pages == 0 {
+		d.Metrics.Pages = d.PageCount
+	}
+}

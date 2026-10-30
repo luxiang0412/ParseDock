@@ -1,0 +1,270 @@
+{
+  "generated_by": "benchmark/scripts/gen_fixtures.py",
+  "generated_at": "2026-10-30T06:44:17.262983Z",
+  "fixtures": [
+    {
+      "path": "generated/pdf_text_en_3p.pdf",
+      "category": "pdf_native_en",
+      "format": "pdf",
+      "bytes": 4855,
+      "sha256": "2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd",
+      "pages": 3,
+      "gold": "gold/pdf_text_en_3p.gold.txt",
+      "notes": "single column, header/footer free, one table",
+      "sensitive": false
+    },
+    {
+      "path": "generated/pdf_text_zh_2p.pdf",
+      "category": "pdf_native_zh",
+      "format": "pdf",
+      "bytes": 53862,
+      "sha256": "d2fc8e385e10c9ff3df4fda3073aa4ea85ef3735e19df9dda99113e04cc1ed36",
+      "pages": 2,
+      "gold": "gold/pdf_text_zh_2p.gold.txt",
+      "notes": "CJK native text, paragraph segmentation",
+      "sensitive": false
+    },
+    {
+      "path": "generated/pdf_two_column_en.pdf",
+      "category": "pdf_two_column",
+      "format": "pdf",
+      "bytes": 2243,
+      "sha256": "5703e979466ff591d69dbf05061d50422ce7fa7ed0de260defcb4d5ba54e595b",
+      "pages": 1,
+      "gold": "gold/pdf_two_column_en.gold.txt",
+      "notes": "reading-order sensitive",
+      "sensitive": false
+    },
+    {
+      "path": "generated/scan_source_en.png",
+      "category": "image_png",
+      "format": "png",
+      "bytes": 25160,
+      "sha256": "8be5a88b6bc74acebe7fa67873311ac4140aa981b9adc7c35ba374913cda2b97",
+      "pages": 1,
+      "gold": "gold/scan_source_en.gold.txt",
+      "notes": "clean 200dpi-style render",
+      "sensitive": false
+    },
+    {
+      "path": "generated/pdf_scanned_en.pdf",
+      "category": "pdf_scanned",
+      "format": "pdf",
+      "bytes": 67910,
+      "sha256": "04906ebddd4ecf6ffb720740ea3a680efee86d44b7285a3c67cb87e3aad894d8",
+      "pages": 1,
+      "gold": "gold/pdf_scanned_en.gold.txt",
+      "notes": "single page image-only PDF, OCR required",
+      "sensitive": false
+    },
+    {
+      "path": "generated/scan_source_zh.png",
+      "category": "image_png_zh",
+      "format": "png",
+      "bytes": 52093,
+      "sha256": "33c7d5eb5a655779ad9a4b740114b26808a79b8a01a1c0435a668f7472a4fb65",
+      "pages": 1,
+      "gold": "gold/scan_source_zh.gold.txt",
+      "notes": "CJK OCR",
+      "sensitive": false
+    },
+    {
+      "path": "generated/pdf_scanned_zh.pdf",
+      "category": "pdf_scanned_zh",
+      "format": "pdf",
+      "bytes": 86500,
+      "sha256": "2048e6aefffe85c7654a8e8852dc54b00cee45358faa3e1456ac3b9b663babc2",
+      "pages": 1,
+      "gold": "gold/pdf_scanned_zh.gold.txt",
+      "notes": "CJK image-only PDF",
+      "sensitive": false
+    },
+    {
+      "path": "generated/docx_report.docx",
+      "category": "docx",
+      "format": "docx",
+      "bytes": 38030,
+      "sha256": "69a12bc98abbeadc84257c766301e321f8d9a4bc5f9e9a5ce876a8e2e615f690",
+      "pages": 0,
+      "gold": "gold/docx_report.gold.txt",
+      "notes": "headings, bullets, table, page header",
+      "sensitive": false
+    },
+    {
+      "path": "generated/xlsx_workbook.xlsx",
+      "category": "xlsx",
+      "format": "xlsx",
+      "bytes": 5837,
+      "sha256": "e9527d24ebe4cf838b74e14d60ac2d3f1e03b5580875ed4e29f081e5eec2c291",
+      "pages": 2,
+      "gold": "gold/xlsx_workbook.gold.txt",
+      "notes": "2 sheets, formulas, merged cell, dates, float precision",
+      "sensitive": false
+    },
+    {
+      "path": "generated/csv_utf8.csv",
+      "category": "csv",
+      "format": "csv",
+      "bytes": 134,
+      "sha256": "4052d9e6ad58a2df1bd17c7d94a71251fa18b90fe23f988e34998756ec6a1af5",
+      "pages": 0,
+      "gold": "gold/csv_utf8.gold.txt",
+      "notes": "UTF-8, comma, clean",
+      "sensitive": false
+    },
+    {
+      "path": "generated/csv_gb18030.csv",
+      "category": "csv_gb18030",
+      "format": "csv",
+      "bytes": 132,
+      "sha256": "6d92f25e33cbec7b1fe2cb7aad91493a8c15d7de0cd4de7e37f192c69b8f287d",
+      "pages": 0,
+      "gold": "gold/csv_gb18030.gold.txt",
+      "notes": "GB18030 encoded header",
+      "sensitive": false
+    },
+    {
+      "path": "generated/csv_semicolon_eu.csv",
+      "category": "csv",
+      "format": "csv",
+      "bytes": 56,
+      "sha256": "61c0f6d8630da79d21610d60b5a0a0d5876a563347b19d6d9b15f9b6e0a71429",
+      "pages": 0,
+      "gold": "gold/csv_semicolon_eu.gold.txt",
+      "notes": "semicolon delimiter, decimal comma",
+      "sensitive": false
+    },
+    {
+      "path": "generated/tsv_data.tsv",
+      "category": "tsv",
+      "format": "tsv",
+      "bytes": 59,
+      "sha256": "7330018418c1886211a9875e60b911d8aec2e27cc2ebaf240ece0d734ee7d226",
+      "pages": 0,
+      "gold": "gold/tsv_data.gold.txt",
+      "notes": "tab separated",
+      "sensitive": false
+    },
+    {
+      "path": "generated/txt_plain.txt",
+      "category": "txt",
+      "format": "txt",
+      "bytes": 746,
+      "sha256": "4267c50391431b26356a829ff6c42a5be3b483c57438f0a17f4c5d66964ee900",
+      "pages": 0,
+      "gold": "gold/txt_plain.gold.txt",
+      "notes": "plain text, blank-line paragraphs",
+      "sensitive": false
+    },
+    {
+      "path": "generated/md_notes.md",
+      "category": "md",
+      "format": "md",
+      "bytes": 557,
+      "sha256": "3562c5b961c1339f4eedd8c51b14889651cd9f13f5f30d06da8f916e0c39f851",
+      "pages": 0,
+      "gold": "gold/md_notes.gold.txt",
+      "notes": "markdown with table and task list",
+      "sensitive": false
+    },
+    {
+      "path": "generated/image_screenshot.jpg",
+      "category": "image_jpeg",
+      "format": "jpg",
+      "bytes": 17133,
+      "sha256": "ba195ed2e5bcf885e3c2a84cb7543c5bf16d71332c83111a0d887707ee84495e",
+      "pages": 1,
+      "gold": "gold/image_screenshot.gold.txt",
+      "notes": "screenshot-like JPEG",
+      "sensitive": false
+    },
+    {
+      "path": "generated/image_screenshot.webp",
+      "category": "image_webp",
+      "format": "webp",
+      "bytes": 2700,
+      "sha256": "fb74812d6f2b81112d294357b3c6034c4661b1e0dde8844977276d2f35df5d1b",
+      "pages": 1,
+      "gold": "gold/image_screenshot.gold.txt",
+      "notes": "same content as JPEG in WebP",
+      "sensitive": false
+    },
+    {
+      "path": "invalid/empty.pdf",
+      "category": "invalid",
+      "format": "pdf",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "pages": 0,
+      "gold": null,
+      "notes": "zero-byte file",
+      "sensitive": false
+    },
+    {
+      "path": "invalid/corrupt.pdf",
+      "category": "invalid",
+      "format": "pdf",
+      "bytes": 4105,
+      "sha256": "8cf1b6310919d98b7937b734d9a84beff7fe0dd0dc065d4e588fe2d0a642fae4",
+      "pages": 0,
+      "gold": null,
+      "notes": "truncated/garbage PDF body",
+      "sensitive": false
+    },
+    {
+      "path": "invalid/renamed_docx.pdf",
+      "category": "invalid",
+      "format": "pdf",
+      "bytes": 38030,
+      "sha256": "69a12bc98abbeadc84257c766301e321f8d9a4bc5f9e9a5ce876a8e2e615f690",
+      "pages": 0,
+      "gold": null,
+      "notes": "DOCX bytes with a .pdf extension",
+      "sensitive": false
+    },
+    {
+      "path": "invalid/password.pdf",
+      "category": "invalid",
+      "format": "pdf",
+      "bytes": 828,
+      "sha256": "bea120784943c3b06d9413a9c79d4d1d140706c8c33637a8b606f3b723253a57",
+      "pages": 1,
+      "gold": null,
+      "notes": "AES-encrypted PDF",
+      "sensitive": false
+    },
+    {
+      "path": "invalid/zipbomb.docx",
+      "category": "invalid",
+      "format": "docx",
+      "bytes": 41032,
+      "sha256": "141142a3ca8739a5d688b9d8b06dff16d8a9d31f1166d91b90f42fd9739f3d08",
+      "pages": 0,
+      "gold": null,
+      "notes": "deflate bomb, ratio ~1000:1",
+      "sensitive": false
+    },
+    {
+      "path": "invalid/not_a_docx.docx",
+      "category": "invalid",
+      "format": "docx",
+      "bytes": 704,
+      "sha256": "39a22ccf7adfb59cae0d20ab75f9b1b5431b0e6df71f93b8f19988429fcc8b01",
+      "pages": 0,
+      "gold": null,
+      "notes": "zip magic with invalid central directory",
+      "sensitive": false
+    },
+    {
+      "path": "generated/pdf_text_en_30p.pdf",
+      "category": "pdf_native_en_long",
+      "format": "pdf",
+      "bytes": 35340,
+      "sha256": "1ccbb9c5478b82daf13481ba726991ea90320748a8d99f77a7ef0ad6c12d9b86",
+      "pages": 30,
+      "gold": "gold/pdf_text_en_30p.gold.txt",
+      "notes": "30-page synthetic PDF for GPU/CPU amortised comparison",
+      "sensitive": false
+    }
+  ]
+}

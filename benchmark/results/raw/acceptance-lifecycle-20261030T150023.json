@@ -1,0 +1,29 @@
+{
+  "profile": "lifecycle",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T07:00:19.132505+00:00",
+  "finished_at": "2026-10-30T07:00:23.574720+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "fd7a2cf90eeba898bbbc78ce108366de2f848808a97a17a55ff866274d1ec48d",
+  "cases": [
+    {
+      "id": "T14",
+      "name": "disk watermark blocks new uploads but keeps live results readable",
+      "status": "PASS",
+      "detail": {
+        "existing_job": "job_06GRQ7011BGQQ8C7RQW45W6HXR",
+        "result_version": "sha256:f3446cc684af48c7ea84f619cedb27ec2510ce7b59d204a83b0a487bd1dbee91",
+        "upload_http": 507,
+        "upload_code": "insufficient_storage",
+        "existing_download_http": 200,
+        "existing_bytes": 107,
+        "elapsed_s": 4.44
+      },
+      "error": ""
+    }
+  ]
+}

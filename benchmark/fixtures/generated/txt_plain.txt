@@ -1,0 +1,5 @@
+Dock memo
+
+The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from 4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.
+
+Two risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware 2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.

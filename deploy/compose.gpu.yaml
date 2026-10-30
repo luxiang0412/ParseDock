@@ -1,0 +1,31 @@
+# Optional GPU worker profile. The CPU stack works without this file.
+#
+#   docker compose -f deploy/compose.cpu.yaml -f deploy/compose.gpu.yaml --profile gpu up -d
+#
+# Requirements: NVIDIA driver + NVIDIA Container Toolkit; verify with
+#   docker run --rm --device nvidia.com/gpu=all nvidia/cuda:13.2.0-base-ubuntu24.04 nvidia-smi
+name: parsedock
+
+services:
+  worker-gpu:
+    profiles: ["gpu"]
+    image: ${PARSEDOCK_GPU_IMAGE:-parsedock-worker-gpu:0.1.0}
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    command:
+      - --role=worker
+      - --coordinator-url=http://coordinator:8081
+      - --engines=mineru
+      - --device-type=gpu
+      - --worker-concurrency=1
+      - --work-dir=/work
+      - --max-parse-minutes=30
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      MINERU_HOME: /work/mineru-home
+    tmpfs:
+      - /work:mode=1777,size=8g
+    devices:
+      - nvidia.com/gpu=all
+    networks: [backend]
+    depends_on: [coordinator]

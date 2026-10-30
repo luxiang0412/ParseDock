@@ -1,0 +1,6 @@
+INVOICE 2026-0042
+Supplier: Northwind Logistics
+Total amount: 18,420.50 EUR
+Due date: 2026-11-30
+Payment terms: net 30 days
+Reference: dock-ops-q3

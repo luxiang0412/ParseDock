@@ -1,0 +1,19 @@
+# runtime state, models, scratch, logs (never commit)
+runtime/
+*.part
+.venv/
+__pycache__/
+*.pyc
+
+# sensitive / large input material supplied with the workspace
+test_data/
+benchmark/fixtures/private/
+
+# secrets
+deploy/.env
+.env
+*.pem
+*.key
+
+# build output
+dist/

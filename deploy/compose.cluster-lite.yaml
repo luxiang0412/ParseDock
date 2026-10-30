@@ -1,0 +1,71 @@
+# Cluster-lite reference: API replicas on the edge, one Coordinator, and workers
+# that may live on other machines. Copy this file to the worker host and point
+# COORDINATOR_URL at the coordinator's private address.
+#
+# On the coordinator host:
+#   docker compose -f deploy/compose.cluster-lite.yaml up -d coordinator api-1
+# On a worker host (second machine, same private network):
+#   COORDINATOR_URL=http://10.0.0.10:8081 \
+#   docker compose -f deploy/compose.cluster-lite.yaml --profile remote-worker up -d worker-remote
+#
+# Hard requirements:
+#   * the Coordinator's internal API is never published to the internet;
+#   * SQLite + data stay on one host (no network filesystem);
+#   * every worker presents PARSEDOCK_INTERNAL_TOKEN.
+name: parsedock
+
+services:
+  coordinator:
+    image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
+    restart: unless-stopped
+    command:
+      - --role=coordinator
+      - --internal-listen=0.0.0.0:8081
+      - --data-dir=/data
+      - --engines=native,xberg,docling-rs
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+    volumes:
+      - parsedock-data:/data
+    ports:
+      # Bind to the private interface only, never 0.0.0.0 on a public host.
+      - "${COORDINATOR_BIND:-127.0.0.1}:8081:8081"
+    networks: [backend]
+
+  api-1:
+    image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
+    restart: unless-stopped
+    command:
+      - --role=api
+      - --listen=0.0.0.0:8080
+      - --coordinator-url=${COORDINATOR_URL:-http://coordinator:8081}
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      PARSEDOCK_API_KEYS: ${PARSEDOCK_API_KEYS:?}
+    ports: ["${API_PORT_1:-8080}:8080"]
+    networks: [frontend, backend]
+
+  worker-remote:
+    profiles: ["remote-worker"]
+    image: ${PARSEDOCK_WORKER_IMAGE:-parsedock-worker-cpu:0.1.0}
+    restart: unless-stopped
+    command:
+      - --role=worker
+      - --coordinator-url=${COORDINATOR_URL:?set http://coordinator-host:8081}
+      - --engines=native,xberg,docling-rs
+      - --worker-concurrency=2
+      - --work-dir=/work
+      - --device-type=${DEVICE_TYPE:-cpu}
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+    tmpfs:
+      - /work:mode=1777,size=4g
+    networks: [backend]
+
+networks:
+  frontend: {}
+  backend:
+    internal: true
+
+volumes:
+  parsedock-data: {}

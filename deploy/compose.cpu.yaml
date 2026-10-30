@@ -1,0 +1,104 @@
+# ParseDock CPU-only stack: 1 coordinator + 2 stateless API replicas + 1 worker.
+#
+#   export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)
+#   export PARSEDOCK_API_KEYS="$(openssl rand -hex 24):acme"
+#   docker compose -f deploy/compose.cpu.yaml up -d
+#   curl -H "Authorization: Bearer $KEY" -F file=@doc.pdf http://localhost:8080/v1/jobs
+#
+# Ports: only the API replicas publish ports. The coordinator and the worker
+# protocol stay on an internal Docker network.
+name: parsedock
+
+x-common: &common
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
+
+services:
+  coordinator:
+    <<: *common
+    image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
+    command:
+      - --role=coordinator
+      - --internal-listen=0.0.0.0:8081
+      - --data-dir=/data
+      - --engines=native,xberg,docling-rs
+      - --result-ttl=1h
+      - --max-result-ttl=24h
+      - --max-job-lifetime=24h
+      - --cleanup-interval=15s
+      - --min-free-gb=2
+      - --log-level=info
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?set a long random token}
+    volumes:
+      # SQLite + inputs + results. Must be local disk, never a network share.
+      - parsedock-data:/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/docparse", "--role=api", "--listen=127.0.0.1:9", "--dev-insecure"]
+      disable: true
+
+  api-1:
+    <<: *common
+    image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
+    command:
+      - --role=api
+      - --listen=0.0.0.0:8080
+      - --coordinator-url=http://coordinator:8081
+      - --max-upload-mb=64
+      - --rate-limit=20
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      PARSEDOCK_API_KEYS: ${PARSEDOCK_API_KEYS:?}
+    ports: ["${API_PORT_1:-8080}:8080"]
+    networks: [frontend, backend]
+    depends_on: [coordinator]
+
+  api-2:
+    <<: *common
+    image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
+    command:
+      - --role=api
+      - --listen=0.0.0.0:8080
+      - --coordinator-url=http://coordinator:8081
+      - --max-upload-mb=64
+      - --rate-limit=20
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      PARSEDOCK_API_KEYS: ${PARSEDOCK_API_KEYS:?}
+    # Second replica proves there is no sticky session / local state.
+    ports: ["${API_PORT_2:-8082}:8080"]
+    networks: [frontend, backend]
+    depends_on: [coordinator]
+
+  worker-cpu:
+    <<: *common
+    image: ${PARSEDOCK_WORKER_IMAGE:-parsedock-worker-cpu:0.1.0}
+    command:
+      - --role=worker
+      - --coordinator-url=http://coordinator:8081
+      - --engines=native,xberg,docling-rs
+      - --worker-concurrency=2
+      - --work-dir=/work
+      - --device-type=cpu
+      - --heartbeat=10s
+      - --max-parse-minutes=30
+      # Optional defense in depth: run engines in a private network namespace.
+      # Requires CAP_SYS_ADMIN (or unprivileged userns) in the container; the
+      # worker fails closed if the sandbox cannot be created.
+      # - --sandbox=unshare-net
+    environment:
+      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+    # Scratch space only: nothing a worker writes must survive the task.
+    tmpfs:
+      - /work:mode=1777,size=4g
+    networks: [backend]
+    depends_on: [coordinator]
+
+networks:
+  frontend: {}
+  backend:
+    internal: true
+
+volumes:
+  parsedock-data: {}

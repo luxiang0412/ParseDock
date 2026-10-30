@@ -1,0 +1,14 @@
+Summary
+Region Pallets On-time % Cost
+North 48120 97.4 3.85
+Central 41600 95.1 4.02
+South 38680 93.8 4.31
+Total 128400 95.7 4.03
+Formula check
+Merged note: figures unaudited
+
+Detail
+Date Shipments Notes Precision
+2026-07-01 1830 baseline 128400.125
+2026-08-01 1942 peak week 33
+2026-09-01 08:30:00 1801 firmware rollback
