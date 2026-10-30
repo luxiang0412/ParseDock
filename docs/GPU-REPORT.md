@@ -113,6 +113,11 @@ which fails closed when namespaces are unavailable.
 Admission is enforced twice: at routing (does the fleet contain a GPU worker with room?)
 and at **claim** (does *this* worker have room?), so with two GPU workers the one with a
 full card cannot win the lease just because its sibling has space.
+
+A GPU worker always runs **one** task at a time: free VRAM is measured per card and cannot
+be statically partitioned, so `--worker-concurrency > 1` is refused (capped at 1, with a
+warning) instead of letting two slots claim against the same measurement and overcommit
+the device. Scale GPU throughput with more workers/cards, not with concurrency on one.
 `--engine-min-vram-mb <engine>:<MiB>` sets the requirement; the refusal names it instead
 of queueing forever.
 

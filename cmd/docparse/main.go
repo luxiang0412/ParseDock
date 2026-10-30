@@ -413,6 +413,11 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	if err := os.MkdirAll(f.workDir, 0o750); err != nil {
 		return err
 	}
+	if (f.deviceType == "gpu" || f.deviceType == "cuda" || f.deviceType == "mps") && f.workerConcurrency > 1 {
+		log.Warn("GPU workers run one task at a time: --worker-concurrency is capped at 1 so filled VRAM cannot be overcommitted",
+			"requested", f.workerConcurrency)
+		cfg.MaxConcurrency = 1
+	}
 	w := worker.New(cfg, reg, log)
 	workerTLS, terr := tlsutil.ClientConfig(f.tlsCA, f.tlsCert, f.tlsKey, f.tlsServerName, f.tlsInsecure)
 	if terr != nil {

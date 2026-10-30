@@ -1141,3 +1141,29 @@ func TestClaimRespectsClaimingWorkerVRAM(t *testing.T) {
 		t.Fatalf("roomy GPU did not get the job: %+v", task)
 	}
 }
+
+// PR-08 codex review: free VRAM is measured per card and cannot be partitioned, so a
+// GPU worker must not run concurrent slots that each claim against the same value.
+func TestGPUWorkerConcurrencyIsCapped(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	zero := int64(16 << 30)
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "gpu-1", Host: "h", DeviceType: "gpu",
+		Engines: []string{"mineru"}, MaxConcurrency: 4, FreeVRAMBytes: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	var mc int
+	_ = s.DB.QueryRowContext(ctx, `SELECT max_concurrency FROM workers WHERE worker_id = 'gpu-1'`).Scan(&mc)
+	if mc != 1 {
+		t.Fatalf("gpu worker concurrency = %d, want 1", mc)
+	}
+	// CPU workers keep their configured concurrency.
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "cpu-1", Host: "h", DeviceType: "cpu",
+		Engines: []string{"native"}, MaxConcurrency: 4}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.DB.QueryRowContext(ctx, `SELECT max_concurrency FROM workers WHERE worker_id = 'cpu-1'`).Scan(&mc)
+	if mc != 4 {
+		t.Fatalf("cpu worker concurrency = %d, want 4", mc)
+	}
+}

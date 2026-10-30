@@ -76,7 +76,9 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
   `--sandbox=unshare-net` where namespaces are available.
 * The worker reports the free VRAM of the card it will use (first entry of
   `CUDA_VISIBLE_DEVICES`, else device 0) on every heartbeat — pin `CUDA_VISIBLE_DEVICES`
-  if the host has several cards. Set
+  if the host has several cards. A GPU worker runs one task at a time
+  (`--worker-concurrency` is capped at 1) because per-card VRAM cannot be partitioned
+  between slots; scale with more workers. Set
   `--engine-min-vram-mb mineru:8192` on the coordinator so `gpu_required` is refused with
   `409 gpu_unavailable` (naming the requirement) instead of queueing on a full card.
 

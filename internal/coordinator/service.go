@@ -1112,6 +1112,12 @@ func (s *Service) RegisterWorker(ctx context.Context, w WorkerRegistration) erro
 	if w.FreeVRAMBytes != nil {
 		free = *w.FreeVRAMBytes
 	}
+	// A GPU worker runs one task at a time. Free VRAM is measured per card and cannot be
+	// statically partitioned, so concurrent slots would each claim against the same
+	// measurement and overcommit the device (codex review PR-08).
+	if w.DeviceType == "gpu" || w.DeviceType == "cuda" || w.DeviceType == "mps" {
+		w.MaxConcurrency = 1
+	}
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO workers
 		(worker_id, host, engines, device_type, gpu_model, gpu_memory_bytes, free_vram_bytes,
 		 cpu_cores, memory_bytes, max_concurrency, registered_at, heartbeat_at)
