@@ -113,6 +113,7 @@ type Job struct {
 	ErrorMessage       string           `json:"error_message,omitempty"`
 	WarningCount       int              `json:"warning_count"`
 	TombstoneExpiresAt *time.Time       `json:"-"`
+	RequestID          string           `json:"-"`
 	Progress           int              `json:"progress_percent"`
 	ProgressStage      string           `json:"progress_stage,omitempty"`
 	UpdatedAt          time.Time        `json:"updated_at"`

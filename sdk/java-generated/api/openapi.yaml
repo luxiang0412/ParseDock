@@ -101,6 +101,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "409":
           content:
             application/json:
@@ -124,7 +126,20 @@ paths:
                 $ref: "#/components/schemas/Error"
           description: "Malformed, encrypted or structurally invalid document."
         "429":
-          $ref: "#/components/responses/RateLimited"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+          description: |
+            Per-owner limits. `rate_limited` = request-rate budget (all requests,
+            including status polling); `quota_exceeded` = concurrent jobs, jobs/day
+            or bytes/day for this owner. Both carry `Retry-After` in seconds.
+          headers:
+            Retry-After:
+              explode: false
+              schema:
+                type: integer
+              style: simple
         "507":
           content:
             application/json:
@@ -155,6 +170,8 @@ paths:
           description: Current job state.
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/NotFound"
         "503":
@@ -252,6 +269,8 @@ paths:
               style: simple
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -305,6 +324,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -349,6 +370,8 @@ paths:
           description: Cancellation (or release) accepted.
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
@@ -425,6 +448,8 @@ paths:
           description: Event stream.
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "404":
           $ref: "#/components/responses/NotFound"
       summary: Server-sent events for one job
@@ -480,6 +505,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/InsufficientScope"
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
@@ -621,6 +648,13 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
       description: Invalid parameters.
+    InsufficientScope:
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+      description: The API key is valid but does not grant the scope this operation
+        needs.
     Unauthorized:
       content:
         application/json:
@@ -1366,6 +1400,7 @@ components:
           - gone
           - conflict
           - unauthorized
+          - insufficient_scope
           - rate_limited
           - coordinator_unavailable
           type: string
@@ -1544,7 +1579,18 @@ components:
           type: number
   securitySchemes:
     bearerAuth:
-      description: API token mapped to an owner id server-side.
+      description: |
+        API token mapped to a stable owner id server-side. Keys are stored only as
+        SHA-256 hashes (`--api-keys-file`); plaintext entries are hashed at startup
+        and never logged.
+
+        Each key carries scopes:
+        * `jobs:write` — `POST /v1/jobs`, `POST /v1/parse`
+        * `jobs:read` — `GET /v1/jobs/{id}`, `/result`, `/events`
+        * `jobs:ack` — `POST /v1/jobs/{id}/ack`, `/cancel`
+
+        A missing scope returns `403 insufficient_scope`. Keys without an explicit
+        scope list (legacy `token:owner` form) hold all three.
       scheme: bearer
       type: http
 

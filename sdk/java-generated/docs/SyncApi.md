@@ -82,6 +82,7 @@ public class Example {
 | **202** | Still running; the job continues in the background. |  -  |
 | **400** | Invalid parameters. |  -  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **413** | Upload exceeds the configured limit. |  -  |
 | **422** | Parse failed or the document is unsupported. |  -  |
 

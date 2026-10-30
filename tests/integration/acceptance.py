@@ -158,6 +158,7 @@ class Stack:
     worker_args: list[str] = field(default_factory=list)
     api_args: list[str] = field(default_factory=list)
     api_keys_extra: list[str] = field(default_factory=list)
+    keys_file: bool = False
     lanes: str = "PARSEDOCK"
     data_dir_override: Path | None = None
 
@@ -207,13 +208,20 @@ class Stack:
             *self.coord_args,
         ]
         self.coord = self._spawn("coordinator", coord)
+        key_args = ["--api-keys", ",".join([f"{API_TOKEN}:{OWNER}", *self.api_keys_extra])]
+        if self.keys_file:
+            keys_path = self.data_dir / "api-keys"
+            keys_path.write_text("\n".join([f"{API_TOKEN}:{OWNER}", *self.api_keys_extra]) + "\n",
+                                 encoding="utf-8")
+            keys_path.chmod(0o600)
+            key_args = ["--api-keys-file", str(keys_path)]
         for i, port in enumerate(self.ports_api):
             self._spawn(f"api{i}", [
                 "--role", "api",
                 "--listen", f"127.0.0.1:{port}",
                 "--coordinator-url", f"http://127.0.0.1:{self.port_coord}",
                 "--internal-token", INTERNAL_TOKEN,
-                "--api-keys", ",".join([f"{API_TOKEN}:{OWNER}", *self.api_keys_extra]),
+                *key_args,
                 *self.api_args,
             ])
         for i in range(self.worker_count):

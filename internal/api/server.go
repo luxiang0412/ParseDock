@@ -8,7 +8,8 @@ package api
 
 import (
 	"context"
-	"crypto/subtle"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"log/slog"
 	"net/http"
@@ -23,8 +24,9 @@ import (
 type Config struct {
 	CoordinatorURL string
 	InternalToken  string
-	// Keys maps bearer tokens to owner IDs.
-	Keys           map[string]string
+	// Keys are hashed API credentials (see keys.go). Plaintext tokens are not
+	// retained after startup.
+	Keys           []Key
 	DevInsecure    bool
 	RateLimitRPS   float64
 	RateBurst      int
@@ -68,6 +70,16 @@ func New(cfg Config) (*Server, error) {
 			r.Out.Header.Set("X-Parsedock-Owner", ownerFrom(r.In))
 			r.Out.Header.Set("X-Request-Id", requestID(r.In))
 		},
+		// Never trust a hop-by-hop header from upstream into the client.
+		ModifyResponse: func(resp *http.Response) error {
+			resp.Header.Set("X-Content-Type-Options", "nosniff")
+			if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+				// The coordinator generates this header itself, but strip any
+				// control characters defensively (header injection guard).
+				resp.Header.Set("Content-Disposition", sanitizeHeaderValue(cd))
+			}
+			return nil
+		},
 		// Stream responses immediately: results and SSE must not be buffered.
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -83,8 +95,61 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-// Handler returns the public mux.
+// Handler returns the public mux, wrapped with the edge headers.
 func (s *Server) Handler() http.Handler {
+	return s.edgeHeaders(s.mux())
+}
+
+// edgeHeaders sets the security/correlation headers for every response, including
+// streamed and proxied ones (the reverse proxy replaces the header map, so setting
+// them before ServeHTTP is not enough).
+func (s *Server) edgeHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reqID := r.Header.Get("X-Request-Id")
+		if !validRequestID(reqID) {
+			reqID = newRequestID()
+			r.Header.Set("X-Request-Id", reqID)
+		}
+		h := &headerWriter{ResponseWriter: w, headers: map[string]string{
+			"X-Content-Type-Options": "nosniff",
+			"X-Request-Id":           reqID,
+		}}
+		next.ServeHTTP(h, r)
+	})
+}
+
+// headerWriter injects edge headers on the first WriteHeader (or Write) and keeps
+// http.Flusher working so SSE and result streaming are unaffected.
+type headerWriter struct {
+	http.ResponseWriter
+	headers map[string]string
+	wrote   bool
+}
+
+func (h *headerWriter) WriteHeader(code int) {
+	if !h.wrote {
+		for k, v := range h.headers {
+			h.ResponseWriter.Header().Set(k, v)
+		}
+		h.wrote = true
+	}
+	h.ResponseWriter.WriteHeader(code)
+}
+
+func (h *headerWriter) Write(p []byte) (int, error) {
+	if !h.wrote {
+		h.WriteHeader(http.StatusOK)
+	}
+	return h.ResponseWriter.Write(p)
+}
+
+func (h *headerWriter) Flush() {
+	if f, ok := h.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *Server) mux() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /healthz", s.handleHealthz)
 	m.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
@@ -130,7 +195,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 		if len(s.cfg.Keys) == 0 {
 			if !s.cfg.DevInsecure {
 				writeJSON(w, 401, map[string]any{"error": map[string]any{
-					"code": "unauthorized", "message": "no API keys configured; set PARSEDOCK_API_KEYS"}})
+					"code": "unauthorized", "message": "no API keys configured; use --api-keys-file"}})
 				return
 			}
 			owner := r.Header.Get("X-Debug-Owner")
@@ -141,17 +206,48 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 			next(w, r)
 			return
 		}
-		for key, owner := range s.cfg.Keys {
-			if subtle.ConstantTimeCompare([]byte(key), []byte(token)) == 1 {
-				setOwner(r, owner)
-				next(w, r)
-				return
-			}
+		key, ok := Lookup(s.cfg.Keys, token)
+		if !ok {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="parsedock"`)
+			writeJSON(w, 401, map[string]any{"error": map[string]any{
+				"code": "unauthorized", "message": "invalid or missing API token"}})
+			return
 		}
-		w.Header().Set("WWW-Authenticate", `Bearer realm="parsedock"`)
-		writeJSON(w, 401, map[string]any{"error": map[string]any{
-			"code": "unauthorized", "message": "invalid or missing API token"}})
+		if need := NeededScope(r.Method, r.URL.Path); !key.HasScope(need) {
+			writeJSON(w, 403, map[string]any{"error": map[string]any{
+				"code":    "insufficient_scope",
+				"message": "this API key does not grant " + need,
+			}})
+			return
+		}
+		setOwner(r, key.Owner)
+		next(w, r)
 	}
+}
+
+// validRequestID accepts a conservative charset so a client cannot inject log
+// separators or header garbage through the correlation id.
+func validRequestID(v string) bool {
+	if v == "" || len(v) > 128 {
+		return false
+	}
+	for _, c := range v {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case c == '-', c == '_', c == '.', c == ':':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func newRequestID() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "req_unknown"
+	}
+	return "req_" + hex.EncodeToString(b[:])
 }
 
 func (s *Server) limit(next http.HandlerFunc) http.HandlerFunc {
@@ -164,6 +260,18 @@ func (s *Server) limit(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// sanitizeHeaderValue removes CR/LF and other control bytes from a header value.
+func sanitizeHeaderValue(v string) string {
+	var b strings.Builder
+	for _, c := range v {
+		if c == '\r' || c == '\n' || c < 0x20 && c != '\t' {
+			continue
+		}
+		b.WriteRune(c)
+	}
+	return b.String()
 }
 
 type ownerCtxKey struct{}

@@ -36,6 +36,7 @@
 | GONE | &quot;gone&quot; |
 | CONFLICT | &quot;conflict&quot; |
 | UNAUTHORIZED | &quot;unauthorized&quot; |
+| INSUFFICIENT_SCOPE | &quot;insufficient_scope&quot; |
 | RATE_LIMITED | &quot;rate_limited&quot; |
 | COORDINATOR_UNAVAILABLE | &quot;coordinator_unavailable&quot; |
 

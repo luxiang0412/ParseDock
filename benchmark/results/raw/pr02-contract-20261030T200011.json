@@ -1,0 +1,82 @@
+{
+  "finished_at": "2026-10-30T12:00:11.412897+00:00",
+  "checks": [
+    {
+      "id": "PR02-01",
+      "name": "scoped keys: write/read/ack separation enforced",
+      "status": "PASS",
+      "detail": {
+        "write_only_upload": 202,
+        "write_only_read": 403,
+        "write_only_ack": 403,
+        "read_only_read": 200,
+        "read_only_upload": 403
+      },
+      "elapsed_s": 0.01
+    },
+    {
+      "id": "PR02-02",
+      "name": "hashed key form works; unknown/revoked key is 401",
+      "status": "PASS",
+      "detail": {
+        "hashed_key_upload": 202,
+        "unknown_key": 401
+      },
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-03",
+      "name": "nosniff + request-id echo/validation",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 117, in pr02_03_headers_and_request_id\n    bad = http_request(stack.api, \"GET\", \"/v1/jobs/none\",\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 127, in http_request\n    conn.request(method, path, body=body, headers=headers or {})\n  File \"/usr/lib/python3.12/http/client.py\", line 1365, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n  File \"/usr/lib/python3.12/http/client.py\", line 1406, in _send_request\n    self.putheader(hdr, value)\n  File \"/usr/lib/python3.12/http/client.py\", line 1343, in putheader\n    raise ValueError('Invalid header value %r' % (values[i],))\nValueError: Invalid header value b'bad id with spaces\\n'\n"
+      },
+      "error": "ValueError: Invalid header value b'bad id with spaces\\n'",
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-04",
+      "name": "audit lines: identity + decisions, no content",
+      "status": "PASS",
+      "detail": {
+        "audit_events": [
+          "job_created",
+          "job_created",
+          "job_created",
+          "job_created",
+          "job_acked",
+          "job_released"
+        ],
+        "created": {
+          "owner_id": "itest-owner",
+          "job_id": "job_06GRSBCECVA6X9E3VJ2B80EZGG",
+          "request_id": "req_audit-1",
+          "bytes": 45,
+          "format": "txt"
+        }
+      },
+      "elapsed_s": 2.91
+    },
+    {
+      "id": "PR02-05",
+      "name": "per-owner concurrency quota with Retry-After",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 166, in pr02_05_quota_and_isolation\n    return _quota_case(quota_stack)\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 186, in _quota_case\n    quota_stack.wait_status(jid, {\"completed\"}, timeout=60)\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/acceptance.py\", line 338, in wait_status\n    raise AssertionError(f\"job {job_id} did not reach {want}; last={last}\")\nAssertionError: job job_06GRSBCTJN4VP2KG30YWHRFSPM did not reach {'completed'}; last={'error': {'code': 'not_found', 'message': 'job not found'}}\n"
+      },
+      "error": "AssertionError: job job_06GRSBCTJN4VP2KG30YWHRFSPM did not reach {'completed'}; last={'error': {'code': 'not_found', 'message': 'job not found'}}",
+      "elapsed_s": 60.25
+    },
+    {
+      "id": "PR02-06",
+      "name": "rotation: create/read/ack across keys with scopes",
+      "status": "PASS",
+      "detail": {
+        "created_with": "full-key",
+        "read_with": "read-only",
+        "ack_with": "ack-only"
+      },
+      "elapsed_s": 1.39
+    }
+  ]
+}

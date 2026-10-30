@@ -17,6 +17,8 @@ type Error struct {
 	Status  int
 	// Retryable marks worker/transient failures that may be retried.
 	Retryable bool
+	// RetryAfter is the suggested delay in seconds for 429/503 responses.
+	RetryAfter int
 }
 
 func (e *Error) Error() string { return e.Code + ": " + e.Message }
@@ -96,6 +98,7 @@ type Config struct {
 	MaxAttempts       int
 	MaxUploadBytes    int64
 	DefaultPriority   int
+	Quota             Quota
 	Engines           []EngineSpec
 	Limits            interface{} // storage.Limits, kept as interface to avoid cycle in JSON
 }

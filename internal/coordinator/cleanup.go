@@ -131,6 +131,9 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 			_, _ = s.DB.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id)
 			_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE job_id = ?`, p.id)
 			s.appendEvent(ctx, p.id, string(final), map[string]any{"at": nowUTC()})
+			if job, jerr := s.GetJob(ctx, p.id, ""); jerr == nil {
+				s.audit(ctx, "job_"+string(final), job, map[string]any{"reason": p.status})
+			}
 			if final == jobs.RetentionReleased {
 				rep.Released++
 			} else {
@@ -147,6 +150,10 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 	} else {
 		rep.Errors = append(rep.Errors, "purge tombstones: "+err.Error())
 	}
+
+	// 4b. Usage rows leave the 24 h window after 25 h; independent of job cleanup.
+	_, _ = s.DB.ExecContext(ctx, `DELETE FROM owner_usage WHERE created_at <= ?`,
+		ts(nowUTC().Add(-25*time.Hour)))
 
 	// 5. Expired download leases.
 	_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE expires_at <= ?`, ts(nowUTC()))

@@ -158,6 +158,15 @@ def main() -> int:
     check("job exposes processing_deadline_at", "processing_deadline_at" in job_props)
     check("job keeps max_lifetime_at as deprecated alias",
           job_props.get("max_lifetime_at", {}).get("deprecated") is True)
+    enum = pub["components"]["schemas"]["Error"]["properties"]["error"]["properties"]["code"]["enum"]
+    check("error enum documents insufficient_scope", "insufficient_scope" in enum, str(enum))
+    check("error enum documents quota codes",
+          {"quota_exceeded", "rate_limited"} <= set(enum), str(enum))
+    check("bearerAuth documents scopes", "jobs:ack" in pub["components"]["securitySchemes"]["bearerAuth"]["description"])
+    ops_with_403 = [p for p, item in pub["paths"].items()
+                    for m, op in item.items()
+                    if isinstance(op, dict) and "403" in op.get("responses", {})]
+    check("authenticated operations document 403", len(ops_with_403) >= 5, str(ops_with_403))
     check("mode documents that text formats use native",
           "always use the native engine" in pub["components"]["parameters"]["ModeQuery"]["description"])
 

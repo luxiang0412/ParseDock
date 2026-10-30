@@ -80,5 +80,6 @@ public class Example {
 |-------------|-------------|------------------|
 | **200** | Event stream. |  -  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
 

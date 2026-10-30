@@ -3,6 +3,7 @@ package coordinator
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -586,4 +587,204 @@ func TestValidateInternalBinding(t *testing.T) {
 				c.addr, c.token, c.dev, err, c.wantErr)
 		}
 	}
+}
+
+// PR-02: quotas are enforced by the coordinator (the only stateful component),
+// so they hold across any number of stateless API replicas.
+func TestQuotaConcurrency(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 2} })
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	}
+	_, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))})
+	ce := AsError(err)
+	if ce.Code != jobs.ErrQuotaExceeded || ce.Status != 429 {
+		t.Fatalf("third job = %v (status %d), want 429 quota", err, ce.Status)
+	}
+	if ce.RetryAfter <= 0 {
+		t.Fatal("quota errors must suggest a retry delay")
+	}
+	// Completing a job frees the slot.
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := s.Complete(ctx, CompleteParams{JobID: task.JobID, Token: task.LeaseToken,
+		Engine: "native", Version: "1", Markdown: []byte("x"), Text: []byte("x"), JSON: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))}); err != nil {
+		t.Fatalf("job after completion rejected: %v", err)
+	}
+}
+
+func TestQuotaDailyJobsAndBytes(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxJobsPerDay: 2} })
+	ctx := context.Background()
+	create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	create(t, s, "b.txt", []byte("hello"), CreateParams{})
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("daily job quota not enforced: %v", err)
+	}
+
+	b := testService(t, func(c *Config) { c.Quota = Quota{MaxBytesPerDay: 10} })
+	create(t, b, "a.txt", []byte("12345"), CreateParams{})
+	if _, _, err := b.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "b.txt",
+		Body: bytes.NewReader([]byte("123456"))}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("daily byte quota not enforced: %v", err)
+	}
+
+	// Zero means unlimited.
+	u := testService(t, func(c *Config) { c.Quota = Quota{} })
+	for i := 0; i < 5; i++ {
+		create(t, u, "a.txt", []byte("hello"), CreateParams{})
+	}
+}
+
+// Quotas are per owner, not global.
+func TestQuotaIsPerOwner(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 1} })
+	ctx := context.Background()
+	create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-2", InputName: "b.txt",
+		Body: bytes.NewReader([]byte("hello"))}); err != nil {
+		t.Fatalf("other owner blocked by quota: %v", err)
+	}
+}
+
+// PR-02: audit lines carry identity and decisions, never document content.
+func TestAuditLinesContainNoContent(t *testing.T) {
+	var buf bytes.Buffer
+	s := testService(t, nil)
+	s.Audit = slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ctx := WithRequestID(context.Background(), "req_test123")
+	secret := "SENTINEL-DOCUMENT-TEXT-0f2a"
+	job, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "a.txt",
+		Body: bytes.NewReader([]byte(secret))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# x"), Text: []byte("x"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+
+	out := buf.String()
+	for _, want := range []string{`"audit":true`, `"event":"job_created"`, `"event":"job_acked"`,
+		`"event":"job_released"`, `"job_id":"` + job.ID + `"`, `"request_id":"req_test123"`,
+		`"owner_id":"owner-1"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("audit log missing %s\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("audit log leaked document content:\n%s", out)
+	}
+}
+
+// Codex review (PR-02): concurrent admission must not overshoot the quota.
+func TestQuotaAdmissionIsAtomic(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 3} })
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var ok, quota int
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "a.txt",
+				Body: bytes.NewReader([]byte("hello"))})
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				ok++
+			} else if AsError(err).Code == jobs.ErrQuotaExceeded {
+				quota++
+			}
+		}(i)
+	}
+	wg.Wait()
+	if ok != 3 {
+		t.Fatalf("%d jobs admitted with a limit of 3 (quota rejections: %d)", ok, quota)
+	}
+	var live int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE owner_id='owner-1'`).Scan(&live)
+	if live != 3 {
+		t.Fatalf("%d job rows persisted, want 3", live)
+	}
+}
+
+// Codex review (PR-02): purging job tombstones must not restore the daily budget.
+func TestQuotaUsageSurvivesTombstonePurge(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Quota = Quota{MaxJobsPerDay: 2}
+		c.TombstoneTTL = time.Millisecond
+	})
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+		task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+		done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken,
+			Engine: "native", Version: "1", Markdown: []byte("x"), Text: []byte("x"), JSON: []byte("{}")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Cleanup removes the artifacts, then the tombstone rows themselves.
+	time.Sleep(5 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		s.RunCleanup(ctx)
+	}
+	var jobRows int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE owner_id='owner-1'`).Scan(&jobRows)
+	if jobRows != 0 {
+		t.Fatalf("%d job rows remain; the test would not prove anything", jobRows)
+	}
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("daily quota forgotten after tombstone purge: %v", err)
+	}
+}
+
+// Codex review (PR-02): an old still-running job counts against concurrency, not
+// against today's jobs/bytes allowance.
+func TestQuotaOldRunningJobDoesNotConsumeDailyBudget(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxJobsPerDay: 2, MaxConcurrent: 5} })
+	ctx := context.Background()
+	old := create(t, s, "old.txt", []byte("hello"), CreateParams{})
+	// Backdate the job and its usage row by 25 h: outside the rolling window but
+	// still queued/running.
+	past := ts(nowUTC().Add(-25 * time.Hour))
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET created_at=? WHERE id=?`, past, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE owner_usage SET created_at=? WHERE job_id=?`, past, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.ownerUsage(ctx, "owner-1", nowUTC().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.concurrent != 1 {
+		t.Fatalf("concurrent = %d, want 1", u.concurrent)
+	}
+	if u.jobsToday != 0 || u.bytesToday != 0 {
+		t.Fatalf("old job consumed the daily budget: %+v", u)
+	}
+	create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	create(t, s, "b.txt", []byte("hello"), CreateParams{})
 }

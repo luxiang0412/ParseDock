@@ -34,8 +34,8 @@ class ErrorError(BaseModel):
     @field_validator('code')
     def code_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in set(['invalid_request', 'unsupported_type', 'malformed_file', 'file_too_large', 'encrypted_file', 'page_limit_exceeded', 'suspicious_compression', 'expanded_too_large', 'quota_exceeded', 'insufficient_storage', 'engine_unavailable', 'gpu_unavailable', 'timeout', 'cancelled', 'internal_error', 'lease_lost', 'not_found', 'gone', 'conflict', 'unauthorized', 'rate_limited', 'coordinator_unavailable']):
-            raise ValueError("must be one of enum values ('invalid_request', 'unsupported_type', 'malformed_file', 'file_too_large', 'encrypted_file', 'page_limit_exceeded', 'suspicious_compression', 'expanded_too_large', 'quota_exceeded', 'insufficient_storage', 'engine_unavailable', 'gpu_unavailable', 'timeout', 'cancelled', 'internal_error', 'lease_lost', 'not_found', 'gone', 'conflict', 'unauthorized', 'rate_limited', 'coordinator_unavailable')")
+        if value not in set(['invalid_request', 'unsupported_type', 'malformed_file', 'file_too_large', 'encrypted_file', 'page_limit_exceeded', 'suspicious_compression', 'expanded_too_large', 'quota_exceeded', 'insufficient_storage', 'engine_unavailable', 'gpu_unavailable', 'timeout', 'cancelled', 'internal_error', 'lease_lost', 'not_found', 'gone', 'conflict', 'unauthorized', 'insufficient_scope', 'rate_limited', 'coordinator_unavailable']):
+            raise ValueError("must be one of enum values ('invalid_request', 'unsupported_type', 'malformed_file', 'file_too_large', 'encrypted_file', 'page_limit_exceeded', 'suspicious_compression', 'expanded_too_large', 'quota_exceeded', 'insufficient_storage', 'engine_unavailable', 'gpu_unavailable', 'timeout', 'cancelled', 'internal_error', 'lease_lost', 'not_found', 'gone', 'conflict', 'unauthorized', 'insufficient_scope', 'rate_limited', 'coordinator_unavailable')")
         return value
 
     model_config = ConfigDict(

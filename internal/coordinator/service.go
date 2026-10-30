@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -24,7 +25,7 @@ const jobCols = `id, owner_id, input_name, mime_type, format, input_sha256, inpu
 	actual_engine, routing_reason, idempotency_key, created_at, started_at, completed_at,
 	result_expires_at, max_lifetime_at, current_attempt, max_attempts, result_version,
 	result_manifest_path, error_code, error_message, warning_count, progress, progress_stage,
-	requested_ttl_seconds, available_at, tombstone_expires_at, updated_at`
+	requested_ttl_seconds, available_at, tombstone_expires_at, updated_at, request_id`
 
 // Service is the Coordinator: the only component that touches SQLite and the
 // authoritative file store.
@@ -32,6 +33,12 @@ type Service struct {
 	DB    *sql.DB
 	Store *storage.Store
 	Cfg   Config
+	// Audit receives structured audit lines (create/ack/cancel/release). It is
+	// nil in tests that do not care.
+	Audit *slog.Logger
+
+	// admit serialises quota admission per owner (see quota.go).
+	admit ownerLocks
 
 	cleanupRuns atomic.Int64
 	lastCleanup atomic.Value // time.Time
@@ -45,6 +52,19 @@ func NewService(db *sql.DB, store *storage.Store, cfg Config) *Service {
 }
 
 // ---------------------------------------------------------------- job creation
+
+// RequestIDKey carries the client correlation id through the coordinator.
+type requestIDKey struct{}
+
+// WithRequestID attaches the correlation id to a context.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, id)
+}
+
+func requestID(ctx context.Context) string {
+	v, _ := ctx.Value(requestIDKey{}).(string)
+	return v
+}
 
 // CreateParams is one submission.
 type CreateParams struct {
@@ -127,10 +147,19 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		writer.Abort()
 		return nil, false, NewError(400, jobs.ErrMalformed, "empty upload")
 	}
-
 	lim := s.limits()
 	// Validate before publishing so a rejected upload never has a job row.
 	if err := s.validateStaged(jobID, writer, p.InputName, lim); err != nil {
+		writer.Abort()
+		return nil, false, err
+	}
+
+	// Admission is serialised per owner and covers the quota check, the file
+	// publish and the insert; otherwise concurrent uploads all observe "below the
+	// limit" before any of them is recorded.
+	unlock := s.lockOwner(p.OwnerID)
+	defer unlock()
+	if err := s.enforceQuota(ctx, p.OwnerID, writer.Size()); err != nil {
 		writer.Abort()
 		return nil, false, err
 	}
@@ -199,14 +228,21 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		CreatedAt:        now,
 		MaxLifetimeAt:    now.Add(s.Cfg.MaxJobLifetime),
 		MaxAttempts:      s.Cfg.MaxAttempts,
+		RequestID:        requestID(ctx),
 		UpdatedAt:        now,
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(35)+`)`,
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(36)+`)`,
 		job.ID, job.OwnerID, job.InputName, job.MimeType, job.Format, job.InputSHA256, job.InputSize,
 		job.PageCount, string(job.ProcessingStatus), string(job.RetentionStatus), job.Priority,
 		job.RequestedMode, job.RequestedDevice, job.EngineHint, job.ActualEngine, job.RoutingReason,
 		nullIfEmpty(job.IdempotencyKey), ts(job.CreatedAt), nil, nil, nil, ts(job.MaxLifetimeAt), 0, job.MaxAttempts,
-		nil, nil, nil, nil, 0, 0, "", ttl, ts(now), nil, ts(now))
+		nil, nil, nil, nil, 0, 0, "", ttl, ts(now), nil, ts(now), requestID(ctx))
 	if err != nil {
 		_ = s.Store.DeleteJob(jobID)
 		if isUniqueViolation(err) && job.IdempotencyKey != "" {
@@ -216,8 +252,19 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		}
 		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
 	}
+	if err := recordUsage(ctx, tx, jobID, p.OwnerID, size); err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, NewError(500, jobs.ErrInternal, "record usage: "+err.Error())
+	}
+	if err := tx.Commit(); err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+	}
 	s.appendEvent(ctx, jobID, "created", map[string]any{
 		"status": job.ProcessingStatus, "format": job.Format, "engine_hint": job.EngineHint,
+	})
+	s.audit(ctx, "job_created", job, map[string]any{
+		"engine_hint": job.EngineHint, "mode": job.RequestedMode, "device": job.RequestedDevice,
 	})
 	return job, true, nil
 }
@@ -831,6 +878,7 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 		}
 		if n, _ := res.RowsAffected(); n > 0 {
 			s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "ack"})
+			s.audit(ctx, "job_acked", job, map[string]any{"result_version": resultVersion})
 		}
 		return s.GetJob(ctx, jobID, ownerID)
 	}
@@ -858,6 +906,7 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID, resultVersion stri
 		}
 		_, _ = s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`, jobID)
 		s.appendEvent(ctx, jobID, "cancelled", map[string]any{"reason": "client_request"})
+		s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
 	case jobs.StatusCompleted:
 		if job.RetentionStatus == jobs.RetentionActive {
 			if resultVersion == "" {
@@ -874,6 +923,7 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID, resultVersion stri
 			}
 			if n, _ := res.RowsAffected(); n > 0 {
 				s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "cancel_after_complete"})
+				s.audit(ctx, "job_acked", job, map[string]any{"via": "cancel"})
 			}
 		}
 	}
@@ -1065,11 +1115,12 @@ func scanJob(row rowScanner) (*jobs.Job, error) {
 		resultVersion, manifestPath, errCode, errMsg, progressStage, availableAt, tombstone, updatedAt sql.NullString
 	var pageCount, attempt, maxAttempts, warnings, progress, reqTTL sql.NullInt64
 	var priority sql.NullInt64
+	var requestIDCol sql.NullString
 	if err := row.Scan(&j.ID, &j.OwnerID, &j.InputName, &j.MimeType, &j.Format, &j.InputSHA256, &j.InputSize,
 		&pageCount, &proc, &ret, &priority, &j.RequestedMode, &j.RequestedDevice, &j.EngineHint,
 		&actualEngine, &routing, &idem, &createdAt, &startedAt, &completedAt, &expiresAt, &maxLife,
 		&attempt, &maxAttempts, &resultVersion, &manifestPath, &errCode, &errMsg, &warnings, &progress,
-		&progressStage, &reqTTL, &availableAt, &tombstone, &updatedAt); err != nil {
+		&progressStage, &reqTTL, &availableAt, &tombstone, &updatedAt, &requestIDCol); err != nil {
 		return nil, err
 	}
 	j.ProcessingStatus = jobs.ProcessingStatus(proc)
@@ -1101,6 +1152,7 @@ func scanJob(row rowScanner) (*jobs.Job, error) {
 	j.CompletedAt = parseTSPtr(completedAt)
 	j.ResultExpiresAt = parseTSPtr(expiresAt)
 	j.TombstoneExpiresAt = parseTSPtr(tombstone)
+	j.RequestID = requestIDCol.String
 	return &j, nil
 }
 

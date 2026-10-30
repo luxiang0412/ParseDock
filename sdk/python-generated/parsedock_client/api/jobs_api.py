@@ -107,6 +107,7 @@ class JobsApi:
             '202': "AckJob202Response",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
         }
@@ -186,6 +187,7 @@ class JobsApi:
             '202': "AckJob202Response",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
         }
@@ -265,6 +267,7 @@ class JobsApi:
             '202': "AckJob202Response",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
         }
@@ -422,6 +425,7 @@ class JobsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '202': "CancelJob202Response",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
         }
@@ -500,6 +504,7 @@ class JobsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '202': "CancelJob202Response",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
         }
@@ -578,6 +583,7 @@ class JobsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '202': "CancelJob202Response",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
         }
@@ -765,6 +771,7 @@ class JobsApi:
             '200': "Job",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '409': "Error",
             '413': "Error",
             '415': "Error",
@@ -877,6 +884,7 @@ class JobsApi:
             '200': "Job",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '409': "Error",
             '413': "Error",
             '415': "Error",
@@ -989,6 +997,7 @@ class JobsApi:
             '200': "Job",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '409': "Error",
             '413': "Error",
             '415': "Error",
@@ -1176,6 +1185,7 @@ class JobsApi:
             '304': None,
             '200': "str",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
             '410': "Error",
@@ -1252,6 +1262,7 @@ class JobsApi:
             '304': None,
             '200': "str",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
             '410': "Error",
@@ -1328,6 +1339,7 @@ class JobsApi:
             '304': None,
             '200': "str",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '409': "Error",
             '410': "Error",
@@ -1466,6 +1478,7 @@ class JobsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Job",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '503': "Error",
         }
@@ -1536,6 +1549,7 @@ class JobsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Job",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '503': "Error",
         }
@@ -1606,6 +1620,7 @@ class JobsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "Job",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
             '503': "Error",
         }
