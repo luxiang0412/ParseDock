@@ -10,7 +10,7 @@ exist to schedule, parallelise and collect artifacts — not to hold logic.
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `ci-summary` | yes — see "Merge gate" |
 | `.github/workflows/engine-changes.yml` | every PR (path-classified inside) | `detect`, `real-engines`, `container` | recommended for engine/docker changes |
-| `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `container-smoke` (includes SBOM + licence classification) | no (evidence) |
+| `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `sdks` (Python + CLI + Java + version consistency), `container-smoke` (includes SBOM + licence classification) | no (evidence) |
 | `.github/workflows/release-gate.yml` | tags `v*`, manual | `licence-gate` (blocking audit, no publish step) | yes, for releases |
 
 `engine-changes.yml` runs on every PR but classifies changed paths first, so it
@@ -19,14 +19,14 @@ safe to include in branch protection.
 
 ## What each phase covers
 
-| Phase | Commands (see the script for the exact list) | Why |
+| Phase | Steps (the script is authoritative) | Why |
 | --- | --- | --- |
 | `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, workflows valid |
-| `unit` | `go test ./...`, `tests/unit/test_score.py` | behaviour + scoring rubric |
-| `contract` | OpenAPI 3.1 validation (public + internal, pinned generator), `tests/contract/openapi_contract.py`, SDK regeneration drift | specs, router and generated SDKs cannot drift |
-| `lifecycle` | `make acceptance` (T03–T16), `tests/integration/pr00_contract.py`, backup/restore | job lifecycle, ACK/TTL/lease/fencing, PR-00 regressions |
-| `image` | control-plane image build, `--check`, image id/digest, `repro-check.sh`, licence audit (report) | reproducible artefact + clean control plane |
-| `engines` | install xberg + docling-rs at locked versions, `acceptance-real`, quality bench subset, `score.py` | real parsers (nightly / engine changes) |
+| `unit` | `scripts/sdk-check.sh --no-java` (Python SDK e2e + CLI + one version across artefacts), `go test ./...`, `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, SDK/version drift, corpus and gate correctness |
+| `contract` | OpenAPI 3.1 validation (public + internal, pinned generator), `openapi_contract.py`, SDK regeneration drift (`sdk/python-generated`, `sdk/java-generated`), Document IR schema drift | specs, router, generated SDKs and the published schema cannot drift |
+| `lifecycle` | `make acceptance` (T03–T17), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
+| `image` | control-plane image build, `--check`, image id/digest, `repro-check.sh`, licence audit (report + classification) | reproducible artefact + clean control plane |
+| `engines` | install xberg + docling-rs at locked versions, `acceptance-real`, quality **and** perf bench on a fixed fixture scope, `summarize.py` + `score.py` into a run-scoped directory (`build/ci/bench-*`), `gate.py` | real parsers and the quality/latency gate (nightly / engine changes) |
 | `container` | build both images, `container-smoke.sh` (xberg + docling-rs through the API), SBOM + PASS/BLOCK classification | container parity with real engines |
 
 ## Reproducibility
@@ -84,7 +84,7 @@ Each job uploads `build/ci/` (`ci-<phase>`):
 ## Local equivalents
 
 ```bash
-make ci              # static + unit + contract + lifecycle + image (≈2m40s on the dev host)
+make ci              # static + unit + contract + lifecycle + image (≈3m30s on the dev host)
 make ci-phase PHASE=contract
 make verify-pins
 make lint-workflows
@@ -95,9 +95,15 @@ make license-audit   # enforce mode (fails on GPL)
 ## Known limitations
 
 * Runners are GitHub-hosted `ubuntu-24.04` (2 vCPU); the mock lifecycle phase is
-  the critical path (~3m40s) and dominates the PR pipeline.
-* No self-hosted GPU runner: GPU workers are verified manually (`docs/GPU-REPORT.md`),
-  not in CI.
+  the critical path (~4m10s) and dominates the PR pipeline. It grew with PR-02/07/09/12
+  runtime contracts; splitting it is a candidate if the wall time becomes painful.
+* No self-hosted GPU runner: GPU workers are verified manually (`make gpu-check`,
+  `docs/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
+  GPU, so it is safe to run anywhere but proves nothing there.
+* The Java half of `sdk-check` (~1–2 min of Maven downloads) runs in the nightly `sdks` job,
+  not on every PR; the Python half runs in `unit`.
+* The engine quality gate is enforced in `engines` (nightly + engine-changes), not on every
+  PR: installing xberg and docling-rs takes minutes.
 * Docker layer caching across runs is intentionally **not** used for the worker
   image: it is built `FROM` the locally built control-plane image, which a buildx
   container driver cannot resolve. The nightly container job therefore rebuilds

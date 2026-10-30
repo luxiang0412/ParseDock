@@ -128,6 +128,16 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
 | `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
+| `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `auto` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time |
+| `--worker-id` | `PARSEDOCK_WORKER_ID` | generated | stable worker identity across restarts |
+| `--worker-concurrency` | `PARSEDOCK_WORKER_CONCURRENCY` | `1` | parallel slots per worker; ignored (capped to 1) for GPU device types |
+| `--work-dir` | `PARSEDOCK_WORK_DIR` | `./runtime/work` | worker scratch; on the GPU image keep it **below** the model-cache volume (`/work/scratch`) |
+| `--engine-min-vram-mb` | `PARSEDOCK_ENGINE_MIN_VRAM_MB` | – | `engine:MiB` list; `gpu_required` is refused (`409 gpu_unavailable`) unless a live GPU worker has that much free on the card the parser will use |
+| `--tls-cert` / `--tls-key` | `PARSEDOCK_TLS_CERT` / `_KEY` | – | coordinator listener certificate; also used as the client certificate on api/worker |
+| `--tls-client-ca` | `PARSEDOCK_TLS_CLIENT_CA` | – | enables mutual TLS on the coordinator; **startup fails without `--tls-cert/--tls-key`** |
+| `--tls-ca` | `PARSEDOCK_TLS_CA` | – | CA that verifies the coordinator (api/worker) |
+| `--tls-server-name` | `PARSEDOCK_TLS_SERVER_NAME` | – | required when dialling an IP literal |
+| `--tls-insecure` | `PARSEDOCK_TLS_INSECURE` | off | skip verification — development only, refused by the release checklist |
 | `--escalate-scans` | `PARSEDOCK_ESCALATE_SCANS` | `1` | retry a CJK scan once with the accurate engine when the fast engine reports low OCR confidence (only `mode=auto`, only when the retry yields at least as much text) |
 | engine paths | `PARSEDOCK_XBERG_BIN`, `PARSEDOCK_DOCLING_RS_BIN`, … | – | adapters |
 

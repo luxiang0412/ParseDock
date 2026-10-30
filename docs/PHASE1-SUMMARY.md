@@ -62,3 +62,10 @@ make load              # cluster-lite throughput
 
 Sensitive corporate material (`test_data/`) is local-only and never committed; the batch
 harness redacts file identities by default.
+
+## Before you change anything
+
+`AGENTS.md` is the working contract: hard rules (sensitive data, no infrastructure drift, no
+unverified claims), the command that *is* CI (`scripts/ci-local.sh`, not a reimplementation),
+the traps that already cost time, and the deliberate gaps above so they are not "fixed" by
+accident.

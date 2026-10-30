@@ -100,7 +100,10 @@ cleaner (every 60 s):
 | `internal/storage` | atomic file store, manifests, disk watermark, magic/zip/PDF pre-flight |
 | `internal/worker` | register/claim/heartbeat/input/result loop, engine selection, scratch dirs |
 | `internal/engines` | adapter interface + native/mock/xberg/docling-rs/docling-serve/tika/mineru |
-| `internal/documentir` | IR types + Markdown/Text renderers |
+| `internal/documentir` | IR types + Markdown/Text renderers + embedded JSON Schema (mirrored to `api/`) |
+| `internal/metrics` | dependency-free Prometheus exposition (no SDK dependency) |
+| `internal/tlsutil` | server/client TLS configs for the internal hop (mTLS, timeouts preserved) |
+| `internal/sysinfo` | host facts, GPU detection, per-device free VRAM |
 | `migrations` | embedded `*.sql` (single source of truth) |
 
 ## 5. Concurrency and resource model

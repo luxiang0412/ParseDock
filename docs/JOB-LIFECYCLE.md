@@ -26,8 +26,14 @@ active ──ack──────────▶ release_pending ─┐
    │                                     ├─▶ deleting ─▶ released
    ├──TTL (completed)─▶ expiry_pending ──┘        │
    │                                              └─▶ expired
-   └──failed/cancelled retention (10 min)─▶ release_pending
+   └──failed/cancelled──────────────────────▶ release_pending
 ```
+
+A permanent failure is terminal for **processing** but not for **retention**: `Fail` records
+`processing_status=failed` and `retention_status=release_pending` in one transaction, so the
+files become the cleaner's responsibility (see "Lease-aware deletion" below). Cancellation and
+quota rejection do the same. Step 3 of the cleaner is therefore a safety net for rows written
+by an older binary or a crash mid-transaction, not the normal path.
 
 `released`/`expired` rows survive for `tombstone_ttl` (default 10 min) so clients
 get a **410 Gone** instead of an indistinguishable 404, then the row is purged.
@@ -172,6 +178,30 @@ every cleanup_interval:
 Steps 2–3 and 4 are separated on purpose: the state flip is a single SQL statement,
 while the file deletion retries until it succeeds. A `SIGKILL` anywhere yields either
 "still pending" or "already deleted", both of which converge.
+
+### Lease-aware deletion
+
+Two writers can discard a job's files: the cleaner (step 4) and the coordinator's terminal
+paths (`Fail`, quota rejection). Both must respect a **live download lease**, because a client
+streaming a result — or `scripts/backup_online.py`, which pins every snapshot job with the same
+lease table — may still be reading them.
+
+The rule is one atomic transition followed by a lookup:
+
+```
+UPDATE jobs SET retention_status='release_pending' WHERE id=? AND retention_status='active'
+   → then: live download lease?  yes / unknown → keep files, let the cleaner finish
+                                  no            → delete now
+```
+
+Pinning only accepts `active` rows, so the database arbitrates the race: either the pin
+commits first (the deletion then sees the lease and defers) or the transition wins and the pin
+fails, making the backup retry with a fresh snapshot. A *failed* lease lookup is treated as
+"leased" — unknown is never permission to delete.
+
+Late results from a **superseded** attempt are different: they only remove the result
+directory that attempt wrote. The input belongs to the job, which another attempt may still be
+parsing, so its retention state must not move.
 
 ## 7. Storage layout and atomicity
 
