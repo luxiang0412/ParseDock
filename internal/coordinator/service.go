@@ -37,6 +37,9 @@ type Service struct {
 	// nil in tests that do not care.
 	Audit *slog.Logger
 
+	// admit serialises quota admission per owner (see quota.go).
+	admit ownerLocks
+
 	cleanupRuns atomic.Int64
 	lastCleanup atomic.Value // time.Time
 }
@@ -144,14 +147,19 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		writer.Abort()
 		return nil, false, NewError(400, jobs.ErrMalformed, "empty upload")
 	}
-	if err := s.enforceQuota(ctx, p.OwnerID, writer.Size()); err != nil {
+	lim := s.limits()
+	// Validate before publishing so a rejected upload never has a job row.
+	if err := s.validateStaged(jobID, writer, p.InputName, lim); err != nil {
 		writer.Abort()
 		return nil, false, err
 	}
 
-	lim := s.limits()
-	// Validate before publishing so a rejected upload never has a job row.
-	if err := s.validateStaged(jobID, writer, p.InputName, lim); err != nil {
+	// Admission is serialised per owner and covers the quota check, the file
+	// publish and the insert; otherwise concurrent uploads all observe "below the
+	// limit" before any of them is recorded.
+	unlock := s.lockOwner(p.OwnerID)
+	defer unlock()
+	if err := s.enforceQuota(ctx, p.OwnerID, writer.Size()); err != nil {
 		writer.Abort()
 		return nil, false, err
 	}
@@ -223,7 +231,13 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		RequestID:        requestID(ctx),
 		UpdatedAt:        now,
 	}
-	_, err = s.DB.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(36)+`)`,
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+	}
+	defer func() { _ = tx.Rollback() }()
+	_, err = tx.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(36)+`)`,
 		job.ID, job.OwnerID, job.InputName, job.MimeType, job.Format, job.InputSHA256, job.InputSize,
 		job.PageCount, string(job.ProcessingStatus), string(job.RetentionStatus), job.Priority,
 		job.RequestedMode, job.RequestedDevice, job.EngineHint, job.ActualEngine, job.RoutingReason,
@@ -236,6 +250,14 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 				return existing, false, nil
 			}
 		}
+		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+	}
+	if err := recordUsage(ctx, tx, jobID, p.OwnerID, size); err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, NewError(500, jobs.ErrInternal, "record usage: "+err.Error())
+	}
+	if err := tx.Commit(); err != nil {
+		_ = s.Store.DeleteJob(jobID)
 		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
 	}
 	s.appendEvent(ctx, jobID, "created", map[string]any{

@@ -120,7 +120,7 @@ cleaner (every 60 s):
 | engine | subprocess, timeout, private scratch dir, optional netns; no shell interpolation |
 | logs | no document text, no tokens, no result bodies; only ids/counters/error codes |
 | cross-tenant | a foreign job id returns **404** with the same body as an unknown id |
-| quotas | per owner, enforced by the coordinator (not the stateless API): concurrent jobs, jobs/day, bytes/day; `429` + `Retry-After` |
+| quotas | per owner, enforced by the coordinator (not the stateless API): concurrent jobs, jobs/day, bytes/day; `429` + `Retry-After`. Admission is serialised per owner and consumption is recorded in `owner_usage` in the same transaction as the job insert, so concurrent uploads cannot overshoot and tombstone cleanup cannot restore a spent budget |
 | egress | no URL fetching, no webhooks, MinerU remote tiers disabled |
 
 ### Audit log

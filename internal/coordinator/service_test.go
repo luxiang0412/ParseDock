@@ -691,3 +691,100 @@ func TestAuditLinesContainNoContent(t *testing.T) {
 		t.Fatalf("audit log leaked document content:\n%s", out)
 	}
 }
+
+// Codex review (PR-02): concurrent admission must not overshoot the quota.
+func TestQuotaAdmissionIsAtomic(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 3} })
+	ctx := context.Background()
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var ok, quota int
+	for i := 0; i < 20; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "a.txt",
+				Body: bytes.NewReader([]byte("hello"))})
+			mu.Lock()
+			defer mu.Unlock()
+			if err == nil {
+				ok++
+			} else if AsError(err).Code == jobs.ErrQuotaExceeded {
+				quota++
+			}
+		}(i)
+	}
+	wg.Wait()
+	if ok != 3 {
+		t.Fatalf("%d jobs admitted with a limit of 3 (quota rejections: %d)", ok, quota)
+	}
+	var live int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE owner_id='owner-1'`).Scan(&live)
+	if live != 3 {
+		t.Fatalf("%d job rows persisted, want 3", live)
+	}
+}
+
+// Codex review (PR-02): purging job tombstones must not restore the daily budget.
+func TestQuotaUsageSurvivesTombstonePurge(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Quota = Quota{MaxJobsPerDay: 2}
+		c.TombstoneTTL = time.Millisecond
+	})
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+		task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+		done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken,
+			Engine: "native", Version: "1", Markdown: []byte("x"), Text: []byte("x"), JSON: []byte("{}")})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Cleanup removes the artifacts, then the tombstone rows themselves.
+	time.Sleep(5 * time.Millisecond)
+	for i := 0; i < 3; i++ {
+		s.RunCleanup(ctx)
+	}
+	var jobRows int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs WHERE owner_id='owner-1'`).Scan(&jobRows)
+	if jobRows != 0 {
+		t.Fatalf("%d job rows remain; the test would not prove anything", jobRows)
+	}
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("daily quota forgotten after tombstone purge: %v", err)
+	}
+}
+
+// Codex review (PR-02): an old still-running job counts against concurrency, not
+// against today's jobs/bytes allowance.
+func TestQuotaOldRunningJobDoesNotConsumeDailyBudget(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxJobsPerDay: 2, MaxConcurrent: 5} })
+	ctx := context.Background()
+	old := create(t, s, "old.txt", []byte("hello"), CreateParams{})
+	// Backdate the job and its usage row by 25 h: outside the rolling window but
+	// still queued/running.
+	past := ts(nowUTC().Add(-25 * time.Hour))
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET created_at=? WHERE id=?`, past, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE owner_usage SET created_at=? WHERE job_id=?`, past, old.ID); err != nil {
+		t.Fatal(err)
+	}
+	u, err := s.ownerUsage(ctx, "owner-1", nowUTC().Add(-24*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.concurrent != 1 {
+		t.Fatalf("concurrent = %d, want 1", u.concurrent)
+	}
+	if u.jobsToday != 0 || u.bytesToday != 0 {
+		t.Fatalf("old job consumed the daily budget: %+v", u)
+	}
+	create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	create(t, s, "b.txt", []byte("hello"), CreateParams{})
+}

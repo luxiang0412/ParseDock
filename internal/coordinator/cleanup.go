@@ -151,6 +151,10 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 		rep.Errors = append(rep.Errors, "purge tombstones: "+err.Error())
 	}
 
+	// 4b. Usage rows leave the 24 h window after 25 h; independent of job cleanup.
+	_, _ = s.DB.ExecContext(ctx, `DELETE FROM owner_usage WHERE created_at <= ?`,
+		ts(nowUTC().Add(-25*time.Hour)))
+
 	// 5. Expired download leases.
 	_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE expires_at <= ?`, ts(nowUTC()))
 

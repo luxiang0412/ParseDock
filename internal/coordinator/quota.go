@@ -4,10 +4,41 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	"parsedock.dev/parsedock/internal/jobs"
 )
+
+// ownerLocks serialises quota admission per owner. A single coordinator owns the
+// database, so an in-process lock is sufficient; without it, concurrent uploads
+// can all observe "below the limit" before any of them inserts a job row.
+type ownerLocks struct {
+	mu sync.Mutex
+	m  map[string]*sync.Mutex
+}
+
+func (l *ownerLocks) get(owner string) *sync.Mutex {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.m == nil {
+		l.m = map[string]*sync.Mutex{}
+	}
+	mu, ok := l.m[owner]
+	if !ok {
+		mu = &sync.Mutex{}
+		l.m[owner] = mu
+	}
+	return mu
+}
+
+// lockOwner blocks until this owner's admission slot is free and returns the
+// unlock function. Callers must hold it from the quota check to the job insert.
+func (s *Service) lockOwner(owner string) func() {
+	mu := s.admit.get(owner)
+	mu.Lock()
+	return mu.Unlock
+}
 
 // Quota bounds one owner's resource usage. Zero means "not configured", i.e.
 // unlimited. Quotas are enforced by the Coordinator (the only stateful
@@ -30,19 +61,32 @@ type usage struct {
 	bytesToday int64
 }
 
+// ownerUsage returns the owner's live concurrency (queued/running jobs, regardless
+// of age) plus the durable rolling-window usage from owner_usage. The two are
+// deliberately separate: an old queued job must not consume today's allowance, and
+// purging job metadata must not erase consumption.
 func (s *Service) ownerUsage(ctx context.Context, owner string, since time.Time) (usage, error) {
 	var u usage
-	err := s.DB.QueryRowContext(ctx, `
-		SELECT
-		  COUNT(*) FILTER (WHERE processing_status IN ('queued','running')),
-		  COUNT(*),
-		  COALESCE(SUM(input_size), 0)
-		FROM jobs WHERE owner_id = ? AND (created_at >= ? OR processing_status IN ('queued','running'))`,
-		owner, ts(since)).Scan(&u.concurrent, &u.jobsToday, &u.bytesToday)
-	if err != nil && err != sql.ErrNoRows {
+	if err := s.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*) FROM jobs WHERE owner_id = ? AND processing_status IN ('queued','running')`,
+		owner).Scan(&u.concurrent); err != nil {
+		return u, err
+	}
+	if err := s.DB.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(bytes), 0) FROM owner_usage
+		WHERE owner_id = ? AND created_at >= ?`, owner, ts(since)).
+		Scan(&u.jobsToday, &u.bytesToday); err != nil {
 		return u, err
 	}
 	return u, nil
+}
+
+// recordUsage persists consumption at admission. It runs in the same transaction
+// as the job insert (see CreateJobStaged) so a crash cannot lose the accounting.
+func recordUsage(ctx context.Context, tx *sql.Tx, jobID, owner string, bytes int64) error {
+	_, err := tx.ExecContext(ctx, `INSERT INTO owner_usage(job_id, owner_id, bytes, created_at)
+		VALUES(?,?,?,?) ON CONFLICT(job_id) DO NOTHING`, jobID, owner, bytes, ts(nowUTC()))
+	return err
 }
 
 // enforceQuota checks the limits for a new upload of size bytes. It returns a
