@@ -420,14 +420,19 @@ func (s *Server) FlushThrottle(ctx context.Context) {
 		if len(pending) == 0 {
 			continue
 		}
+		// Bound the whole exchange: a coordinator that accepts the connection but stalls
+		// would otherwise block this goroutine (and therefore all later reports) forever.
+		fctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		body, err := json.Marshal(map[string]any{"counts": pending})
 		if err != nil {
+			cancel()
 			s.throttle.restore(pending)
 			continue
 		}
-		req, err := http.NewRequestWithContext(ctx, "POST",
+		req, err := http.NewRequestWithContext(fctx, "POST",
 			strings.TrimRight(s.cfg.CoordinatorURL, "/")+"/internal/throttle", bytes.NewReader(body))
 		if err != nil {
+			cancel()
 			s.throttle.restore(pending)
 			continue
 		}
@@ -437,11 +442,13 @@ func (s *Server) FlushThrottle(ctx context.Context) {
 		}
 		resp, err := s.proxy.Transport.RoundTrip(req)
 		if err != nil {
+			cancel()
 			s.throttle.restore(pending)
 			continue
 		}
 		_, _ = io.Copy(io.Discard, resp.Body)
 		_ = resp.Body.Close()
+		cancel()
 		if resp.StatusCode/100 != 2 {
 			s.throttle.restore(pending)
 		}

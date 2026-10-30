@@ -783,14 +783,24 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	// Read the owner through the transaction: taking another pooled connection
 	// while holding one can starve the pool under concurrent completions.
 	var ownerID string
+	// Parse latency is attributed to the engine that produced the result, so it must be
+	// this attempt's start: jobs.started_at keeps the first claim (COALESCE) and would
+	// include retries and escalations in the final engine's histogram.
 	var startedRaw sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
 		Scan(&ownerID, &startedRaw); err != nil {
 		_ = s.Store.DeleteJob(p.JobID)
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
+	var attemptStart sql.NullString
+	_ = tx.QueryRowContext(ctx, `SELECT started_at FROM attempts WHERE job_id = ? AND lease_token = ?`,
+		p.JobID, p.Token).Scan(&attemptStart)
 	startedAt := now
-	if startedRaw.Valid {
+	if attemptStart.Valid {
+		if t0, perr := parseTS(attemptStart.String); perr == nil {
+			startedAt = t0
+		}
+	} else if startedRaw.Valid {
 		if t0, perr := parseTS(startedRaw.String); perr == nil {
 			startedAt = t0
 		}
