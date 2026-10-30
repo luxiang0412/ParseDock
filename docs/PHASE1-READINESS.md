@@ -63,7 +63,7 @@ their scope with the adjustments noted in §6.
 
 | Suite | Command | Result |
 | --- | --- | --- |
-| Go unit + integration | `make test` (`go vet`, `go test ./...`) | **PASS** — 41 test functions across storage/IR/engines/coordinator/worker |
+| Go unit + integration | `make test` (`go vet`, `go test ./...`) | **PASS** — 42 test functions across storage/IR/engines/coordinator/worker |
 | Scoring rubric | `python3 tests/unit/test_score.py` | **PASS** — 21 tests (PR00-01) |
 | Contract / drift | `python3 tests/contract/openapi_contract.py` | **PASS** — 29 checks (PR00-08) |
 | PR-00 runtime | `python3 tests/integration/pr00_contract.py` | **PASS** — 10/10 (PR00-02…07, 09, 10, 12, 14) |
