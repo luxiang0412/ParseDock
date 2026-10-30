@@ -61,7 +61,7 @@ func FreeVRAMMB(ctx context.Context) (int64, bool) {
 	}
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(c, "nvidia-smi", "--id="+strconv.Itoa(VisibleGPU()),
+	out, err := exec.CommandContext(c, "nvidia-smi", "--id="+VisibleGPU(),
 		"--query-gpu=memory.free", "--format=csv,noheader,nounits").Output()
 	if err != nil {
 		return 0, false
@@ -85,21 +85,22 @@ func FreeVRAMMB(ctx context.Context) (int64, bool) {
 	return best, true
 }
 
-// VisibleGPU is the index of the first GPU in CUDA_VISIBLE_DEVICES, or 0 when unset.
-// It is the device a CUDA parser will select by default; anything else would admit
-// memory on a card the engine never touches.
-func VisibleGPU() int {
+// VisibleGPU is the first entry of CUDA_VISIBLE_DEVICES, or "0" when unset. The entry
+// is kept verbatim because nvidia-smi --id accepts both a numeric index and a GPU UUID
+// (MIG and container runtimes commonly use UUIDs); converting a UUID to 0 would measure
+// the wrong card. It is the device a CUDA parser selects by default, so it is the only
+// honest device to measure.
+func VisibleGPU() string {
 	raw := strings.TrimSpace(os.Getenv("CUDA_VISIBLE_DEVICES"))
 	if raw == "" {
-		return 0
+		return "0"
 	}
 	first, _, _ := strings.Cut(raw, ",")
 	first = strings.TrimSpace(first)
-	// Entries can be UUIDs (GPU-xxxx); only numeric indices are addressable here.
-	if idx, err := strconv.Atoi(first); err == nil && idx >= 0 {
-		return idx
+	if first == "" {
+		return "0"
 	}
-	return 0
+	return first
 }
 
 // DetectGPU probes nvidia-smi with a short timeout. Absence is not an error:

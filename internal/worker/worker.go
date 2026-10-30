@@ -235,7 +235,10 @@ func (w *Worker) loop(ctx context.Context, slot int) {
 			return
 		default:
 		}
-		if time.Since(lastReg) > time.Minute {
+		// A GPU worker must refresh its free VRAM before every claim: another slot may
+		// have loaded a model since the last registration, and a stale "roomy" value
+		// would let the coordinator dispatch a job that then OOMs.
+		if w.Cfg.DeviceType == "gpu" || time.Since(lastReg) > time.Minute {
 			_ = w.register(ctx)
 			lastReg = time.Now()
 		}
