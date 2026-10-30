@@ -45,9 +45,10 @@ ci-phase: ## run one CI phase (PHASE=static|unit|contract|lifecycle|image|engine
 container-smoke: ## end-to-end container smoke with real engines
 	bash scripts/container-smoke.sh
 
-pr00: contract ## PR-00: runtime contract checks (10 scenarios)
+pr00: contract ## runtime contract checks (PR-00 + PR-02 scenarios)
 	python3 tests/integration/pr00_contract.py
 	python3 tests/integration/backup_restore.py
+	python3 tests/integration/pr02_contract.py
 
 score: ## regenerate benchmark scores + docs tables
 	$(PY_FIX) benchmark/scripts/score.py --write

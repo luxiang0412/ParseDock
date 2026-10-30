@@ -90,6 +90,7 @@ phase_lifecycle() {
   step "acceptance lifecycle (T03-T16)" python3 "$ROOT/tests/integration/acceptance.py" --profile lifecycle || return 1
   step "PR-00 runtime contract" python3 "$ROOT/tests/integration/pr00_contract.py" || return 1
   step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
+  step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
 }
 
 phase_image() {
