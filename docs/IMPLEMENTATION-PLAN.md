@@ -199,6 +199,14 @@ byte-identical after decompression; quota accounting matches `du` within 1 %.
 
 **DoD.** `docs/DEPLOYMENT.md` gains a capacity-planning section with measured numbers.
 
+**Status: DONE (PR-06).** Per-owner live-result accounting (`owner_storage`, updated
+in the commit/release transactions, `--quota-storage-mb`); gzip on the wire with a
+weak validator for the encoded representation (`Vary: Accept-Encoding`, conditional
+GET still returns 304); the OOXML expanded-size cap is configurable
+(`--max-expanded-mb`) and the capacity section carries the measured corpus numbers.
+**Not closed:** sheet-window extraction for 550–770 MiB ledger exports (needs an
+engine that can page through a sheet); image artifacts stay reserved.
+
 ---
 
 ## PR-07 — Cluster-lite for real: multi-host, mTLS, and a load test

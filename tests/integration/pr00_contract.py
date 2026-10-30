@@ -197,7 +197,22 @@ def main() -> int:
                                 headers=mock.headers({"If-None-Match": etags["markdown"]}))
             assert cond.status == 304, f"If-None-Match not honoured: {cond.status}"
             assert cond.body == b"", "304 must not carry a body"
-            return {"etags": etags, "result_version": versions.pop(), "conditional": cond.status}
+
+            # PR-06: gzip on the wire with a weak validator for the encoded form.
+            import gzip
+            gz = http_request(mock.api, "GET", f"/v1/jobs/{jid}/result?format=markdown",
+                              headers=mock.headers({"Accept-Encoding": "gzip"}))
+            assert gz.status == 200, gz.status
+            assert gz.headers.get("content-encoding") == "gzip", gz.headers
+            gz_etag = gz.headers.get("etag", "")
+            assert gz_etag.startswith("W/"), f"encoded representation must use a weak ETag: {gz_etag}"
+            assert gz.headers.get("x-result-version") == versions.copy().pop(), gz.headers
+            assert gzip.decompress(gz.body) == bodies["markdown"], "gzip body does not match the plain artifact"
+            gz_cond = http_request(mock.api, "GET", f"/v1/jobs/{jid}/result?format=markdown",
+                                   headers=mock.headers({"Accept-Encoding": "gzip", "If-None-Match": gz_etag}))
+            assert gz_cond.status == 304, f"weak validator not honoured: {gz_cond.status}"
+            return {"etags": etags, "result_version": versions.pop(), "conditional": cond.status,
+                    "gzip_etag": gz_etag, "gzip_bytes": len(gz.body), "gzip_conditional": gz_cond.status}
 
         # ---------------------------------------------------------------- PR00-07
         def pr00_07():

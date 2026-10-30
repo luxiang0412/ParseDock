@@ -1,6 +1,7 @@
 package coordinator
 
 import (
+	"compress/gzip"
 	"context"
 	"crypto/subtle"
 	"encoding/json"
@@ -295,27 +296,47 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	// covers all three artifacts and is only the ACK token (X-Result-Version),
 	// never a strong validator for one representation.
 	etag := `"` + artifactETag(manifest, artifactName(string(format))) + `"`
-	if match := r.Header.Get("If-None-Match"); match != "" && etagMatches(match, etag) {
+	// gzip is applied on the wire only (artifacts stay uncompressed): the encoded
+	// representation is semantically equivalent, so its validator is weak.
+	useGzip := st.Size() > 1024 && acceptsGzip(r.Header.Get("Accept-Encoding"))
+	respETag := etag
+	if useGzip {
+		respETag = "W/" + etag
+	}
+	if match := r.Header.Get("If-None-Match"); match != "" && etagMatches(match, respETag) {
 		s.Svc.EndDownload(context.WithoutCancel(r.Context()), leaseID)
-		w.Header().Set("ETag", etag)
+		w.Header().Set("ETag", respETag)
 		w.Header().Set("X-Result-Version", manifest.Version)
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
 
 	w.Header().Set("Content-Type", contentTypeFor(format))
-	w.Header().Set("Content-Length", strconv.FormatInt(st.Size(), 10))
-	w.Header().Set("ETag", etag)
+	w.Header().Set("ETag", respETag)
 	w.Header().Set("X-Result-Version", manifest.Version)
 	w.Header().Set("Vary", "Accept-Encoding")
+	if useGzip {
+		w.Header().Set("Content-Encoding", "gzip")
+	} else {
+		w.Header().Set("Content-Length", strconv.FormatInt(st.Size(), 10))
+	}
 	w.Header().Set("X-Download-Lease", leaseID)
 	w.Header().Set("Content-Disposition",
 		fmt.Sprintf("attachment; filename=%q", job.ID+"."+extFor(format)))
 	w.Header().Set("Cache-Control", "private, no-store")
 
 	rw := &leaseRenewer{srv: s, leaseID: leaseID, next: time.Now().Add(s.Svc.Cfg.DownloadLeaseTTL / 3)}
-	if _, err := rw.copy(w, f); err != nil {
+	var dst io.Writer = w
+	var gz *gzip.Writer
+	if useGzip {
+		gz = gzip.NewWriter(w)
+		dst = gz
+	}
+	if _, err := rw.copyTo(dst, f); err != nil {
 		s.Log.Warn("result stream interrupted", "job", job.ID, "err", err)
+	}
+	if gz != nil {
+		_ = gz.Close()
 	}
 }
 
@@ -326,7 +347,7 @@ type leaseRenewer struct {
 	next    time.Time
 }
 
-func (l *leaseRenewer) copy(w http.ResponseWriter, r io.Reader) (int64, error) {
+func (l *leaseRenewer) copyTo(w io.Writer, r io.Reader) (int64, error) {
 	buf := make([]byte, 64<<10)
 	var total int64
 	for {
@@ -950,10 +971,26 @@ func artifactETag(m *storage.Manifest, name string) string {
 
 // etagMatches implements the weak comparison rules of RFC 9110 §13.1.2 for our
 // strong ETags (only exact matches count; "*" matches any existing result).
+// etagMatches compares validators, tolerating the weak prefix on either side
+// (a gzipped response carries W/"…" for the same artifact).
 func etagMatches(header, etag string) bool {
+	norm := func(v string) string { return strings.TrimPrefix(strings.TrimSpace(v), "W/") }
 	for _, part := range strings.Split(header, ",") {
 		part = strings.TrimSpace(part)
-		if part == "*" || part == etag {
+		if part == "*" {
+			return true
+		}
+		if norm(part) == norm(etag) {
+			return true
+		}
+	}
+	return false
+}
+
+func acceptsGzip(header string) bool {
+	for _, part := range strings.Split(header, ",") {
+		enc := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
+		if strings.EqualFold(enc, "gzip") {
 			return true
 		}
 	}

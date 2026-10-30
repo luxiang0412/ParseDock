@@ -94,6 +94,8 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--quota-concurrent` | `PARSEDOCK_QUOTA_CONCURRENT` | `0` (off) | queued+running jobs per owner |
 | `--quota-jobs-per-day` | `PARSEDOCK_QUOTA_JOBS_PER_DAY` | `0` (off) | jobs per owner per rolling 24 h |
 | `--quota-bytes-per-day` | `PARSEDOCK_QUOTA_BYTES_PER_DAY` | `0` (off) | input bytes per owner per rolling 24 h |
+| `--quota-storage-mb` | `PARSEDOCK_QUOTA_STORAGE_MB` | `0` (off) | live result bytes per owner; accounting is released when a result is released/expires |
+| `--max-expanded-mb` | `PARSEDOCK_MAX_EXPANDED_MB` | `512` | OOXML expanded-size cap; the parsers cap lower (xberg 500 MiB, docling-rs 10 M cells/sheet) |
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
 | `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
@@ -160,6 +162,24 @@ after a restore while an active job still downloads.
   (404) on purpose.
 * Volume growth is bounded by `result_ttl` x ingress rate; monitor `data/` usage and
   `readyz.checks.free_bytes`.
+
+## 6a. Capacity planning (measured)
+
+Measured on the 958-file real corpus (`docs/REAL-CORPUS-TEST.md`) with xberg +
+docling-rs, 4 workers on one 24-core host:
+
+| Metric | Value |
+| --- | --- |
+| input bytes | 2.3 GiB of documents (PDF-heavy, 58–74 MiB ledgers included) |
+| wall time | 348 s (2.75 files/s), engine p50 268 ms / p95 1.4 s for PDFs |
+| result bytes | ≈ 1.9× the input text volume for JSON + Markdown + Text (3 artifacts per job) |
+| disk per job | input + 3 artifacts; released/expired jobs are removed at TTL or ACK |
+| peak RSS | xberg ≈ 40 MB, docling-rs ≈ 0.9–1.2 GB per concurrent parse |
+
+Sizing rule of thumb: `data-dir` ≈ 2.5 × (bytes/day) × (TTL in days) + SQLite
+(≈ 2 KB/job before tombstone purge). Set `--quota-storage-mb` per tenant so one
+customer cannot fill the volume, and `--max-upload-mb` to the tenant's largest real
+document (the corpus needed 128 MiB; the default is 64).
 
 ## 6b. Measured limits on a real corpus
 

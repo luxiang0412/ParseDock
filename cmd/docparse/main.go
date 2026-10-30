@@ -48,6 +48,8 @@ type flags struct {
 	quotaConcurrent  int
 	quotaJobsPerDay  int
 	quotaBytesPerDay int64
+	quotaStorageMB   int64
+	maxExpandedMB    int64
 	devInsecure      bool
 	logLevel         string
 	engines          string
@@ -122,6 +124,8 @@ func parseFlags() *flags {
 	fs.IntVar(&f.quotaConcurrent, "quota-concurrent", intEnv("PARSEDOCK_QUOTA_CONCURRENT", 0), "max queued+running jobs per owner (0 = unlimited)")
 	fs.IntVar(&f.quotaJobsPerDay, "quota-jobs-per-day", intEnv("PARSEDOCK_QUOTA_JOBS_PER_DAY", 0), "max jobs per owner per rolling 24h (0 = unlimited)")
 	fs.Int64Var(&f.quotaBytesPerDay, "quota-bytes-per-day", int64Env("PARSEDOCK_QUOTA_BYTES_PER_DAY", 0), "max input bytes per owner per rolling 24h (0 = unlimited)")
+	fs.Int64Var(&f.quotaStorageMB, "quota-storage-mb", int64Env("PARSEDOCK_QUOTA_STORAGE_MB", 0), "max live result bytes per owner (0 = unlimited)")
+	fs.Int64Var(&f.maxExpandedMB, "max-expanded-mb", int64Env("PARSEDOCK_MAX_EXPANDED_MB", 512), "OOXML expanded-size cap (xberg itself caps at 500 MiB; docling-rs at 10M cells per sheet)")
 	fs.BoolVar(&f.devInsecure, "dev-insecure", env("PARSEDOCK_DEV_INSECURE", "") == "1", "allow anonymous access (tests only)")
 	fs.StringVar(&f.logLevel, "log-level", env("PARSEDOCK_LOG_LEVEL", "info"), "debug|info|warn|error")
 	fs.StringVar(&f.engines, "engines", env("PARSEDOCK_ENGINES", "native"), "worker engines (comma list)")
@@ -202,15 +206,16 @@ func run(f *flags) error {
 	cfg.Limits = storage.Limits{
 		MaxBytes:           f.maxUploadMB << 20,
 		MaxPages:           f.maxPages,
-		MaxZipUncompressed: 512 << 20,
+		MaxZipUncompressed: f.maxExpandedMB << 20,
 		MaxZipRatio:        200,
 		MaxZipEntries:      5000,
 	}
 	cfg.Engines = engineSpecs(f)
 	cfg.Quota = coordinator.Quota{
-		MaxConcurrent:  f.quotaConcurrent,
-		MaxJobsPerDay:  f.quotaJobsPerDay,
-		MaxBytesPerDay: f.quotaBytesPerDay,
+		MaxConcurrent:   f.quotaConcurrent,
+		MaxJobsPerDay:   f.quotaJobsPerDay,
+		MaxBytesPerDay:  f.quotaBytesPerDay,
+		MaxStorageBytes: f.quotaStorageMB << 20,
 	}
 
 	if f.check {

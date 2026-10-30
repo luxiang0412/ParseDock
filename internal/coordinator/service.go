@@ -743,6 +743,10 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		_ = s.Store.DeleteJob(p.JobID)
 		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
 	}
+	var resultBytes int64
+	for _, a := range manifest.Files {
+		resultBytes += a.Size
+	}
 	for _, a := range manifest.Files {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO artifacts(job_id, kind, path, size, sha256, generation, ready_at)
 			VALUES(?,?,?,?,?,1,?) ON CONFLICT(job_id, kind) DO UPDATE SET path=excluded.path, size=excluded.size,
@@ -751,6 +755,12 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			_ = s.Store.DeleteJob(p.JobID)
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
 		}
+	}
+	var ownerID string
+	_ = s.DB.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.JobID).Scan(&ownerID)
+	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
+		_ = s.Store.DeleteJob(p.JobID)
+		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	if err := tx.Commit(); err != nil {
 		_ = s.Store.DeleteJob(p.JobID)

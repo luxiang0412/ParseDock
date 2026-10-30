@@ -819,3 +819,37 @@ func TestCancelRecordsRequestTime(t *testing.T) {
 		t.Fatalf("repeat cancel changed the request time: %v vs %v", again.CancelRequestedAt, first)
 	}
 }
+
+// PR-06: live-result storage is accounted per owner and enforced.
+func TestStorageQuota(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 400} })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	// Artifacts are small (a few hundred bytes across md/txt/json).
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte(`{"a":1}`)}); err != nil {
+		t.Fatal(err)
+	}
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT bytes FROM owner_storage WHERE owner_id='owner-1'`).Scan(&stored)
+	if stored <= 0 {
+		t.Fatalf("storage accounting empty after completion: %d", stored)
+	}
+	// A second upload that would exceed the quota is rejected.
+	big := bytes.Repeat([]byte("x"), 500)
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "b.txt",
+		Body: bytes.NewReader(big)}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("storage quota not enforced: %v", err)
+	}
+	// Releasing the first result frees the accounting (after cleanup).
+	done, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+	_ = s.DB.QueryRowContext(ctx, `SELECT bytes FROM owner_storage WHERE owner_id='owner-1'`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounting not released: %d", stored)
+	}
+}

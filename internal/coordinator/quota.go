@@ -44,14 +44,15 @@ func (s *Service) lockOwner(owner string) func() {
 // unlimited. Quotas are enforced by the Coordinator (the only stateful
 // component) so they hold across any number of stateless API replicas.
 type Quota struct {
-	MaxConcurrent  int   // queued + running jobs
-	MaxJobsPerDay  int   // rolling 24 h window
-	MaxBytesPerDay int64 // rolling 24 h window of input bytes
+	MaxConcurrent   int   // queued + running jobs
+	MaxJobsPerDay   int   // rolling 24 h window
+	MaxBytesPerDay  int64 // rolling 24 h window of input bytes
+	MaxStorageBytes int64 // bytes of live result artifacts for this owner
 }
 
 // Enabled reports whether any limit is configured.
 func (q Quota) Enabled() bool {
-	return q.MaxConcurrent > 0 || q.MaxJobsPerDay > 0 || q.MaxBytesPerDay > 0
+	return q.MaxConcurrent > 0 || q.MaxJobsPerDay > 0 || q.MaxBytesPerDay > 0 || q.MaxStorageBytes > 0
 }
 
 // usage is the current consumption of one owner.
@@ -109,6 +110,14 @@ func (s *Service) enforceQuota(ctx context.Context, owner string, size int64) er
 		return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: 60,
 			Message: fmt.Sprintf("daily job limit reached (%d per 24h)", q.MaxJobsPerDay)}
 	}
+	if q.MaxStorageBytes > 0 {
+		var stored int64
+		_ = s.DB.QueryRowContext(ctx, `SELECT bytes FROM owner_storage WHERE owner_id = ?`, owner).Scan(&stored)
+		if stored+size > q.MaxStorageBytes {
+			return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: 60,
+				Message: fmt.Sprintf("storage quota reached (%d MiB of live results)", q.MaxStorageBytes>>20)}
+		}
+	}
 	if q.MaxBytesPerDay > 0 && u.bytesToday+size > q.MaxBytesPerDay {
 		return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: 60,
 			Message: fmt.Sprintf("daily byte limit reached (%d MiB per 24h)", q.MaxBytesPerDay>>20)}
@@ -135,4 +144,16 @@ func (s *Service) audit(ctx context.Context, event string, job *jobs.Job, extra 
 		args = append(args, k, v)
 	}
 	s.Audit.Info("audit", args...)
+}
+
+// adjustStorage changes an owner's live-result accounting inside tx. Deltas are
+// clamped at zero so a double release cannot make the counter negative.
+func adjustStorage(ctx context.Context, tx *sql.Tx, owner string, delta int64) error {
+	if owner == "" || delta == 0 {
+		return nil
+	}
+	_, err := tx.ExecContext(ctx, `INSERT INTO owner_storage(owner_id, bytes, updated_at) VALUES(?, MAX(?,0), ?)
+		ON CONFLICT(owner_id) DO UPDATE SET bytes = MAX(owner_storage.bytes + ?, 0), updated_at = excluded.updated_at`,
+		owner, delta, ts(nowUTC()), delta)
+	return err
 }

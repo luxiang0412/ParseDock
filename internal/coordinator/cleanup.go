@@ -128,7 +128,16 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				rep.Errors = append(rep.Errors, "finalize: "+err.Error())
 				continue
 			}
-			_, _ = s.DB.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id)
+			// Release the owner's storage accounting before dropping the rows.
+			var stored int64
+			_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(size),0) FROM artifacts WHERE job_id = ?`, p.id).Scan(&stored)
+			if job, jerr := s.GetJob(ctx, p.id, ""); jerr == nil {
+				if tx, terr := s.DB.BeginTx(ctx, nil); terr == nil {
+					_ = adjustStorage(ctx, tx, job.OwnerID, -stored)
+					_, _ = tx.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id)
+					_ = tx.Commit()
+				}
+			}
 			_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE job_id = ?`, p.id)
 			s.appendEvent(ctx, p.id, string(final), map[string]any{"at": nowUTC()})
 			if job, jerr := s.GetJob(ctx, p.id, ""); jerr == nil {
