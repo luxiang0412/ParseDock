@@ -70,6 +70,7 @@ phase_static() {
 phase_unit() {
   step "go test" bash -c "cd '$ROOT' && go test ./... -count=1 -timeout 300s" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
+  step "CI merge-gate unit tests" python3 "$ROOT/tests/unit/test_ci_summary.py" || return 1
 }
 
 phase_contract() {

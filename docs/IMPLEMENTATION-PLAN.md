@@ -31,6 +31,15 @@ generated SDK differs from the committed one.
 **DoD.** A green PR pipeline runs in < 8 min (mock profile) and produces the raw
 acceptance JSON as an artifact.
 
+**Status: DONE (PR-01).** Four workflows (`ci`, `engine-changes`, `nightly`,
+`release-gate`), all logic in `scripts/ci-local.sh`, pinned inputs in
+`images.lock.json` enforced by `scripts/verify_pins.py`, reproducible binary proven
+by `scripts/repro-check.sh`, SDK drift checked, licence audit split into control
+plane PASS / worker BLOCK. Measured on GitHub-hosted runners: 3 m 53 s – 3 m 58 s
+per PR run; nightly 1 m 56 s. Details and residual risks: `docs/PR01-REPORT.md`.
+Residual (out of PR-01 scope): GPU runner (PR-08), two-host cluster test (PR-07),
+registry publish step (PR-08/PR-12) which must depend on `release-gate`.
+
 ---
 
 ## PR-02 — Security hardening of the public edge
