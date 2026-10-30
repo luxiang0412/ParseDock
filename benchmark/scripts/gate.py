@@ -20,11 +20,12 @@ import argparse
 import csv
 import datetime
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUMMARY = ROOT / "benchmark" / "results" / "summary"
+SUMMARY = Path(os.environ.get("PARSEDOCK_BENCH_SUMMARY") or ROOT / "benchmark" / "results" / "summary")
 BASELINE = ROOT / "benchmark" / "results" / "baseline.json"
 
 
@@ -121,6 +122,9 @@ def main() -> int:
     ap.add_argument("--update", action="store_true", help="write the current summary as the baseline")
     ap.add_argument("--max-quality-drop", type=float, default=0.02)
     ap.add_argument("--max-latency-regress", type=float, default=0.15)
+    ap.add_argument("--allow-missing", action="store_true",
+                    help="treat baseline-covered engines/files absent from this run as a warning "
+                         "instead of a failure (only for partial-engine runs)")
     ap.add_argument("--min-abs-latency-ms", type=float, default=20.0,
                     help="ignore relative latency drift below this absolute change (millisecond "
                          "noise on fast text fixtures is not a regression)")
@@ -147,7 +151,11 @@ def main() -> int:
     for name, b in base.get("engines", {}).items():
         c = cur["engines"].get(name)
         if not c:
-            warnings.append(f"{name}: missing from the current run (skipped)")
+            msg = f"{name}: missing from the current run"
+            if args.allow_missing:
+                warnings.append(msg + " (skipped)")
+                continue
+            failures.append(msg + " — the gate cannot prove quality without it")
             continue
         for dim in ("quality", "structure"):
             bv, cv = b.get(dim), c.get(dim)
@@ -162,6 +170,11 @@ def main() -> int:
         for f, b in files.items():
             c = cur.get("samples", {}).get(eng, {}).get(f)
             if not c:
+                msg = f"{eng}/{f}: no current measurement"
+                if args.allow_missing:
+                    warnings.append(msg + " (skipped)")
+                else:
+                    failures.append(msg + " — a missing sample is not a pass")
                 continue
             if "cer" in b and "cer" in c:
                 d = (c["cer"] - b["cer"])  # absolute CER points

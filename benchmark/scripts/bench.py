@@ -47,8 +47,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "benchmark" / "fixtures"
 GEN = FIXTURES / "generated"
 GOLD = FIXTURES / "gold"
-RAW = ROOT / "benchmark" / "results" / "raw"
-SUMMARY = ROOT / "benchmark" / "results" / "summary"
+RAW = Path(os.environ.get("PARSEDOCK_BENCH_RAW") or ROOT / "benchmark" / "results" / "raw")
+SUMMARY = Path(os.environ.get("PARSEDOCK_BENCH_SUMMARY") or ROOT / "benchmark" / "results" / "summary")
 RUNTIME = ROOT / "runtime"
 WORK = RUNTIME / "bench-work"
 

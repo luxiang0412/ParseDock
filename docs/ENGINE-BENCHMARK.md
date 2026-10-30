@@ -245,7 +245,14 @@ make gate            # check (runs in the nightly/engine-changes pipeline)
 make gate-baseline   # record a new baseline — belongs in the PR that changed quality
 ```
 
-`tests/unit/test_gate.py` covers pass, quality drop, latency regression, CER jump and the
+The gate runs on a **run-scoped** summary: `phase_engines` sets
+`PARSEDOCK_BENCH_RAW`/`PARSEDOCK_BENCH_SUMMARY` to `build/ci/bench-{raw,summary}`, so
+`summarize.py` cannot pick up a successful record left by an earlier run. The committed
+baseline records the **scope** the CI job actually measures (`native,xberg,docling-rs` on
+`pdf_native_en`, `pdf_scanned_en`, `docx`, `csv`); a baseline-covered sample missing from the
+current run is a failure unless `--allow-missing` is passed for a deliberate partial-engine
+run. `tests/unit/test_gate.py` covers pass, quality drop, latency regression, median-only
+regression, millisecond noise, missing sample (with and without `--allow-missing`) and the
 missing-baseline case. The rule is relative on purpose: absolute numbers differ per host,
 relative drift does not. A deliberate quality/latency change is allowed, but it must update
 the baseline in the same PR and be justified in `docs/DECISIONS.md`.

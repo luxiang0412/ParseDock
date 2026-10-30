@@ -116,6 +116,11 @@ PY
 }
 
 phase_engines() {
+  # Run-scoped benchmark output: summarize/score/gate must see only the measurements from
+  # this run, never a successful record left behind by an earlier one.
+  export PARSEDOCK_BENCH_RAW="$OUT/bench-raw"
+  export PARSEDOCK_BENCH_SUMMARY="$OUT/bench-summary"
+  mkdir -p "$PARSEDOCK_BENCH_RAW" "$PARSEDOCK_BENCH_SUMMARY"
   step "install real engines" bash "$ROOT/scripts/ci-install-engines.sh" xberg,docling-rs || return 1
   step "build binary" make -C "$ROOT" build || return 1
   step "acceptance real engines (T01/T02/T11)" python3 "$ROOT/tests/integration/acceptance.py" \

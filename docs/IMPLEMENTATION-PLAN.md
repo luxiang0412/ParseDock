@@ -415,8 +415,12 @@ the `httpx` async client (declared as an optional extra but not implemented).
   rise of >2 points, or >15 % p50/p95 regression, per engine the baseline covers; the rule is
   relative because absolute numbers are host-specific. `make gate` / `make gate-baseline`;
   wired into `phase_engines` (nightly + engine-changes) and covered by
-  `tests/unit/test_gate.py` (pass, quality drop, latency regression, CER jump, missing
-  baseline).
+  `tests/unit/test_gate.py` (pass, quality drop, latency regression, median-only regression,
+  millisecond noise, missing sample with and without `--allow-missing`, missing baseline).
+  Measurements are **run-scoped** (`PARSEDOCK_BENCH_RAW`/`PARSEDOCK_BENCH_SUMMARY` point at
+  `build/ci/bench-*`), so summarize cannot reuse an older successful record; the committed
+  baseline records the CI scope (`native,xberg,docling-rs` on 4 fixtures) and a
+  baseline-covered sample that disappears fails the gate.
 * Table quality is scored as cell + header accuracy, and per-page CER is already in
   `summarize.py`; `ENGINE-BENCHMARK.md` documents what each corpus is allowed to claim.
 

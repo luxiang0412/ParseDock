@@ -104,6 +104,16 @@ class GateTest(unittest.TestCase):
             [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
         self.assertEqual(self.run_gate(), 1)
 
+    def test_missing_measurement_fails(self):
+        """A baseline-covered sample that disappears must not silently pass."""
+        self.base_case()
+        self.write(
+            [{"engine": "xberg", "file": "b.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "xberg", "file": "b.pdf", "median_ms": "100", "p95_ms": "200"}],
+            [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 1)
+        self.assertEqual(self.run_gate(["--allow-missing"]), 0)
+
     def test_missing_baseline_is_an_error(self):
         self.write([{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
                    [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],

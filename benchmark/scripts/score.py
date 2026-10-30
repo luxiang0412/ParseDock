@@ -34,12 +34,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SUMMARY = ROOT / "benchmark" / "results" / "summary"
+SUMMARY = Path(os.environ.get("PARSEDOCK_BENCH_SUMMARY") or ROOT / "benchmark" / "results" / "summary")
 
 #: Five dimensions from the Phase 0 task guide.
 WEIGHTS = {"quality": 0.40, "performance": 0.25, "resources": 0.15,

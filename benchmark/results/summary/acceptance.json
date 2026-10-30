@@ -1,7 +1,7 @@
 {
   "profiles": {
     "lifecycle": {
-      "updated_at": "2026-10-30T18:43:52.621012+00:00",
+      "updated_at": "2026-10-30T18:50:54.380008+00:00",
       "results": {
         "T03": "PASS",
         "T04": "PASS",
@@ -18,17 +18,17 @@
         "T16": "PASS",
         "T17": "PASS"
       },
-      "raw": "benchmark/results/raw/acceptance-lifecycle-20261031T024352.json",
+      "raw": "benchmark/results/raw/acceptance-lifecycle-20261031T025054.json",
       "engines": "native,xberg,docling-rs"
     },
     "real": {
-      "updated_at": "2026-10-30T18:40:40.541437+00:00",
+      "updated_at": "2026-10-30T18:47:37.719601+00:00",
       "results": {
         "T01": "PASS",
         "T02": "PASS",
         "T11": "PASS"
       },
-      "raw": "benchmark/results/raw/acceptance-real-20261031T024040.json",
+      "raw": "benchmark/results/raw/acceptance-real-20261031T024737.json",
       "engines": "native,xberg,docling-rs"
     }
   }
