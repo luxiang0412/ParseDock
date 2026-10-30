@@ -53,10 +53,39 @@ docker compose -f deploy/compose.cpu.yaml -f deploy/compose.gpu.yaml \
                --profile gpu --env-file deploy/.env up -d
 ```
 
-The GPU image's entrypoint starts MinerU's local daemon (`mineru server start`) with
-`MINERU_HOME` on tmpfs, disables telemetry, waits for the daemon, then execs the
-worker. Only the `flash` tier is reachable; egress to `mineru.net` must be blocked by
-policy.
+The GPU image (1.0 GB, verified end to end by `make gpu-check`) keeps MinerU's local
+daemon on a **persistent volume**, not tmpfs: the first run downloads several GB of model
+weights into `HF_HOME`, and a restart should not pay that cost again.
+
+```bash
+docker volume create parsedock-mineru-home          # model cache survives restarts
+docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
+  -v parsedock-mineru-home:/work \
+  -e PARSEDOCK_INTERNAL_TOKEN="$TOKEN" \
+  parsedock-worker-gpu:0.1.0 --role worker \
+  --coordinator-url http://10.0.0.10:8081 --engines mineru --device-type gpu \
+  --work-dir /work/scratch
+```
+
+* The container starts as root only long enough to `chown` the mounted volume, then
+  re-executes itself as uid 10001 via `setpriv` before any parser runs.
+* `HOME`, `HF_HOME` and `XDG_CACHE_HOME` point inside the volume; otherwise MinerU tries
+  to write `/root/.cache/huggingface/token` and fails.
+* Scratch is always a **subdirectory** (`/work/scratch`), never the volume root: the
+  worker's scrubber deletes attempt directories older than an hour, and pointing
+  `--work-dir` at `/work` would delete the multi-GB model cache with them. The entrypoint
+  appends `--work-dir /work/scratch` when the flag is absent, and
+  `deploy/compose.gpu.yaml` sets it explicitly.
+* Telemetry is disabled at build time and again at start-up. Only the `flash` tier is
+  reachable; block egress to `mineru.net` by policy and run parsers with
+  `--sandbox=unshare-net` where namespaces are available.
+* The worker reports the free VRAM of the card it will use (first entry of
+  `CUDA_VISIBLE_DEVICES`, else device 0) on every heartbeat — pin `CUDA_VISIBLE_DEVICES`
+  if the host has several cards. A GPU worker runs one task at a time
+  (`--worker-concurrency` is capped at 1) because per-card VRAM cannot be partitioned
+  between slots; scale with more workers. Set
+  `--engine-min-vram-mb mineru:8192` on the coordinator so `gpu_required` is refused with
+  `409 gpu_unavailable` (naming the requirement) instead of queueing on a full card.
 
 Without a GPU, nothing in the CPU stack changes: the GPU profile is additive and the
 coordinator only routes `gpu_required` jobs to registered GPU workers (T12 otherwise).

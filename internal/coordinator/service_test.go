@@ -1022,3 +1022,148 @@ func TestConcurrentWritesDoNotBusySnapshot(t *testing.T) {
 		}
 	}
 }
+
+// PR-08: gpu_required must not be handed to a GPU host with no room for the model.
+func TestGPUAdmissionRespectsFreeVRAM(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Engines = []EngineSpec{{Name: "mineru", Device: "gpu", Priority: 10,
+			Formats: []string{"pdf"}, Modes: []string{"accurate"}, MinVRAMMB: 8192}}
+	})
+	ctx := context.Background()
+	reg := func(freeMB int64) {
+		v := freeMB << 20
+		err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "gpu-1", Host: "h", DeviceType: "gpu",
+			Engines: []string{"mineru"}, GPUMemoryBytes: 16 << 30, FreeVRAMBytes: &v})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// No worker at all.
+	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
+		t.Fatalf("no worker: want gpu_unavailable, got %v", err)
+	}
+	// A worker that is registered but full.
+	reg(1024)
+	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
+		t.Fatalf("full GPU: want gpu_unavailable, got %v", err)
+	}
+	// Enough free VRAM.
+	reg(12288)
+	if engine, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); err != nil || engine != "mineru" {
+		t.Fatalf("enough VRAM: engine=%q err=%v", engine, err)
+	}
+	// Unknown memory (-1) is accepted: an unmeasurable host must stay usable.
+	reg(-1)
+	if engine, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); err != nil || engine != "mineru" {
+		t.Fatalf("unknown VRAM: engine=%q err=%v", engine, err)
+	}
+	// A stale heartbeat frees the slot again.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE workers SET heartbeat_at = ? WHERE worker_id = 'gpu-1'`,
+		ts(nowUTC().Add(-10*time.Minute))); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
+		t.Fatalf("stale worker: want gpu_unavailable, got %v", err)
+	}
+}
+
+// PR-08 codex review: an omitted free_vram_bytes (older worker) must be stored as
+// "unknown" (-1), not as "full" (0), otherwise upgrading the coordinator rejects
+// healthy GPU workers.
+func TestOmittedFreeVRAMStaysUnknown(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "old", Host: "h",
+		DeviceType: "gpu", Engines: []string{"mineru"}}); err != nil {
+		t.Fatal(err)
+	}
+	var free int64
+	if err := s.DB.QueryRowContext(ctx, `SELECT free_vram_bytes FROM workers WHERE worker_id = 'old'`).
+		Scan(&free); err != nil {
+		t.Fatal(err)
+	}
+	if free != -1 {
+		t.Fatalf("omitted free VRAM stored as %d, want -1", free)
+	}
+	// An explicit zero still means "full".
+	zero := int64(0)
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "full", Host: "h",
+		DeviceType: "gpu", Engines: []string{"mineru"}, FreeVRAMBytes: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.DB.QueryRowContext(ctx, `SELECT free_vram_bytes FROM workers WHERE worker_id = 'full'`).Scan(&free)
+	if free != 0 {
+		t.Fatalf("explicit zero stored as %d", free)
+	}
+}
+
+// PR-08 codex review: the VRAM requirement must bind the worker that actually leases
+// the job, not just the fleet.
+func TestClaimRespectsClaimingWorkerVRAM(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Engines = []EngineSpec{{Name: "mineru", Device: "gpu", Priority: 10,
+			Formats: []string{"pdf"}, Modes: []string{"accurate"}, MinVRAMMB: 8192}}
+	})
+	ctx := context.Background()
+	full, roomy := int64(1024)<<20, int64(16384)<<20
+	for id, free := range map[string]*int64{"gpu-full": &full, "gpu-roomy": &roomy} {
+		if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: id, Host: "h", DeviceType: "gpu",
+			Engines: []string{"mineru"}, FreeVRAMBytes: free}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Insert the queued job directly: the subject here is claim-time admission, not
+	// upload validation, and a synthetic PDF would not survive the structural check.
+	jid := jobs.NewJobID()
+	now := nowUTC()
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO jobs(id, owner_id, input_name, mime_type, format,
+		processing_status, priority, requested_mode, requested_device, engine_hint,
+		created_at, max_lifetime_at, updated_at)
+		VALUES(?,?,?,?,?, 'queued', 0, 'accurate', 'gpu_required', 'mineru', ?, ?, ?)`,
+		jid, "owner-1", "a.pdf", "application/pdf", "pdf",
+		ts(now), ts(now.Add(time.Hour)), ts(now)); err != nil {
+		t.Fatal(err)
+	}
+	// The full card must not be handed the job, even though the fleet has room.
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "gpu-full", Engines: []string{"mineru"}, Device: "gpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task != nil {
+		t.Fatalf("full GPU claimed a job needing 8192 MiB: %+v", task)
+	}
+	task, err = s.Claim(ctx, WorkerCaps{WorkerID: "gpu-roomy", Engines: []string{"mineru"}, Device: "gpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || task.JobID != jid {
+		t.Fatalf("roomy GPU did not get the job: %+v", task)
+	}
+}
+
+// PR-08 codex review: free VRAM is measured per card and cannot be partitioned, so a
+// GPU worker must not run concurrent slots that each claim against the same value.
+func TestGPUWorkerConcurrencyIsCapped(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	zero := int64(16 << 30)
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "gpu-1", Host: "h", DeviceType: "gpu",
+		Engines: []string{"mineru"}, MaxConcurrency: 4, FreeVRAMBytes: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	var mc int
+	_ = s.DB.QueryRowContext(ctx, `SELECT max_concurrency FROM workers WHERE worker_id = 'gpu-1'`).Scan(&mc)
+	if mc != 1 {
+		t.Fatalf("gpu worker concurrency = %d, want 1", mc)
+	}
+	// CPU workers keep their configured concurrency.
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "cpu-1", Host: "h", DeviceType: "cpu",
+		Engines: []string{"native"}, MaxConcurrency: 4}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.DB.QueryRowContext(ctx, `SELECT max_concurrency FROM workers WHERE worker_id = 'cpu-1'`).Scan(&mc)
+	if mc != 4 {
+		t.Fatalf("cpu worker concurrency = %d, want 4", mc)
+	}
+}

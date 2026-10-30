@@ -1,5 +1,6 @@
 # Optional GPU worker profile. The CPU stack works without this file.
 #
+#   docker volume create parsedock-mineru-home     # model cache survives restarts
 #   docker compose -f deploy/compose.cpu.yaml -f deploy/compose.gpu.yaml --profile gpu up -d
 #
 # Requirements: NVIDIA driver + NVIDIA Container Toolkit; verify with
@@ -17,15 +18,24 @@ services:
       - --coordinator-url=http://coordinator:8081
       - --engines=mineru
       - --device-type=gpu
-      - --worker-concurrency=1
-      - --work-dir=/work
+      - --worker-concurrency=1     # enforced anyway: per-card VRAM cannot be partitioned
+      # Scratch lives *under* the persistent volume, never at its root: the worker's
+      # scrubber deletes attempt directories older than an hour, and that would include
+      # the MinerU/HuggingFace model cache if the cache sat inside the scratch tree.
+      - --work-dir=/work/scratch
       - --max-parse-minutes=30
     environment:
       PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
       MINERU_HOME: /work/mineru-home
-    tmpfs:
-      - /work:mode=1777,size=8g
+      HF_HOME: /work/mineru-home/hf
+      XDG_CACHE_HOME: /work/mineru-home/.cache
+    volumes:
+      # The first run downloads several GB of model weights; keep them across restarts.
+      - parsedock-mineru-home:/work
     devices:
       - nvidia.com/gpu=all
     networks: [backend]
     depends_on: [coordinator]
+
+volumes:
+  parsedock-mineru-home:

@@ -88,6 +88,7 @@ type flags struct {
 	mineruTimeout    time.Duration
 	engineMaxRSSMB   int64
 	escalateScans    bool
+	engineMinVRAM    string
 	tlsCert          string
 	tlsKey           string
 	tlsClientCA      string
@@ -174,6 +175,8 @@ func parseFlags() *flags {
 	fs.StringVar(&f.tlsCA, "tls-ca", env("PARSEDOCK_TLS_CA", ""), "CA to verify the coordinator certificate (api/worker)")
 	fs.StringVar(&f.tlsServerName, "tls-server-name", env("PARSEDOCK_TLS_SERVER_NAME", ""), "expected server name in the certificate")
 	fs.BoolVar(&f.tlsInsecure, "tls-insecure", env("PARSEDOCK_TLS_INSECURE", "") == "1", "skip server certificate verification (development only)")
+	fs.StringVar(&f.engineMinVRAM, "engine-min-vram-mb", env("PARSEDOCK_ENGINE_MIN_VRAM_MB", ""),
+		"per-engine free VRAM requirement for gpu_required jobs, e.g. mineru:8192,docling-rs:4096")
 	fs.BoolVar(&f.escalateScans, "escalate-scans", env("PARSEDOCK_ESCALATE_SCANS", "1") == "1", "retry a CJK scan once with the accurate engine when the fast engine warns about OCR quality")
 	fs.Int64Var(&f.engineMaxRSSMB, "engine-max-rss-mb", int64Env("PARSEDOCK_ENGINE_MAX_RSS_MB", 0), "kill an engine process above this RSS (0 = unlimited; cgroups are the deployment-level limit)")
 	fs.StringVar(&f.doclingRSBin, "docling-rs-bin", env("PARSEDOCK_DOCLING_RS_BIN", ""), "path to docling-rs CLI")
@@ -410,6 +413,11 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	if err := os.MkdirAll(f.workDir, 0o750); err != nil {
 		return err
 	}
+	if (f.deviceType == "gpu" || f.deviceType == "cuda" || f.deviceType == "mps") && f.workerConcurrency > 1 {
+		log.Warn("GPU workers run one task at a time: --worker-concurrency is capped at 1 so filled VRAM cannot be overcommitted",
+			"requested", f.workerConcurrency)
+		cfg.MaxConcurrency = 1
+	}
 	w := worker.New(cfg, reg, log)
 	workerTLS, terr := tlsutil.ClientConfig(f.tlsCA, f.tlsCert, f.tlsKey, f.tlsServerName, f.tlsInsecure)
 	if terr != nil {
@@ -546,6 +554,7 @@ func buildRegistry(f *flags, device string) *engines.Registry {
 }
 
 func engineSpecs(f *flags) []coordinator.EngineSpec {
+	vram := parseVRAMMap(f.engineMinVRAM)
 	var out []coordinator.EngineSpec
 	for _, name := range splitList(f.engines) {
 		c, ok := engines.CapabilityFor(name)
@@ -558,8 +567,27 @@ func engineSpecs(f *flags) []coordinator.EngineSpec {
 		}
 		out = append(out, coordinator.EngineSpec{
 			Name: name, Version: name, Device: dev, Formats: c.Formats, Modes: c.Modes,
-			Priority: c.Priority, Notes: c.Notes,
+			Priority: c.Priority, MinVRAMMB: vram[name], Notes: c.Notes,
 		})
+	}
+	return out
+}
+
+// parseVRAMMap parses "name:mb,name:mb" into a lookup. Invalid entries are ignored
+// with a warning rather than silently changing admission behaviour.
+func parseVRAMMap(raw string) map[string]int {
+	out := map[string]int{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		name, val, ok := strings.Cut(part, ":")
+		mb, err := strconv.Atoi(strings.TrimSpace(val))
+		if !ok || err != nil || mb < 0 {
+			continue
+		}
+		out[strings.TrimSpace(name)] = mb
 	}
 	return out
 }

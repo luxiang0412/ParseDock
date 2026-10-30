@@ -47,6 +47,62 @@ type GPU struct {
 	ComputeCap string `json:"compute_cap,omitempty"`
 }
 
+// FreeVRAMMB returns the free memory of the GPU this process will actually use.
+//
+// It is deliberately device-specific: ParseDock does not pool memory or choose a
+// device at run time, so the only honest number is the free memory of the card the
+// parser will run on. That card is the first entry of CUDA_VISIBLE_DEVICES (parsers
+// launched by the worker inherit the same environment), or device 0 when the variable
+// is unset. The boolean is false when the value is unknown (no nvidia-smi, unusable
+// output, driver error), which callers must treat as "no information".
+func FreeVRAMMB(ctx context.Context) (int64, bool) {
+	if _, err := exec.LookPath("nvidia-smi"); err != nil {
+		return 0, false
+	}
+	c, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(c, "nvidia-smi", "--id="+VisibleGPU(),
+		"--query-gpu=memory.free", "--format=csv,noheader,nounits").Output()
+	if err != nil {
+		return 0, false
+	}
+	var best int64
+	parsed := 0
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if v, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64); err == nil {
+			if v > best {
+				best = v
+			}
+			parsed++
+		}
+	}
+	if parsed == 0 {
+		// nvidia-smi ran but printed nothing usable ("[N/A]", MIG without
+		// permissions, ...). Report unknown rather than "zero bytes free", which
+		// would make the coordinator refuse every GPU job.
+		return 0, false
+	}
+	return best, true
+}
+
+// VisibleGPU is the first entry of CUDA_VISIBLE_DEVICES, or "0" when unset. The entry
+// is kept verbatim because nvidia-smi --id accepts both a numeric index and a GPU UUID
+// (MIG and container runtimes commonly use UUIDs); converting a UUID to 0 would measure
+// the wrong card. It is the device a CUDA parser selects by default, so it is the only
+// honest device to measure.
+func VisibleGPU() string {
+	raw := strings.TrimSpace(os.Getenv("CUDA_VISIBLE_DEVICES"))
+	if raw == "" {
+		return "0"
+	}
+	first, _, _ := strings.Cut(raw, ",")
+	first = strings.TrimSpace(first)
+	if first == "" {
+		return "0"
+	}
+	return first
+}
+
 // DetectGPU probes nvidia-smi with a short timeout. Absence is not an error:
 // ParseDock's CPU path must work on machines without a GPU or CUDA toolkit.
 func DetectGPU(ctx context.Context) ([]GPU, error) {

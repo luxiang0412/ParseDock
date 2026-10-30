@@ -270,6 +270,28 @@ VRAM measured via `nvidia-smi` during the run; egress denied test.
 
 **DoD.** `docs/GPU-REPORT.md` §4 items become PASS with raw evidence.
 
+**Status: PARTIAL (PR-08).** Delivered and verified on the RTX 2080 Ti host:
+
+* `parsedock-worker-gpu:0.1.0` builds (1.0 GB, CUDA 13.2 runtime + MinerU 4.1.2) and
+  `tests/integration/pr08_gpu.py` proves 4/4: MinerU runs inside the image, the worker
+  registers `device_type=gpu` with **18 832 MiB free VRAM**, a `device=gpu_required`
+  scanned-PDF job is routed to `mineru` and completes, and the result carries the
+  provenance. Three image defects found by actually running it are documented in
+  `GPU-REPORT.md` §4 (broken venv shebang, root-owned mounted volume, `HOME=/root`).
+* Free-VRAM reporting on every heartbeat (`-1` unknown, `0` genuinely full) and
+  VRAM-aware admission: `--engine-min-vram-mb mineru:8192` makes `gpu_required` return
+  `409 gpu_unavailable` naming the requirement when no live GPU worker has that much
+  free. Unit-tested by `TestGPUAdmissionRespectsFreeVRAM` (no worker, full worker, enough
+  VRAM, unknown VRAM, stale heartbeat).
+* MinerU telemetry disabled at build time and by the entrypoint; `--sandbox=unshare-net`
+  remains the fail-closed egress control.
+
+Still open: **docling-serve CUDA wiring** (upstream option not documented in the tested
+build), a VRAM-refusal measurement on a genuinely full card, and any *external*
+distribution of the GPU image, which is blocked by L1 (`libx265`, GPL-2.0) exactly like
+the CPU engine image. The script SKIPs cleanly on hosts without a GPU, so it is run on
+demand rather than in CPU-only CI.
+
 ---
 
 ## PR-09 — Observability

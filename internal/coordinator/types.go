@@ -47,7 +47,10 @@ type EngineSpec struct {
 	Formats  []string `json:"formats"`
 	Modes    []string `json:"modes"` // fast | accurate | auto
 	Priority int      `json:"priority"`
-	Notes    string   `json:"notes,omitempty"`
+	// MinVRAMMB is the free GPU memory a worker must have before the coordinator
+	// hands it a gpu_required job for this engine (0 = no requirement).
+	MinVRAMMB int    `json:"min_vram_mb,omitempty"`
+	Notes     string `json:"notes,omitempty"`
 }
 
 // Supports reports whether the engine can handle format in mode.

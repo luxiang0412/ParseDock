@@ -202,3 +202,16 @@ func stubDoc(s *stubEngine) *documentir.Document {
 	d.Metrics.ParseMs = s.parseMS
 	return d
 }
+
+func TestGPUDeviceTypesAreMeasured(t *testing.T) {
+	for _, d := range []string{"gpu", "cuda", "mps"} {
+		if !isGPUDevice(d) {
+			t.Fatalf("%q must be treated as a GPU device", d)
+		}
+	}
+	for _, d := range []string{"", "cpu"} {
+		if isGPUDevice(d) {
+			t.Fatalf("%q must not be treated as a GPU device", d)
+		}
+	}
+}

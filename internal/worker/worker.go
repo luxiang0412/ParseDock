@@ -205,6 +205,7 @@ func (w *Worker) register(ctx context.Context) error {
 		"device_type":      w.Cfg.DeviceType,
 		"gpu_model":        w.Cfg.GPUModel,
 		"gpu_memory_bytes": w.Cfg.GPUMemoryBytes,
+		"free_vram_bytes":  w.freeVRAMBytes(),
 		"cpu_cores":        numCPU(),
 		"memory_bytes":     totalMemory(),
 		"max_concurrency":  w.Cfg.MaxConcurrency,
@@ -219,8 +220,10 @@ func (w *Worker) register(ctx context.Context) error {
 		w.Cfg.WorkerID = out.WorkerID
 		body["worker_id"] = out.WorkerID
 	}
+	free := w.freeVRAMBytes()
 	w.Log.Info("worker registered", "worker_id", w.Cfg.WorkerID, "engines", w.Cfg.Engines,
-		"device", w.Cfg.DeviceType, "concurrency", w.Cfg.MaxConcurrency)
+		"device", w.Cfg.DeviceType, "concurrency", w.Cfg.MaxConcurrency,
+		"free_vram_mb", free>>20, "vram_known", free >= 0)
 	return nil
 }
 
@@ -232,7 +235,10 @@ func (w *Worker) loop(ctx context.Context, slot int) {
 			return
 		default:
 		}
-		if time.Since(lastReg) > time.Minute {
+		// A GPU worker must refresh its free VRAM before every claim: another slot may
+		// have loaded a model since the last registration, and a stale "roomy" value
+		// would let the coordinator dispatch a job that then OOMs.
+		if isGPUDevice(w.Cfg.DeviceType) || time.Since(lastReg) > time.Minute {
 			_ = w.register(ctx)
 			lastReg = time.Now()
 		}
@@ -671,5 +677,27 @@ func truncate(s string, n int) string {
 	return string(r[:n])
 }
 
+// isGPUDevice reports whether the device type names a GPU execution target. The
+// coordinator accepts gpu, cuda and mps alike, so VRAM measurement and the pre-claim
+// refresh must cover all of them (nvidia-smi is absent for MPS, which reports unknown).
+func isGPUDevice(t string) bool {
+	return t == "gpu" || t == "cuda" || t == "mps"
+}
+
 func numCPU() int        { return sysinfo.CPU() }
 func totalMemory() int64 { return sysinfo.MemoryBytes() }
+
+// freeVRAMBytes reports the currently free GPU memory, or -1 when unknown. It is
+// queried on every register/heartbeat so admission uses fresh data instead of the
+// value captured at start-up.
+func (w *Worker) freeVRAMBytes() int64 {
+	if !isGPUDevice(w.Cfg.DeviceType) {
+		return -1
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if mb, ok := sysinfo.FreeVRAMMB(ctx); ok {
+		return mb << 20
+	}
+	return -1
+}
