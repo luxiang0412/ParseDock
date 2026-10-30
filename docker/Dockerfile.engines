@@ -9,7 +9,12 @@
 #   ONNX models models-v1 for docling-rs (~530 MiB)
 #
 # GPU workers use docker/Dockerfile.worker-gpu (CUDA base + MinerU).
-FROM parsedock:0.1.0 AS base
+# The control-plane image is a local build product, not a registry image, so the
+# reference must be injectable: scripts/build-images.sh and CI pass
+# --build-arg BASE_IMAGE=parsedock:<tag>. (This is why the workflow uses the plain
+# docker builder for the worker image.)
+ARG BASE_IMAGE=parsedock:0.1.0
+FROM ${BASE_IMAGE} AS base
 USER root
 
 # Versions must match images.lock.json (scripts/verify-pins.sh enforces it).

@@ -68,95 +68,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: build control-plane image (cached)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          tags: parsedock:smoke
-          load: true
-          cache-from: type=gha,scope=control-plane
-          cache-to: type=gha,scope=control-plane,mode=max
-      - name: build worker image (cached)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile.engines
-          tags: parsedock-worker-cpu:smoke
-          load: true
-          cache-from: type=gha,scope=worker-cpu
-          cache-to: type=gha,scope=worker-cpu,mode=max
-      - name: container phase (real engines end-to-end + licence evidence)
-        env:
-          SKIP_IMAGE_BUILD: "1"
+      - name: container phase (build both images, real-engine smoke, SBOM)
+        # Plain `docker build` on purpose: the worker image is built FROM the
+        # local control-plane image, which a buildx container driver cannot see.
         run: bash scripts/ci-local.sh container
       - name: upload container evidence + SBOM
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: nightly-container
-          path: build/ci/
-          if-no-files-found: warn
-
-  licence:
-    name: licence-audit
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: build control-plane image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          tags: parsedock:audit
-          load: true
-          cache-from: type=gha,scope=control-plane
-          cache-to: type=gha,scope=control-plane,mode=max
-      - name: build worker image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile.engines
-          tags: parsedock-worker-cpu:audit
-          load: true
-          cache-from: type=gha,scope=worker-cpu
-          cache-to: type=gha,scope=worker-cpu,mode=max
-      - name: audit both images (report mode - records the BLOCK, does not publish)
-        run: |
-          set -euo pipefail
-          mkdir -p build/ci/sbom
-          AUDIT_MODE=report SBOM_DIR=build/ci/sbom bash scripts/license_audit.sh \
-            parsedock:audit parsedock-worker-cpu:audit
-      - name: record the current licence classification
-        run: |
-          set -euo pipefail
-          python3 - <<'PY' | tee build/ci/licence-classification.txt
-          import json
-          control = json.load(open("build/ci/sbom/parsedock_audit.json"))
-          worker = json.load(open("build/ci/sbom/parsedock-worker-cpu_audit.json"))
-          print(f"control_plane={'PASS' if not control['gpl_libraries'] else 'BLOCK'}")
-          print(f"worker={'BLOCK' if worker['gpl_libraries'] else 'PASS'}")
-          print(f"worker_gpl={worker['gpl_libraries']}")
-          print(f"worker_lgpl={len(worker['lgpl_libraries'])}")
-          for note in worker["notes"]:
-              print(f"note: {note}")
-          PY
-          {
-            echo "## Licence audit"
-            echo
-            cat build/ci/licence-classification.txt
-            echo
-            echo "Worker image distribution stays blocked while libx265 is present (L1)."
-          } >> "$GITHUB_STEP_SUMMARY"
-      - name: upload SBOM
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: nightly-sbom
           path: build/ci/
           if-no-files-found: warn

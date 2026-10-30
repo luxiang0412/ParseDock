@@ -108,28 +108,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: build control-plane image (cached)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          tags: parsedock:smoke
-          load: true
-          cache-from: type=gha,scope=control-plane
-          cache-to: type=gha,scope=control-plane,mode=max
-      - name: build worker image (cached)
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: .
-          file: docker/Dockerfile.engines
-          tags: parsedock-worker-cpu:smoke
-          load: true
-          cache-from: type=gha,scope=worker-cpu
-          cache-to: type=gha,scope=worker-cpu,mode=max
       - name: container phase
-        env:
-          SKIP_IMAGE_BUILD: "1"
         run: bash scripts/ci-local.sh container
       - name: upload evidence + SBOM
         if: always()

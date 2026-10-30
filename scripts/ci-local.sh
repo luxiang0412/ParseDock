@@ -90,7 +90,7 @@ phase_lifecycle() {
 }
 
 phase_image() {
-  step "build control-plane image" docker build -f "$ROOT/docker/Dockerfile" -t parsedock:ci "$ROOT" || return 1
+  step "build control-plane image" bash -c "docker build -f '$ROOT/docker/Dockerfile' -t parsedock:ci '$ROOT'" || return 1
   step "image self-check" bash -c "docker run --rm parsedock:ci --check > '$OUT/image-check.json'" || return 1
   step "image digest" bash -c "docker image inspect parsedock:ci --format 'id={{.Id}}' > '$OUT/image-digest.txt'; docker image inspect parsedock:ci --format '{{if .RepoDigests}}{{index .RepoDigests 0}}{{end}}' | sed 's/^/repo_digest=/' >> '$OUT/image-digest.txt'" || return 1
   step "reproducible build" bash "$ROOT/scripts/repro-check.sh" parsedock:ci || return 1
@@ -120,8 +120,7 @@ phase_container() {
   # CI builds the images with buildx/GHA layer caching; SKIP_IMAGE_BUILD keeps this
   # phase reusable there while a local run builds them plainly.
   if [[ "${SKIP_IMAGE_BUILD:-0}" != "1" ]]; then
-    step "build control-plane image" docker build -f "$ROOT/docker/Dockerfile" -t parsedock:smoke "$ROOT" || return 1
-    step "build worker image (xberg + docling-rs + models)" docker build -f "$ROOT/docker/Dockerfile.engines" -t parsedock-worker-cpu:smoke "$ROOT" || return 1
+    step "build control-plane + worker images" bash "$ROOT/scripts/build-images.sh" smoke || return 1
   else
     step "images prebuilt (SKIP_IMAGE_BUILD=1)" bash -c "docker image inspect parsedock:smoke parsedock-worker-cpu:smoke >/dev/null" || return 1
   fi
