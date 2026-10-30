@@ -47,6 +47,12 @@ def test_cli(stack_api: str, token: str, sample: Path) -> None:
          "--api", stack_api, "--token", token],
         capture_output=True)
     assert out.returncode == 0, out.stderr.decode()
+    # A connection error must be exit 2, not a traceback or a false success.
+    dead = subprocess.run(
+        [sys.executable, "-m", "parsedock_sdk.cli", "parse", str(sample),
+         "--api", "http://127.0.0.1:1", "--token", token],
+        capture_output=True)
+    assert dead.returncode == 2, (dead.returncode, dead.stderr.decode()[:200])
     assert out.stdout.strip(), "CLI printed nothing"
     # --keep leaves the result downloadable; the default ACKs it.
     out = subprocess.run(

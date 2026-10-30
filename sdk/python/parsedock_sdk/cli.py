@@ -55,8 +55,11 @@ def main(argv: list[str] | None = None) -> int:
             final = client.wait(job_id, timeout=args.timeout)
             if args.json_status:
                 print(json.dumps(final, indent=2), file=sys.stderr)
-            if final.get("processing_status") != "completed":
-                print(f"job {job_id} ended {final.get('processing_status')}: "
+            # The job view carries both `status` and `processing_status`; accept either so
+            # the CLI keeps working if one of them is ever dropped from the schema.
+            status = final.get("processing_status") or final.get("status")
+            if status != "completed":
+                print(f"job {job_id} ended {status}: "
                       f"{final.get('error_code')} {final.get('error_message')}", file=sys.stderr)
                 return 1
 
