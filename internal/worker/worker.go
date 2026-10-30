@@ -465,7 +465,7 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 		w.Log.Warn("escalation failed; keeping the fast result", "job", task.JobID, "err", perr)
 		return doc, used
 	}
-	if textLength(res) < textLength(doc) {
+	if res.TextLength() < doc.TextLength() {
 		w.Log.Info("escalation produced less text; keeping the fast result", "job", task.JobID)
 		return doc, used
 	}
@@ -477,14 +477,6 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 	res.Routing.Engine = alt.Name()
 	res.Metrics.ParseMs += doc.Metrics.ParseMs
 	return res, alt
-}
-
-func textLength(doc *documentir.Document) int {
-	n := 0
-	for _, el := range doc.Elements {
-		n += len([]rune(el.Text))
-	}
-	return n
 }
 
 func isLegacyFormat(format string) bool {

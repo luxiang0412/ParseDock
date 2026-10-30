@@ -118,3 +118,15 @@ func TestTableGridSkipsOutOfRangeCells(t *testing.T) {
 		t.Fatal("out-of-range cell leaked into the grid")
 	}
 }
+
+// PR-04 codex follow-up: the escalation comparison must include table cells,
+// otherwise a retry could drop extracted tables and still look "larger".
+func TestTextLengthIncludesTables(t *testing.T) {
+	d := sample()
+	without := d.TextLength()
+	d.Tables[0].Cells = append(d.Tables[0].Cells,
+		Cell{Row: 1, Col: 1, Text: strings.Repeat("x", 50)})
+	if got := d.TextLength(); got != without+50 {
+		t.Fatalf("TextLength = %d, want %d", got, without+50)
+	}
+}

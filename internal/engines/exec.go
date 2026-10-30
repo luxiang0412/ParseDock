@@ -96,14 +96,16 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	oom := make(chan struct{})
 	if spec.MaxRSSMB > 0 {
 		go func(pid int) {
-			t := time.NewTicker(200 * time.Millisecond)
+			t := time.NewTicker(500 * time.Millisecond)
 			defer t.Stop()
 			for {
 				select {
 				case <-stopMonitor:
 					return
 				case <-t.C:
-					if rss, ok := processRSSMB(pid); ok && rss > spec.MaxRSSMB {
+					// Engines spawn helpers (tesseract, multiprocessing workers);
+					// measure the whole process group, not just the launcher.
+					if rss, ok := processGroupRSSMB(pid); ok && rss > spec.MaxRSSMB {
 						_ = syscall.Kill(-pid, syscall.SIGKILL)
 						close(oom)
 						return
@@ -145,6 +147,54 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 		return res, err
 	}
 	return res, nil
+}
+
+// processGroupRSSMB sums the resident set of every process in the group led by
+// pgid (we start every parser with Setpgid, so the group id equals its pid).
+func processGroupRSSMB(pgid int) (int64, bool) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, false
+	}
+	var total int64
+	found := false
+	for _, e := range entries {
+		pid, perr := strconv.Atoi(e.Name())
+		if perr != nil {
+			continue
+		}
+		if groupOf(pid) != pgid {
+			continue
+		}
+		if rss, ok := processRSSMB(pid); ok {
+			total += rss
+			found = true
+		}
+	}
+	return total, found
+}
+
+// groupOf returns a process's process-group id, or 0 when it cannot be read.
+func groupOf(pid int) int {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0
+	}
+	// The comm field is parenthesised and may contain spaces; parse after it.
+	i := bytes.LastIndexByte(b, ')')
+	if i < 0 || i+2 > len(b) {
+		return 0
+	}
+	fields := bytes.Fields(b[i+2:])
+	if len(fields) < 3 {
+		return 0
+	}
+	// state(0) ppid(1) pgrp(2)
+	pgid, perr := strconv.Atoi(string(fields[2]))
+	if perr != nil {
+		return 0
+	}
+	return pgid
 }
 
 // processRSSMB reports the current resident set of a process in MiB.

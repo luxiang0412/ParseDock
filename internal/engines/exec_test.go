@@ -61,3 +61,21 @@ func TestRunCLIToleratesProcessUnderCeiling(t *testing.T) {
 		t.Fatalf("elapsed = %v", res.Elapsed)
 	}
 }
+
+// PR-04 codex follow-up: the ceiling must cover children, not just the launcher.
+func TestRunCLIOOMCoversChildProcesses(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("no sh")
+	}
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not available to allocate memory")
+	}
+	// The launcher (sh) stays tiny; the child allocates 300 MiB.
+	_, err = RunCLI(context.Background(), CLISpec{
+		Bin: sh, MaxOutput: 1 << 20, MaxRSSMB: 64,
+	}, t.TempDir(), "-c", `python3 -c 'import time; b=bytearray(300*1024*1024); time.sleep(5)' & wait`)
+	if !errors.Is(err, ErrOOM) {
+		t.Fatalf("err = %v, want ErrOOM from the child process", err)
+	}
+}
