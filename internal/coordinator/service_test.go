@@ -983,3 +983,42 @@ func TestCleanupRetriesDeletingJobs(t *testing.T) {
 		t.Fatalf("storage accounting leaked: %d", stored)
 	}
 }
+
+// Codex review (PR-06): concurrent completions/creates must not fail with
+// SQLITE_BUSY_SNAPSHOT (deferred read-then-write upgrade). _txlock=immediate makes
+// every transaction take the write lock up front.
+func TestConcurrentWritesDoNotBusySnapshot(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, n*2)
+	for i := 0; i < n; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1",
+				InputName: "a.txt", Body: bytes.NewReader([]byte("hello"))}); err != nil {
+				errs <- err
+			}
+		}(i)
+		go func() {
+			defer wg.Done()
+			task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+			if err != nil || task == nil {
+				return
+			}
+			if _, err := s.Complete(ctx, CompleteParams{JobID: task.JobID, Token: task.LeaseToken,
+				Engine: "native", Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")}); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil && AsError(err).Code != jobs.ErrLeaseLost {
+			t.Fatalf("concurrent write failed: %v", err)
+		}
+	}
+}
