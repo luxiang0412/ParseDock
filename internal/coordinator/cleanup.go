@@ -121,22 +121,39 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				rep.Errors = append(rep.Errors, "delete files: "+err.Error())
 				continue // stay in 'deleting' and retry next pass
 			}
+			// Final status, storage release and artifact rows move together: if this
+			// transaction fails the job stays in 'deleting' and the next pass retries,
+			// so the owner's balance can never be charged for deleted files.
 			tomb := ts(nowUTC().Add(s.Cfg.TombstoneTTL))
-			if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = ?, tombstone_expires_at = ?,
+			tx, terr := s.DB.BeginTx(ctx, nil)
+			if terr != nil {
+				rep.Errors = append(rep.Errors, "finalize: "+terr.Error())
+				continue
+			}
+			var ownerID string
+			var stored int64
+			_ = tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.id).Scan(&ownerID)
+			_ = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size),0) FROM artifacts WHERE job_id = ?`, p.id).Scan(&stored)
+			if _, err := tx.ExecContext(ctx, `UPDATE jobs SET retention_status = ?, tombstone_expires_at = ?,
 				result_version = COALESCE(result_version, ''), updated_at = ? WHERE id = ?`,
 				string(final), tomb, ts(nowUTC()), p.id); err != nil {
+				_ = tx.Rollback()
 				rep.Errors = append(rep.Errors, "finalize: "+err.Error())
 				continue
 			}
-			// Release the owner's storage accounting before dropping the rows.
-			var stored int64
-			_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(size),0) FROM artifacts WHERE job_id = ?`, p.id).Scan(&stored)
-			if job, jerr := s.GetJob(ctx, p.id, ""); jerr == nil {
-				if tx, terr := s.DB.BeginTx(ctx, nil); terr == nil {
-					_ = adjustStorage(ctx, tx, job.OwnerID, -stored)
-					_, _ = tx.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id)
-					_ = tx.Commit()
-				}
+			if err := adjustStorage(ctx, tx, ownerID, -stored); err != nil {
+				_ = tx.Rollback()
+				rep.Errors = append(rep.Errors, "finalize accounting: "+err.Error())
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id); err != nil {
+				_ = tx.Rollback()
+				rep.Errors = append(rep.Errors, "finalize artifacts: "+err.Error())
+				continue
+			}
+			if err := tx.Commit(); err != nil {
+				rep.Errors = append(rep.Errors, "finalize commit: "+err.Error())
+				continue
 			}
 			_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE job_id = ?`, p.id)
 			s.appendEvent(ctx, p.id, string(final), map[string]any{"at": nowUTC()})

@@ -756,8 +756,24 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
 		}
 	}
+	// Read the owner through the transaction: taking another pooled connection
+	// while holding one can starve the pool under concurrent completions.
 	var ownerID string
-	_ = s.DB.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.JobID).Scan(&ownerID)
+	if err := tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.JobID).Scan(&ownerID); err != nil {
+		_ = s.Store.DeleteJob(p.JobID)
+		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
+	}
+	// A result can be much larger than its input, so admission alone cannot bound
+	// tenant storage: enforce the limit transactionally on the committed bytes.
+	if s.Cfg.Quota.MaxStorageBytes > 0 {
+		var stored int64
+		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
+		if stored+resultBytes > s.Cfg.Quota.MaxStorageBytes {
+			_ = s.Store.DeleteJob(p.JobID)
+			return nil, NewError(429, jobs.ErrQuotaExceeded,
+				"result would exceed the owner's storage quota; release older results or raise --quota-storage-mb")
+		}
+	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
 		_ = s.Store.DeleteJob(p.JobID)
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())

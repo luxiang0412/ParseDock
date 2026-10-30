@@ -853,3 +853,60 @@ func TestStorageQuota(t *testing.T) {
 		t.Fatalf("storage accounting not released: %d", stored)
 	}
 }
+
+// Codex review (PR-06): admission cannot bound result bytes, so completion must
+// enforce the storage quota transactionally.
+func TestStorageQuotaEnforcedAtCompletion(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 50} })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	big := bytes.Repeat([]byte("x"), 500)
+	_, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: big, Text: big, JSON: big})
+	if AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("oversized result accepted: %v", err)
+	}
+	// No artifacts and no accounting may remain.
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM owner_storage`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounted for a rejected result: %d", stored)
+	}
+	if files := s.storedFilesForTest(job.ID); len(files) != 0 {
+		t.Fatalf("rejected result left files: %v", files)
+	}
+}
+
+// gzip quality values: gzip;q=0 means "do not gzip".
+func TestAcceptsGzip(t *testing.T) {
+	cases := map[string]bool{
+		"":                   false,
+		"gzip":               true,
+		"deflate, gzip":      true,
+		"gzip;q=0":           false,
+		"gzip; q=0.0, br":    false,
+		"br;q=1, gzip;q=0.5": true,
+		"identity":           false,
+	}
+	for header, want := range cases {
+		if got := acceptsGzip(header); got != want {
+			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
+		}
+	}
+}
+
+// storedFilesForTest lists artifact paths for a job (test helper).
+func (s *Service) storedFilesForTest(jobID string) []string {
+	var out []string
+	for _, dir := range []string{s.Store.InputDir(jobID), s.Store.ResultDir(jobID)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
+}

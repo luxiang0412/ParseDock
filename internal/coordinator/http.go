@@ -987,12 +987,23 @@ func etagMatches(header, etag string) bool {
 	return false
 }
 
+// acceptsGzip honours quality values: "gzip;q=0" explicitly rejects gzip.
 func acceptsGzip(header string) bool {
 	for _, part := range strings.Split(header, ",") {
-		enc := strings.TrimSpace(strings.SplitN(part, ";", 2)[0])
-		if strings.EqualFold(enc, "gzip") {
-			return true
+		fields := strings.Split(part, ";")
+		if !strings.EqualFold(strings.TrimSpace(fields[0]), "gzip") {
+			continue
 		}
+		q := 1.0
+		for _, f := range fields[1:] {
+			f = strings.TrimSpace(f)
+			if strings.HasPrefix(f, "q=") {
+				if v, err := strconv.ParseFloat(strings.TrimPrefix(f, "q="), 64); err == nil {
+					q = v
+				}
+			}
+		}
+		return q > 0
 	}
 	return false
 }
