@@ -820,6 +820,13 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, NewError(500, jobs.ErrInternal, "encode IR"))
 		return
 	}
+	// Rendering allocates from the IR's declared dimensions, so validate before touching it:
+	// a compromised or buggy engine must not be able to OOM the coordinator with a table that
+	// merely claims to be 200k x 100k.
+	if verr := documentir.DefaultLimits.Validate(body.Document); verr != nil {
+		writeErr(w, NewError(422, jobs.ErrMalformed, "engine result rejected: "+verr.Error()))
+		return
+	}
 	job, err := s.Svc.Complete(r.Context(), CompleteParams{
 		JobID:     jobID,
 		Token:     body.LeaseToken,

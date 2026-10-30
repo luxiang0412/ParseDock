@@ -945,10 +945,20 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		if backoff > time.Minute {
 			backoff = time.Minute
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued', progress = 0,
+		// Fencing is repeated inside the transaction: checkLease above can be stale if the
+		// attempt expired and the job was reclaimed while this request was in flight. Without
+		// these predicates an old report would reset a newer attempt's job to 'queued'.
+		res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued', progress = 0,
 			progress_stage = 'retry_wait', error_code = ?, error_message = ?, available_at = ?, updated_at = ?
-			WHERE id = ? AND processing_status = 'running'`, code, truncate(msg, 500), ts(now.Add(backoff)), ts(now), jobID); err != nil {
+			WHERE id = ? AND processing_status = 'running'
+			  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
+			code, truncate(msg, 500), ts(now.Add(backoff)), ts(now), jobID, jobID, token)
+		if err != nil {
 			return nil, NewError(500, jobs.ErrInternal, err.Error())
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			_ = tx.Rollback()
+			return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; failure report ignored")
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ? WHERE job_id = ? AND lease_token = ?`,
 			truncate(msg, 500), jobID, token); err != nil {
@@ -967,11 +977,19 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	// after a separate lease check) is what makes the decision atomic: a concurrent backup
 	// pin only accepts 'active' rows, so it either wins (and Fail sees the lease) or loses
 	// (and the backup retries with a fresh snapshot).
-	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
 		error_code = ?, error_message = ?, retention_status = 'release_pending', updated_at = ?
-		WHERE id = ? AND processing_status = 'running'`,
-		ts(now), code, truncate(msg, 500), ts(now), jobID); err != nil {
+		WHERE id = ? AND processing_status = 'running'
+		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
+		ts(now), code, truncate(msg, 500), ts(now), jobID, jobID, token)
+	if err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		// The attempt was superseded: reporting its failure now would fail a job another
+		// worker is actively parsing and authorise deleting its files.
+		_ = tx.Rollback()
+		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; failure report ignored")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ? WHERE job_id = ? AND lease_token = ?`,
 		truncate(msg, 500), jobID, token); err != nil {
@@ -1058,18 +1076,30 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 		if resultVersion == "" {
 			return nil, NewError(400, jobs.ErrInvalidRequest, "result_version is required to ACK a result")
 		}
-		if job.ResultVersion != "" && resultVersion != job.ResultVersion {
+		// An ACK authorises deletion, so it must prove the result exists. Accepting a
+		// version for a job that has not completed (or a version that is no longer
+		// current) would let a client release an in-flight job's input.
+		if !job.ProcessingStatus.Terminal() || job.ProcessingStatus != jobs.StatusCompleted {
+			return nil, NewError(409, jobs.ErrConflict,
+				"result is not ready; ACK applies to completed results (cancel a queued or running job instead)")
+		}
+		if job.ResultVersion == "" || resultVersion != job.ResultVersion {
 			return nil, NewError(409, jobs.ErrConflict, "result_version does not match the current result")
 		}
+		// The predicate repeats the checks inside the update: a completion that lands
+		// between the read above and this statement must not be released by a stale token.
 		res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
-			WHERE id = ? AND owner_id = ? AND retention_status = 'active'`, ts(now), jobID, job.OwnerID)
+			WHERE id = ? AND owner_id = ? AND retention_status = 'active'
+			  AND processing_status = 'completed' AND result_version = ?`,
+			ts(now), jobID, job.OwnerID, resultVersion)
 		if err != nil {
 			return nil, NewError(500, jobs.ErrInternal, err.Error())
 		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "ack"})
-			s.audit(ctx, "job_acked", job, map[string]any{"result_version": resultVersion})
+		if n, _ := res.RowsAffected(); n == 0 {
+			return nil, NewError(409, jobs.ErrConflict, "result_version is no longer current")
 		}
+		s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "ack"})
+		s.audit(ctx, "job_acked", job, map[string]any{"result_version": resultVersion})
 		return s.GetJob(ctx, jobID, ownerID)
 	}
 	// Already releasing/released: idempotent success.
