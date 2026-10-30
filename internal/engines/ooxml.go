@@ -121,9 +121,15 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 
 	workbook, err := readZipXML[xlsxWorkbook](ctx, zr, "xl/workbook.xml")
 	if err != nil {
+		if cerr := ctx.Err(); cerr != nil {
+			return 0, nil, cerr // deadline/cancel must reach the worker
+		}
 		return 0, nil, nil // not an xlsx workbook: nothing to add
 	}
-	rels, _ := readZipXML[xlsxRels](ctx, zr, "xl/_rels/workbook.xml.rels")
+	rels, rerr := readZipXML[xlsxRels](ctx, zr, "xl/_rels/workbook.xml.rels")
+	if rerr != nil && ctx.Err() != nil {
+		return 0, nil, ctx.Err()
+	}
 	targets := map[string]string{}
 	for _, r := range rels.Relationships {
 		targets[r.ID] = r.Target
@@ -144,7 +150,11 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 
 	// Shared-string table: a cached formula result of type "s" is an index into it.
 	var sharedStrings []string
-	if sst, err := readZipXML[xlsxSharedStrings](ctx, zr, "xl/sharedStrings.xml"); err == nil {
+	sst, sstErr := readZipXML[xlsxSharedStrings](ctx, zr, "xl/sharedStrings.xml")
+	if sstErr != nil && ctx.Err() != nil {
+		return 0, nil, ctx.Err()
+	}
+	if sstErr == nil {
 		for _, si := range sst.Items {
 			text := si.T.Text
 			if text == "" {
@@ -164,7 +174,10 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		}
 		ws, err := readZipXML[xlsxWorksheet](ctx, zr, sh.part)
 		if err != nil {
-			continue
+			if cerr := ctx.Err(); cerr != nil {
+				return 0, warnings, cerr
+			}
+			continue // malformed worksheet: best effort
 		}
 		cells := map[[2]int]formulaCell{}
 		values := map[[2]int]string{}
@@ -404,9 +417,6 @@ func verifyTableOrigin(table *documentir.Table, values map[[2]int]string,
 		got := strings.TrimSpace(values[key])
 		if got == "" || !sameCellValue(text, got) {
 			return false
-		}
-		if compared >= 50 {
-			break
 		}
 	}
 	return compared >= 2
