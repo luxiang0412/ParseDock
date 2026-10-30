@@ -57,7 +57,7 @@ public class JobsApiTest {
     /**
      * Stop a queued/running job (completed results must be ACKed)
      *
-     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60;, the worker sees &#x60;cancelled&#x60; on its next heartbeat, aborts the engine and finalises cleanly, and files are removed by the normal retention path.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
+     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
      *
      * @throws ApiException if the Api call fails
      */

@@ -29,6 +29,7 @@ Name | Type | Description | Notes
 **routing_reason** | **str** | Human-readable routing decision | [optional] 
 **progress_percent** | **int** |  | [optional] 
 **progress_stage** | **str** |  | [optional] 
+**cancel_requested_at** | **datetime** | Set when cancellation was requested (queued/running jobs). The worker stops at its next heartbeat (default interval 10 s) and finalises the attempt; the job is already &#x60;cancelled&#x60; when this field appears.  | [optional] 
 **result_version** | **str** | Manifest hash; echo it in the ACK (&#x60;X-Result-Version&#x60;). | [optional] 
 **result_urls** | [**JobResultUrls**](JobResultUrls.md) |  | [optional] 
 **warning_count** | **int** |  | [optional] 

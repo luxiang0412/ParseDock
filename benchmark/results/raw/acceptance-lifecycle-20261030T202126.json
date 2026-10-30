@@ -1,0 +1,31 @@
+{
+  "profile": "lifecycle",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T12:21:20.905834+00:00",
+  "finished_at": "2026-10-30T12:21:26.350510+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "5fedee6e6d1d984f05fcd3dd16204a5bbc8dcb62ccbe15e9cd0d11b979f96ac3",
+  "cases": [
+    {
+      "id": "T17",
+      "name": "cancel during a parse stops the worker within the heartbeat budget",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRSGFAB2JXP51YW9P777NC44",
+        "cancel_observed_s": 0.01,
+        "cancel_requested_at": "2026-10-30T12:21:22.336413Z",
+        "worker_stopped": true,
+        "attempt_states": [
+          "cancelled"
+        ],
+        "retention": "released",
+        "elapsed_s": 5.44
+      },
+      "error": ""
+    }
+  ]
+}

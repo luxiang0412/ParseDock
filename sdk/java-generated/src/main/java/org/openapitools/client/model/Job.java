@@ -293,6 +293,11 @@ public class Job {
   @javax.annotation.Nullable
   private String progressStage;
 
+  public static final String SERIALIZED_NAME_CANCEL_REQUESTED_AT = "cancel_requested_at";
+  @SerializedName(SERIALIZED_NAME_CANCEL_REQUESTED_AT)
+  @javax.annotation.Nullable
+  private OffsetDateTime cancelRequestedAt;
+
   public static final String SERIALIZED_NAME_RESULT_VERSION = "result_version";
   @SerializedName(SERIALIZED_NAME_RESULT_VERSION)
   @javax.annotation.Nullable
@@ -803,6 +808,25 @@ public class Job {
   }
 
 
+  public Job cancelRequestedAt(@javax.annotation.Nullable OffsetDateTime cancelRequestedAt) {
+    this.cancelRequestedAt = cancelRequestedAt;
+    return this;
+  }
+
+  /**
+   * Set when cancellation was requested (queued/running jobs). The worker stops at its next heartbeat (default interval 10 s) and finalises the attempt; the job is already &#x60;cancelled&#x60; when this field appears. 
+   * @return cancelRequestedAt
+   */
+  @javax.annotation.Nullable
+  public OffsetDateTime getCancelRequestedAt() {
+    return cancelRequestedAt;
+  }
+
+  public void setCancelRequestedAt(@javax.annotation.Nullable OffsetDateTime cancelRequestedAt) {
+    this.cancelRequestedAt = cancelRequestedAt;
+  }
+
+
   public Job resultVersion(@javax.annotation.Nullable String resultVersion) {
     this.resultVersion = resultVersion;
     return this;
@@ -1008,6 +1032,7 @@ public class Job {
         Objects.equals(this.routingReason, job.routingReason) &&
         Objects.equals(this.progressPercent, job.progressPercent) &&
         Objects.equals(this.progressStage, job.progressStage) &&
+        Objects.equals(this.cancelRequestedAt, job.cancelRequestedAt) &&
         Objects.equals(this.resultVersion, job.resultVersion) &&
         Objects.equals(this.resultUrls, job.resultUrls) &&
         Objects.equals(this.warningCount, job.warningCount) &&
@@ -1025,7 +1050,7 @@ public class Job {
 
   @Override
   public int hashCode() {
-    return Objects.hash(jobId, status, processingStatus, retentionStatus, inputName, format, mimeType, inputSize, inputSha256, pageCount, createdAt, startedAt, completedAt, updatedAt, resultExpiresAt, processingDeadlineAt, maxLifetimeAt, attempt, requestedMode, requestedDevice, engine, routingReason, progressPercent, progressStage, resultVersion, resultUrls, warningCount, errorCode, errorMessage, statusUrl, eventsUrl, ackUrl, cancelUrl);
+    return Objects.hash(jobId, status, processingStatus, retentionStatus, inputName, format, mimeType, inputSize, inputSha256, pageCount, createdAt, startedAt, completedAt, updatedAt, resultExpiresAt, processingDeadlineAt, maxLifetimeAt, attempt, requestedMode, requestedDevice, engine, routingReason, progressPercent, progressStage, cancelRequestedAt, resultVersion, resultUrls, warningCount, errorCode, errorMessage, statusUrl, eventsUrl, ackUrl, cancelUrl);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -1063,6 +1088,7 @@ public class Job {
     sb.append("    routingReason: ").append(toIndentedString(routingReason)).append("\n");
     sb.append("    progressPercent: ").append(toIndentedString(progressPercent)).append("\n");
     sb.append("    progressStage: ").append(toIndentedString(progressStage)).append("\n");
+    sb.append("    cancelRequestedAt: ").append(toIndentedString(cancelRequestedAt)).append("\n");
     sb.append("    resultVersion: ").append(toIndentedString(resultVersion)).append("\n");
     sb.append("    resultUrls: ").append(toIndentedString(resultUrls)).append("\n");
     sb.append("    warningCount: ").append(toIndentedString(warningCount)).append("\n");
@@ -1090,7 +1116,7 @@ public class Job {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "processing_deadline_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"));
+    openapiFields = new HashSet<String>(Arrays.asList("job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "processing_deadline_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "cancel_requested_at", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("job_id", "status", "retention_status", "created_at", "status_url"));

@@ -364,6 +364,12 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		},
 	})
 	cancelHB()
+	if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
+		// The job was cancelled while the engine was running: stop here even if
+		// the engine happened to finish, otherwise we would race the cleanup.
+		w.Log.Info("task cancelled by coordinator", "job", task.JobID)
+		return nil
+	}
 	if perr != nil {
 		if e, ok := hbErr.Load().(error); ok && e != nil {
 			// A cancelled job is a clean stop, not a failure: the coordinator has

@@ -114,6 +114,7 @@ type Job struct {
 	WarningCount       int              `json:"warning_count"`
 	TombstoneExpiresAt *time.Time       `json:"-"`
 	RequestID          string           `json:"-"`
+	CancelRequestedAt  *time.Time       `json:"cancel_requested_at,omitempty"`
 	Progress           int              `json:"progress_percent"`
 	ProgressStage      string           `json:"progress_stage,omitempty"`
 	UpdatedAt          time.Time        `json:"updated_at"`

@@ -86,6 +86,12 @@ attempt row terminal, no artifact published, input deleted by retention.
 
 **DoD.** T-cancel added to the acceptance matrix with a hard time budget.
 
+**Status: DONE (PR-03).** `cancel_requested_at` persisted and exposed, worker
+discards a result produced after cancellation, per-engine timeouts configurable and
+capped by the job deadline, T17 asserts the worker stops within one heartbeat
+(< 12 s with a 1 s interval) and leaves no artifacts. Codex review findings on quota
+admission (PR-02) were fixed in the same cycle.
+
 ---
 
 ## Real-corpus backlog (from `docs/REAL-CORPUS-TEST.md`, 958 files)
