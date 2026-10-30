@@ -41,7 +41,8 @@ def sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def copy_tree(src: Path, dst: Path, jobs: set[str]) -> tuple[int, int]:
+def copy_tree(src: Path, dst: Path, jobs: set[str],
+              progress=None) -> tuple[int, int]:
     files = bytes_copied = 0
     for sub in ("inputs", "results"):
         sroot = src / sub
@@ -57,7 +58,72 @@ def copy_tree(src: Path, dst: Path, jobs: set[str]) -> tuple[int, int]:
                 if f.is_file():
                     files += 1
                     bytes_copied += f.stat().st_size
+            if progress:
+                progress()
     return files, bytes_copied
+
+
+class Leases:
+    """Cleanup protection for the snapshot's jobs, renewed while the copy runs.
+
+    The cleaner honours download_leases, so an ACK or expiry during the backup cannot delete
+    a directory the snapshot still claims. Leases are renewed at a third of their lifetime so
+    a copy that takes longer than one lease window stays protected.
+    """
+
+    def __init__(self, db_path: Path, seconds: int):
+        self.db_path = db_path
+        self.seconds = seconds
+        self.ids: list[str] = []
+        self.conn = sqlite3.connect(db_path)
+        self.last = time.time()
+        self.renew_errors: list[str] = []
+
+    def pin(self, jobs: set[str]) -> list[str]:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        exp = now + datetime.timedelta(seconds=self.seconds)
+        stamp = lambda d: d.isoformat(timespec="microseconds").replace("+00:00", "Z")
+        unpinnable = []
+        with self.conn:
+            for job_id in sorted(jobs):
+                lease = f"backup-{uuid.uuid4().hex}"
+                cur = self.conn.execute(
+                    "INSERT OR IGNORE INTO download_leases"
+                    "(lease_id, job_id, created_at, expires_at, last_renewed_at)"
+                    " SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ?)",
+                    (lease, job_id, stamp(now), stamp(exp), stamp(now), job_id))
+                if cur.rowcount == 1:
+                    self.ids.append(lease)
+                else:
+                    unpinnable.append(job_id)
+        return unpinnable
+
+    def progress(self) -> None:
+        if time.time() - self.last < max(1, self.seconds // 3):
+            return
+        self.renew()
+
+    def renew(self) -> None:
+        if not self.ids:
+            return
+        now = datetime.datetime.now(datetime.timezone.utc)
+        exp = now + datetime.timedelta(seconds=self.seconds)
+        stamp = lambda d: d.isoformat(timespec="microseconds").replace("+00:00", "Z")
+        try:
+            with self.conn:
+                self.conn.executemany(
+                    "UPDATE download_leases SET expires_at = ?, last_renewed_at = ? WHERE lease_id = ?",
+                    [(stamp(exp), stamp(now), lease) for lease in self.ids])
+        except sqlite3.Error as exc:  # pragma: no cover - defensive
+            self.renew_errors.append(str(exc))
+        self.last = time.time()
+
+    def release(self) -> None:
+        if self.ids:
+            with self.conn:
+                self.conn.executemany("DELETE FROM download_leases WHERE lease_id = ?",
+                                      [(l,) for l in self.ids])
+        self.conn.close()
 
 
 def main() -> int:
@@ -104,45 +170,41 @@ def main() -> int:
         "SELECT job_id, kind, path, size, sha256 FROM artifacts").fetchall()
     conn.close()
 
-    # 3. Pin those jobs against the live cleaner while the files are copied. The cleaner
-    # honours download_leases, so an ACK or expiry during the copy cannot delete a directory
-    # the snapshot still claims. Leases are removed afterwards (and expire anyway).
-    lease_ids, db_seconds_lock = [], 0.0
+    # 3. Pin every job in the snapshot before copying files. Pinning deliberately does not
+    # re-check retention: a job that was ACKed between snapshot and pin must still be
+    # protected (its snapshot row says active), and a job whose row no longer exists cannot
+    # be pinned — that is reported as an incomplete backup rather than silently skipped.
+    leases, db_seconds_lock, unpinnable = None, 0.0, []
     if jobs and not args.skip_files:
         t_lock = time.time()
-        guard = sqlite3.connect(src_db)
-        now = datetime.datetime.now(datetime.timezone.utc)
-        exp = now + datetime.timedelta(seconds=args.lease_seconds)
-        stamp = lambda d: d.isoformat(timespec="microseconds").replace("+00:00", "Z")
-        with guard:
-            for job_id in jobs:
-                lease = f"backup-{uuid.uuid4().hex}"
-                guard.execute(
-                    "INSERT OR IGNORE INTO download_leases"
-                    "(lease_id, job_id, created_at, expires_at, last_renewed_at)"
-                    " SELECT ?, ?, ?, ?, ? WHERE EXISTS"
-                    " (SELECT 1 FROM jobs WHERE id = ? AND retention_status = 'active')",
-                    (lease, job_id, stamp(now), stamp(exp), stamp(now), job_id))
-                lease_ids.append(lease)
-        guard.close()
+        leases = Leases(src_db, args.lease_seconds)
+        unpinnable = leases.pin(jobs)
         db_seconds_lock = time.time() - t_lock
+        if unpinnable:
+            missing = [j for j in unpinnable
+                       if not (data / "results" / j).exists() and not (data / "inputs" / j).exists()]
+            jobs = jobs - set(unpinnable)
+            if missing:
+                leases.release()
+                print(json.dumps({"error": "incomplete backup: jobs vanished before pinning",
+                                  "jobs": missing}, indent=2), file=sys.stderr)
+                return 1
 
     files = bytes_copied = 0
     try:
         if not args.skip_files:
-            files, bytes_copied = copy_tree(data, out / "files", jobs)
+            files, bytes_copied = copy_tree(data, out / "files", jobs,
+                                            progress=leases.progress if leases else None)
     finally:
-        if lease_ids:
-            guard = sqlite3.connect(src_db)
-            with guard:
-                guard.executemany("DELETE FROM download_leases WHERE lease_id = ?",
-                                  [(l,) for l in lease_ids])
-            guard.close()
+        if leases:
+            leases.renew()          # final renewal covers the last copy window
+            leases.release()
 
     report = {
         "backup": str(out),
         "db_seconds": round(db_seconds, 3),
         "lease_seconds": round(db_seconds_lock, 3),
+        "unpinnable_jobs": unpinnable,
         "total_seconds": round(time.time() - started, 3),
         "jobs_servable": len(jobs),
         "files": files,
