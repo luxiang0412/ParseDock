@@ -1,5 +1,13 @@
 # IMPLEMENTATION PLAN — Phase 1 (post-Phase-0)
 
+> **PR-00 (Phase 1 readiness) is complete**: see `docs/PHASE1-READINESS.md` and
+> `docs/PR00-ISSUE-MATRIX.md`. Landed here: scored decisions generated from data,
+> text-format routing, ACK/Cancel/Heartbeat/lease semantics, public/internal
+> OpenAPI split, per-representation ETag, any-order multipart, SSE scope, IR
+> provenance fixes, worker scratch reclamation, internal binding guard,
+> backup/restore and the licence gate. PR-01 may start; PR-02…PR-12 are unchanged
+> in scope except where noted below.
+
 Each slice below is an independently mergeable PR with its own contract, tests and
 definition of done. Ordering is dependency-driven; the first four are the path to a
 usable v0.1 service.
@@ -89,13 +97,18 @@ resource-ceiling test (1.5 GB cgroup) still completes the 30-page fixture.
 
 **Scope**
 * Publish `api/document-ir-0.1.schema.json` (JSON Schema) generated from the Go types;
-  add a CI check that the schema and the Go structs agree.
+  add a CI check that the schema and the Go structs agree. PR-00 added the fields
+  `page_width_pt`/`page_height_pt`/`rotation_deg` to `source_location`; the schema
+  must include them.
 * Golden IR per engine per fixture (`benchmark/fixtures/golden/*.json`) compared with
   timings normalised out; deliberate differences recorded with `t.Skip` + comment.
 * Versioning policy: additive changes keep `0.x`; breaking changes bump `doc-ir/0.x`
   and are announced in `CHANGELOG.md`.
 * Fill the two structural gaps that matter downstream: table `formula` extraction
-  (XLSX) and per-element confidence where the engine provides it.
+  (XLSX, read from the worksheet `<f>` element — shared formulas, dates and numeric
+  precision included) and per-element confidence where the engine provides it.
+  PR-00 documented these as *absent capabilities*; the fixtures assert the fields
+  stay empty instead of being fabricated.
 
 **Tests.** Golden diff; schema validation of every produced IR; property test that
 `reading_order` is strictly increasing and `table_id` references resolve.
@@ -165,8 +178,12 @@ VRAM measured via `nvidia-smi` during the run; egress denied test.
   by engine, result bytes, retention states, cleanup runs/errors, disk free.
 * OpenTelemetry traces: create → claim → engine → commit spans, with engine version
   attributes; no document content.
-* SLO document: availability, p95 latency per mode, result-loss budget (must be zero
-  for acknowledged results).
+* SLO document: availability, p95 latency per mode, and a **result-loss budget for
+  committed, not-yet-expired, not-yet-ACKed results** inside the supported failure
+  model (single coordinator host, local disk). An ACK *is* a deletion request, so
+  "zero loss for acknowledged results" is not a meaningful target (PR-00 / F10).
+  Disk loss on the single coordinator host is an explicit single point of failure,
+  outside the budget.
 
 **Tests.** Metrics golden file; trace propagation in integration test; SLO doc reviewed.
 
@@ -211,6 +228,10 @@ VRAM measured via `nvidia-smi` during the run; egress denied test.
 
 **Scope**
 * Backup/restore drill for SQLite + file tree (documented + scripted + timed).
+  PR-00 landed the offline scripts and a restore test; PR-12 adds the online
+  (`.backup`) variant and a timed drill. Backups contain **only active** artifacts:
+  a released/expired result must never be resurrected by a restore, and any restore
+  must re-apply retention state before serving traffic.
 * Coordinator upgrade procedure with zero-result-loss guarantee (drain: stop accepting
   uploads, wait for in-flight, restart).
 * Incident playbooks: disk full, cleanup stalled, lease storm, engine OOM loop,

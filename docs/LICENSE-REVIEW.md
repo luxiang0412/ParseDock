@@ -134,6 +134,25 @@ subprocess or over HTTP. Attribution is still recommended in `NOTICE`.
   this repo's default configuration; adjust if the organisation requires
   another).
 
+## 6b. Distribution gate (PR-00 / F11)
+
+`scripts/license_audit.sh` (wired as `make license-audit`) inspects the built
+images and writes `build/sbom/<image>.json` with the dpkg inventory, bundled
+shared libraries, GPL/LGPL findings and the notes that need human action. It
+**fails** when an image contains a GPL library unless an approved exception is
+recorded (`APPROVED_GPL=1 APPROVED_GPL_REASON=...`).
+
+Current result on this host:
+
+| Image | GPL | LGPL | Gate |
+| --- | --- | --- | --- |
+| `parsedock:0.1.0` | none | none | PASS |
+| `parsedock-worker-cpu:0.1.0` | `libx265.so.199` | `libde265`, `libheif`, `libnuma` | **BLOCK** |
+
+The gate is engineering evidence, not a legal decision: **L1 below stays open and
+BLOCKED for external distribution.** The LGPL libraries must remain replaceable
+(dynamic `.so`, not statically linked) and their notices must ship with the image.
+
 ## 7. Open items to close before production
 
 | # | Item | Owner | Blocking? |
