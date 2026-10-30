@@ -1,0 +1,155 @@
+{
+  "schema_version": "doc-ir/0.1",
+  "source": {
+    "file_name": "",
+    "mime_type": "",
+    "format": "",
+    "size_bytes": 0,
+    "sha256": ""
+  },
+  "parser_engine": "",
+  "parser_version": "",
+  "routing": {
+    "requested_mode": "",
+    "requested_device": "",
+    "actual_device": "",
+    "engine": "",
+    "fallback": false,
+    "reason": ""
+  },
+  "page_count": 1,
+  "page_kind": "pdf",
+  "elements": [
+    {
+      "id": "el_1",
+      "type": "section",
+      "text": "Dock Throughput Review",
+      "level": 1,
+      "reading_order": 0,
+      "source_location": {
+        "kind": "pdf",
+        "page": 1,
+        "bbox": {
+          "coord": "pdf_user_space_v1",
+          "x0": 56.97,
+          "y0": 735.01,
+          "x1": 320.9,
+          "y1": 721.85
+        },
+        "page_width_pt": 595.28,
+        "page_height_pt": 841.89
+      }
+    },
+    {
+      "id": "el_2",
+      "type": "paragraph",
+      "text": "The pilot moved 128,400 pallets.",
+      "reading_order": 1,
+      "source_location": {
+        "kind": "pdf",
+        "page": 1,
+        "bbox": {
+          "coord": "pdf_user_space_v1",
+          "x0": 56.97,
+          "y0": 700,
+          "x1": 500,
+          "y1": 680
+        },
+        "page_width_pt": 595.28,
+        "page_height_pt": 841.89
+      }
+    },
+    {
+      "id": "el_3",
+      "type": "table",
+      "text": "2 rows x 2 cols",
+      "reading_order": 2,
+      "source_location": {
+        "kind": "pdf",
+        "page": 1,
+        "bbox": {
+          "coord": "pdf_user_space_v1",
+          "x0": 56.97,
+          "y0": 600,
+          "x1": 500,
+          "y1": 560
+        },
+        "page_width_pt": 595.28,
+        "page_height_pt": 841.89
+      },
+      "table_id": "tbl_1"
+    },
+    {
+      "id": "el_4",
+      "type": "paragraph",
+      "text": "Sheet note",
+      "reading_order": 3,
+      "source_location": {
+        "kind": "sheet",
+        "sheet": "Summary"
+      }
+    }
+  ],
+  "tables": [
+    {
+      "id": "tbl_1",
+      "rows": 2,
+      "cols": 2,
+      "header_rows": 1,
+      "cells": [
+        {
+          "row": 0,
+          "col": 0,
+          "row_span": 1,
+          "col_span": 1,
+          "text": "Region",
+          "data_type": "string"
+        },
+        {
+          "row": 0,
+          "col": 1,
+          "row_span": 1,
+          "col_span": 1,
+          "text": "Pallets",
+          "data_type": "string"
+        },
+        {
+          "row": 1,
+          "col": 0,
+          "row_span": 1,
+          "col_span": 1,
+          "text": "North",
+          "data_type": "string"
+        },
+        {
+          "row": 1,
+          "col": 1,
+          "row_span": 1,
+          "col_span": 1,
+          "text": "48120",
+          "data_type": "number"
+        }
+      ],
+      "source_location": {
+        "kind": "pdf",
+        "page": 1,
+        "bbox": {
+          "coord": "pdf_user_space_v1",
+          "x0": 56.97,
+          "y0": 600,
+          "x1": 500,
+          "y1": 560
+        },
+        "page_width_pt": 595.28,
+        "page_height_pt": 841.89
+      }
+    }
+  ],
+  "warnings": [],
+  "metrics": {
+    "parse_ms": 0,
+    "input_bytes": 0,
+    "output_chars": 79,
+    "pages": 1
+  }
+}

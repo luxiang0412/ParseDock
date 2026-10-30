@@ -394,6 +394,17 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		}
 		return w.fail(ctx, task, jobs.ErrInternal, perr.Error(), true)
 	}
+	// Formula text is not exposed by any engine; read it from the worksheet XML so
+	// the IR carries both the formula and its cached value (PR-05).
+	if engines.ShouldEnrichFormulas(task.Format) {
+		if n, warns := engines.EnrichXLSXFormulas(local, result); n > 0 || len(warns) > 0 {
+			result.Warnings = append(result.Warnings, warns...)
+			if n > 0 {
+				w.Log.Info("formula enrichment", "job", task.JobID, "cells", n)
+			}
+		}
+	}
+
 	// Legacy OLE2 Office keeps text and tables only; say so instead of letting a
 	// consumer assume page geometry exists.
 	if isLegacyFormat(task.Format) {

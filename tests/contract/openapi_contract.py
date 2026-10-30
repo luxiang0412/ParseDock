@@ -14,6 +14,7 @@ Run: python tests/contract/openapi_contract.py
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -169,6 +170,15 @@ def main() -> int:
     check("authenticated operations document 403", len(ops_with_403) >= 5, str(ops_with_403))
     check("mode documents that text formats use native",
           "always use the native engine" in pub["components"]["parameters"]["ModeQuery"]["description"])
+
+    # PR-05: the published Document IR schema is part of the public contract.
+    schema_path = ROOT / "api" / "document-ir-0.1.schema.json"
+    check("Document IR schema is published", schema_path.exists(), str(schema_path))
+    if schema_path.exists():
+        sc = json.loads(schema_path.read_text())
+        check("IR schema id/version match", sc.get("$id", "").endswith("document-ir-0.1.json"), sc.get("$id", ""))
+        check("IR schema requires schema_version const",
+              sc["properties"]["schema_version"].get("const") == "doc-ir/0.1")
 
     for c in checks:
         print(f"[{c['status']}] {c['check']}" + (f" — {c['detail']}" if c["status"] == "FAIL" else ""))
