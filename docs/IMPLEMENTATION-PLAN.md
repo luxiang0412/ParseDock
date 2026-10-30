@@ -403,6 +403,34 @@ the `httpx` async client (declared as an optional extra but not implemented).
 
 **DoD.** `docs/ENGINE-BENCHMARK.md` regenerated automatically; gate enforced.
 
+**Status: PARTIAL (PR-11).** Delivered and verified:
+
+* **Corpus growth**: `benchmark/fixtures/corpus/` now holds **110 synthetic documents**
+  (63 PDF incl. 1–30 pages and CJK, 16 CSV varying delimiter/encoding/table size, 16 TXT,
+  8 XLSX multi-sheet, 7 DOCX), reproducible via `make fixtures` and hash-checked by
+  `tests/unit/test_fixtures.py` (size + SHA-256 per entry, format coverage, and an assertion
+  that `test_data` is never committed). Total 2.8 MB, so it lives in the repo.
+* **Quality gate**: `benchmark/scripts/gate.py` with a committed
+  `benchmark/results/baseline.json`. It fails on >2 % relative quality/structure drop, a CER
+  rise of >2 points, or >15 % p50/p95 regression, per engine the baseline covers; the rule is
+  relative because absolute numbers are host-specific. `make gate` / `make gate-baseline`;
+  wired into `phase_engines` (nightly + engine-changes) and covered by
+  `tests/unit/test_gate.py` (pass, quality drop, latency regression, median-only regression,
+  millisecond noise, missing sample with and without `--allow-missing`, missing baseline).
+  Measurements are **run-scoped** (`PARSEDOCK_BENCH_RAW`/`PARSEDOCK_BENCH_SUMMARY` point at
+  `build/ci/bench-*`), so summarize cannot reuse an older successful record; the committed
+  baseline records the CI scope (`native,xberg,docling-rs` on 4 fixtures) and a
+  baseline-covered sample that disappears fails the gate.
+* Table quality is scored as cell + header accuracy, and per-page CER is already in
+  `summarize.py`; `ENGINE-BENCHMARK.md` documents what each corpus is allowed to claim.
+
+**Not delivered:** TEDS/APTED tree-edit distance (needs a gold table structure per fixture;
+cell+header accuracy is the current discriminator) and permissively licensed *public*
+documents (arXiv/government data) in the corpus — the synthetic corpus is safe to ship and
+the real corporate corpus stays local-only by policy. Real-engine benchmarking remains in the
+nightly/engine-changes pipeline rather than every PR, because installing xberg + docling-rs
+takes minutes.
+
 ---
 
 ## PR-12 — Operational runbooks

@@ -167,7 +167,7 @@
       "low_confidence": false,
       "incomplete": false,
       "notes": [
-        "p95 3-page PDF 815 ms, scan 682 ms",
+        "p95 3-page PDF 819 ms, scan 682 ms",
         "max median RSS across samples 1169 MiB",
         "ops: single binary + pinned model bundle",
         "ops: MIT code and models",
@@ -389,7 +389,7 @@
       "low_confidence": false,
       "incomplete": false,
       "notes": [
-        "p95 3-page PDF 21 ms, scan 222 ms",
+        "p95 3-page PDF 14 ms, scan 222 ms",
         "max median RSS across samples 233 MiB",
         "ops: MIT core",
         "ops: release tarball bundles libx265 (GPL-2.0) \u2014 blocked on L1",

@@ -162,6 +162,8 @@ make load              # cluster-lite load report (mock engine, 2 api + 2 worker
 make gpu-check         # GPU worker image end-to-end (needs a GPU host)
 make bench             # quality + latency + concurrency (needs engine servers)
 make score             # regenerate the scoring tables from the raw data
+make gate              # fail on >2 % quality or >15 % latency regression vs baseline
+make fixtures          # regenerate synthetic fixtures + the 110-document corpus
 make gpu-bench         # CPU vs CUDA, VRAM measurements
 make license-audit     # SBOM + GPL gate for the built images
 make ci                # run the CI phases locally (same commands as GitHub Actions)

@@ -68,8 +68,8 @@ score: ## regenerate benchmark scores + docs tables
 license-audit: ## SBOM + GPL gate for the built images (external distribution)
 	bash scripts/license_audit.sh parsedock:0.1.0 parsedock-worker-cpu:0.1.0
 
-fixtures: ## regenerate the synthetic benchmark corpus (needs venv-fixtures)
-	$(PY_FIX) benchmark/scripts/gen_fixtures.py
+fixtures: ## regenerate fixtures + the 110-document corpus (needs venv-fixtures)
+	$(PY_FIX) benchmark/scripts/gen_fixtures.py --corpus 110
 
 acceptance: ## T03–T16 lifecycle acceptance with the mock engine
 	python3 tests/integration/acceptance.py --profile lifecycle
@@ -106,6 +106,18 @@ down: ## stop the compose stack
 
 logs: ## tail compose logs
 	$(COMPOSE) logs -f --tail=50
+
+metrics: ## observability contract: metrics exist, throttling counted, no content leaks
+	python3 tests/integration/pr09_metrics.py
+
+sdk-check: ## Python + CLI + Java SDK build and one version across all artefacts
+	bash scripts/sdk-check.sh
+
+gate: ## engine quality gate vs benchmark/results/baseline.json
+	python3 benchmark/scripts/gate.py
+
+gate-baseline: ## record the current benchmark summary as the quality baseline
+	python3 benchmark/scripts/gate.py --update
 
 clean: ## remove local runtime state (keeps engines/models)
 	rm -rf runtime/data runtime/work runtime/acceptance runtime/sdk-test-data runtime/bench-work

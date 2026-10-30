@@ -10,11 +10,12 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import statistics
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-RAW = ROOT / "benchmark" / "results" / "raw"
+RAW = Path(os.environ.get("PARSEDOCK_BENCH_RAW") or ROOT / "benchmark" / "results" / "raw")
 
 # Formats each engine actually supports (mirrors internal/engines/capabilities.go).
 # Rows recorded by older runs before the harness learned to skip unsupported
@@ -33,7 +34,7 @@ SUPPORTED = {
 def supported(r: dict) -> bool:
     fmts = SUPPORTED.get(r.get("engine", ""))
     return fmts is None or r.get("format") in fmts
-OUT = ROOT / "benchmark" / "results" / "summary"
+OUT = Path(os.environ.get("PARSEDOCK_BENCH_SUMMARY") or ROOT / "benchmark" / "results" / "summary")
 
 
 def load() -> list[dict]:

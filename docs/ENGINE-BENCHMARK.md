@@ -212,3 +212,57 @@ architecture routes instead of picking one engine.
 * Memory ceilings per engine (`ulimit`/cgroup) and OOM behaviour.
 * Long-run stability (> 1 h soak), fd/memory leaks.
 * The full 120–200 document corpus with human-checked gold (PR-11).
+
+
+## Corpus and quality gate (PR-11)
+
+Two corpora, two jobs:
+
+| Corpus | Size | Purpose | Scored? |
+| --- | --- | --- | --- |
+| `benchmark/fixtures/generated/` | 21 hand-checked documents | quality (CER, table cells, provenance) | yes — this is the score |
+| `benchmark/fixtures/corpus/` | **110 synthetic documents** (63 PDF, 16 CSV, 16 TXT, 8 XLSX, 7 DOCX) | throughput, robustness, sheet/table shapes, encoding variety | no — coverage and latency only |
+
+Both are synthetic and reproducible: `make fixtures` regenerates them
+(`gen_fixtures.py --corpus 110`), and `tests/unit/test_fixtures.py` fails on any size or
+SHA-256 drift, so a silently edited corpus cannot masquerade as an engine improvement.
+`corpus/` deliberately varies page counts (1–30), languages (EN/ZH), delimiters (,/;),
+encodings (UTF-8/GB18030), table dimensions and workbook shapes; it is not hand-checked and
+must not be used to claim quality numbers.
+
+### The gate
+
+`benchmark/scripts/gate.py` (committed baseline in `benchmark/results/baseline.json`)
+compares the current summary with the baseline and fails when, for any engine the baseline
+covers:
+
+* **quality** or **structure** drops more than **2 % relative**, or
+* a per-file **CER** rises by more than 2 points, or
+* **p50/p95 latency** regresses more than **15 %**.
+
+```bash
+make gate            # check (runs in the nightly/engine-changes pipeline)
+make gate-baseline   # record a new baseline — belongs in the PR that changed quality
+```
+
+The gate runs on a **run-scoped** summary: `phase_engines` sets
+`PARSEDOCK_BENCH_RAW`/`PARSEDOCK_BENCH_SUMMARY` to `build/ci/bench-{raw,summary}`, so
+`summarize.py` cannot pick up a successful record left by an earlier run. The committed
+baseline records the **scope** the CI job actually measures (`native,xberg,docling-rs` on
+`pdf_native_en`, `pdf_scanned_en`, `docx`, `csv`); a baseline-covered sample missing from the
+current run is a failure unless `--allow-missing` is passed for a deliberate partial-engine
+run. `tests/unit/test_gate.py` covers pass, quality drop, latency regression, median-only
+regression, millisecond noise, missing sample (with and without `--allow-missing`) and the
+missing-baseline case. The rule is relative on purpose: absolute numbers differ per host,
+relative drift does not. A deliberate quality/latency change is allowed, but it must update
+the baseline in the same PR and be justified in `docs/DECISIONS.md`.
+
+### Honest limits
+
+* No TEDS/APTED tree-edit distance yet: table quality is measured as cell accuracy + header
+  accuracy (`table_cell_accuracy`, `table_header_accuracy` in `summarize.py`), which is
+  cheaper to compute and already discriminates the engines. Tree-edit scoring would need a
+  gold table structure per fixture.
+* Gold text is synthetic; the real corporate corpus (`docs/REAL-CORPUS-TEST.md`) validates
+  completion and failure classification, not CER.
+* The gate runs where real engines are installed (nightly/engine-changes), not on every PR.
