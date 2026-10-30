@@ -74,16 +74,16 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 		AND updated_at <= ?`, "failed_retention", ts(nowUTC()), ts(nowUTC().Add(-s.Cfg.FailedRetention)))
 
 	// 3. Delete files for pending jobs that have no live download lease.
-	rows, err := s.DB.QueryContext(ctx, `SELECT id, retention_status FROM jobs
-		WHERE retention_status IN ('release_pending','expiry_pending')`)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, retention_status, retention_target FROM jobs
+		WHERE retention_status IN ('release_pending','expiry_pending','deleting')`)
 	if err != nil {
 		rep.Errors = append(rep.Errors, "query pending: "+err.Error())
 	} else {
-		type pending struct{ id, status string }
+		type pending struct{ id, status, target string }
 		var list []pending
 		for rows.Next() {
 			var p pending
-			if err := rows.Scan(&p.id, &p.status); err == nil {
+			if err := rows.Scan(&p.id, &p.status, &p.target); err == nil {
 				list = append(list, p)
 			}
 		}
@@ -96,19 +96,25 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				rep.SkippedBusy++
 				continue
 			}
+			// The intended final state is persisted when the job enters 'deleting',
+			// so a retry after a crash cannot confuse released and expired.
 			final := jobs.RetentionReleased
-			if jobs.RetentionStatus(p.status) == jobs.RetentionExpiryPending {
+			switch {
+			case jobs.RetentionStatus(p.status) == jobs.RetentionExpiryPending:
 				final = jobs.RetentionExpired
+			case jobs.RetentionStatus(p.status) == jobs.RetentionDeleting && p.target != "":
+				final = jobs.RetentionStatus(p.target)
 			}
 			// Mark deleting first: a crash here is recovered because the
 			// cleaner re-scans 'deleting' rows on the next pass. The lease check
 			// is inside the UPDATE so a download that starts concurrently cannot
 			// be deleted underneath (F03).
-			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting', updated_at = ?
+			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting',
+				retention_target = ?, updated_at = ?
 				WHERE id = ? AND retention_status IN ('release_pending','expiry_pending','deleting')
 				  AND NOT EXISTS (SELECT 1 FROM download_leases
 				                  WHERE job_id = ? AND expires_at > ?)`,
-				ts(nowUTC()), p.id, p.id, ts(nowUTC()))
+				string(final), ts(nowUTC()), p.id, p.id, ts(nowUTC()))
 			if err != nil {
 				rep.Errors = append(rep.Errors, "mark deleting: "+err.Error())
 				continue

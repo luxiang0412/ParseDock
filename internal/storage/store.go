@@ -294,6 +294,18 @@ func (s *Store) DeleteJob(jobID string) error {
 	return firstErr
 }
 
+// DeleteResults removes only the published result directory (used when a result is
+// rejected after it was written but before the job committed).
+func (s *Store) DeleteResults(jobID string) error {
+	if jobID == "" || strings.ContainsAny(jobID, "/\\") {
+		return fmt.Errorf("invalid job id %q", jobID)
+	}
+	if err := os.RemoveAll(s.ResultDir(jobID)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
 // SweepParts removes stale *.part files left behind by crashes.
 func (s *Store) SweepParts(olderThan time.Duration) (int, error) {
 	entries, err := os.ReadDir(filepath.Join(s.Root, "tmp"))

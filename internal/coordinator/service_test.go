@@ -949,3 +949,37 @@ func TestStorageQuotaRejectionIsTerminal(t *testing.T) {
 		t.Fatalf("storage accounting leaked: %d", stored)
 	}
 }
+
+// Codex review (PR-06): a crash after the files are gone but before finalization
+// must be retried; 'deleting' jobs are therefore picked up again.
+func TestCleanupRetriesDeletingJobs(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a crash after the files were deleted and the row entered 'deleting'.
+	if err := s.Store.DeleteJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status='deleting', retention_target='released' WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.RetentionStatus != jobs.RetentionReleased {
+		t.Fatalf("deleting job not retried: %s", got.RetentionStatus)
+	}
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM owner_storage`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounting leaked: %d", stored)
+	}
+}

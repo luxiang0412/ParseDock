@@ -746,20 +746,33 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			// terminally in this transaction: leaving it 'running' would let the
 			// lease expire and requeue a job whose input was deleted.
 			msg := "result exceeds the owner's storage quota; release older results or raise --quota-storage-mb"
-			if _, uerr := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
+			// The rejection must be fenced exactly like a normal completion: a stale
+			// worker may not fail a job now owned by a newer attempt.
+			ures, uerr := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
 				error_code = ?, error_message = ?, retention_status = 'release_pending',
 				progress_stage = 'quota_rejected', updated_at = ?
-				WHERE id = ? AND processing_status = 'running'`,
-				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID); uerr != nil {
+				WHERE id = ? AND processing_status = 'running'
+				  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
+				  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND lease_until > ?)`,
+				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
+			if uerr != nil {
 				_ = tx.Rollback()
+				_ = s.Store.DeleteResults(p.JobID)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+uerr.Error())
+			}
+			if n, _ := ures.RowsAffected(); n == 0 {
+				_ = tx.Rollback()
+				_ = s.Store.DeleteResults(p.JobID) // only the result, never the input
+				return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 			}
 			if _, aerr := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ?
 				WHERE job_id = ? AND lease_token = ?`, msg, p.JobID, p.Token); aerr != nil {
 				_ = tx.Rollback()
+				_ = s.Store.DeleteResults(p.JobID)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+aerr.Error())
 			}
 			if cerr := tx.Commit(); cerr != nil {
+				_ = s.Store.DeleteResults(p.JobID)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
 			}
 			// The job is terminal now; its input and the rejected result go away.
