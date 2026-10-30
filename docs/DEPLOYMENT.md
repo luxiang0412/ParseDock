@@ -96,6 +96,8 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--quota-bytes-per-day` | `PARSEDOCK_QUOTA_BYTES_PER_DAY` | `0` (off) | input bytes per owner per rolling 24 h |
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
+| `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
+| `--escalate-scans` | `PARSEDOCK_ESCALATE_SCANS` | `1` | retry a CJK scan once with the accurate engine when the fast engine reports low OCR confidence (only `mode=auto`, only when the retry yields at least as much text) |
 | engine paths | `PARSEDOCK_XBERG_BIN`, `PARSEDOCK_DOCLING_RS_BIN`, … | – | adapters |
 
 `docparse --check` prints host facts, the effective config and the routing table as

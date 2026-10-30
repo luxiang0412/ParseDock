@@ -66,6 +66,7 @@ const (
 	ErrPageLimit         = "page_limit_exceeded"
 	ErrZipBomb           = "suspicious_compression"
 	ErrExpandedTooLarge  = "expanded_too_large"
+	ErrEngineOOM         = "engine_out_of_memory"
 	ErrQuotaExceeded     = "quota_exceeded"
 	ErrInsufficientSpace = "insufficient_storage"
 	ErrEngineUnavailable = "engine_unavailable"

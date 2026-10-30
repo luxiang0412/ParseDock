@@ -30,6 +30,7 @@ type MinerU struct {
 	VersionS  string
 	Home      string // ephemeral MINERU_HOME
 	Sandbox   string
+	MaxRSSMB  int64
 	Timeout   time.Duration
 	MaxChars  int
 }
@@ -116,11 +117,15 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 	if req.Progress != nil {
 		req.Progress(5, "engine_start")
 	}
-	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, Sandbox: m.Sandbox, MaxOutput: 8 << 20},
+	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, Sandbox: m.Sandbox, MaxOutput: 8 << 20, MaxRSSMB: m.MaxRSSMB},
 		req.WorkDir, args...)
 	if err != nil {
 		if res != nil && res.TimedOut {
 			return nil, Errf(true, jobs.ErrTimeout, "mineru timed out after %s", timeout)
+		}
+		if errors.Is(err, ErrOOM) {
+			return nil, Errf(true, jobs.ErrEngineOOM,
+				"mineru exceeded its memory ceiling while parsing this document")
 		}
 		if errors.Is(err, ErrSandboxUnavailable) {
 			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)

@@ -23,6 +23,17 @@ print(node)
 PY
 }
 
+verify_sha() { # file, expected
+  local got
+  got="$(sha256sum "$1" | awk '{print $1}')"
+  if [[ "$got" != "$2" ]]; then
+    echo "checksum mismatch for $1: got $got want $2" >&2
+    rm -f "$1"
+    return 1
+  fi
+  echo "checksum ok: $(basename "$1")"
+}
+
 XBERG_VERSION="$(read_lock engines.xberg)"
 DOCLING_RS_VERSION="$(read_lock engines.docling_rs)"
 
@@ -36,6 +47,7 @@ if [[ "$has_xberg" == 1 ]]; then
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/xberg.tgz" \
       "https://github.com/xberg-io/xberg/releases/download/v${XBERG_VERSION}/xberg-cli-x86_64-unknown-linux-gnu.tar.gz"
+    verify_sha "$tmp/xberg.tgz" "$(read_lock engines.artifacts.xberg_cli.sha256)"
     rm -rf "$ENGINES/xberg-cli"
     mkdir -p "$ENGINES/xberg-cli"
     tar -xzf "$tmp/xberg.tgz" -C "$ENGINES/xberg-cli" --strip-components=1
@@ -50,6 +62,7 @@ if [[ "$has_docling" == 1 ]]; then
     tmp="$(mktemp -d)"
     curl -fsSL -o "$tmp/docling-rs.tgz" \
       "https://github.com/docling-project/docling.rs/releases/download/v${DOCLING_RS_VERSION}/docling-rs-v${DOCLING_RS_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+    verify_sha "$tmp/docling-rs.tgz" "$(read_lock engines.artifacts.docling_rs.sha256)"
     mkdir -p "$ENGINES/docling-rs"
     tar -xzf "$tmp/docling-rs.tgz" -C "$ENGINES/docling-rs"
     chmod +x "$ENGINES/docling-rs/docling-rs"
@@ -58,7 +71,7 @@ if [[ "$has_docling" == 1 ]]; then
   if [[ ! -f "$ENGINES/docling-rs/.models/layout_heron.onnx" ]]; then
     echo "downloading docling-rs models ($(read_lock engines.docling_rs_models))"
     ( cd "$ENGINES/docling-rs" && \
-      curl -fsSL https://raw.githubusercontent.com/docling-project/docling.rs/master/scripts/install/download_dependencies.sh \
+      curl -fsSL "$(read_lock engines.artifacts.docling_rs_models_script.url)" \
         | bash -s -- --no-asr --no-chunk )
   fi
   "$ENGINES/docling-rs/docling-rs" --version

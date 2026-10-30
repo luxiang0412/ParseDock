@@ -196,6 +196,12 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 			return nil, false, validationErr(err)
 		}
 	}
+	if format.Name == "doc" || format.Name == "xls" || format.Name == "ppt" {
+		if err := storage.VerifyCompoundFile(s.Store.InputPath(jobID)); err != nil {
+			_ = s.Store.DeleteJob(jobID)
+			return nil, false, validationErr(err)
+		}
+	}
 
 	engineHint, reason, gerr := s.route(ctx, format.Name, mode, device)
 	if gerr != nil {

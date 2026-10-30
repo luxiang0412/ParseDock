@@ -138,6 +138,14 @@ resource-ceiling test (1.5 GB cgroup) still completes the 30-page fixture.
 **DoD.** `docker/Dockerfile.engines` builds reproducibly from pinned inputs;
 `docs/ENGINE-BENCHMARK.md` numbers refreshed on the same corpus.
 
+**Status: DONE (PR-04).** Engine artefacts are checksum-pinned (xberg/docling-rs
+tarballs + the models script at a fixed commit) and verified in the image build and
+in CI; `--engine-max-rss-mb` enforces a per-invocation RSS ceiling and classifies it
+as retryable `engine_out_of_memory`; legacy OLE2 Office (`.doc/.xls/.ppt`) is accepted
+with a compound-file pre-flight and a `legacy_format` warning; RC-3 scan escalation
+retries a CJK scan once with the accurate engine and records `routing.fallback`.
+**Not closed here:** L1 (`libx265`) stays BLOCKED on legal; the GPU image is PR-08.
+
 ---
 
 ## PR-05 — Document IR v0.1 freeze + conformance suite

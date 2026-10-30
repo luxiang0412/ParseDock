@@ -30,6 +30,7 @@ type DoclingRS struct {
 	OCR           bool
 	OCRLang       string // en | ch
 	NoTables      bool
+	MaxRSSMB      int64
 	Sandbox       string
 	ExtraEnv      []string
 	Timeout       time.Duration
@@ -56,7 +57,8 @@ func (d *DoclingRS) Device() string {
 
 // Formats implements Engine.
 func (d *DoclingRS) Formats() []string {
-	return []string{"pdf", "docx", "xlsx", "pptx", "md", "txt", "html", "png", "jpeg", "webp"}
+	return []string{"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt",
+		"md", "txt", "html", "png", "jpeg", "webp"}
 }
 
 // Modes implements Engine.
@@ -102,7 +104,7 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 	if req.Progress != nil {
 		req.Progress(5, "engine_start")
 	}
-	spec := CLISpec{Bin: d.Bin, Env: d.ExtraEnv, Sandbox: d.Sandbox, MaxOutput: 512 << 20}
+	spec := CLISpec{Bin: d.Bin, Env: d.ExtraEnv, Sandbox: d.Sandbox, MaxOutput: 512 << 20, MaxRSSMB: d.MaxRSSMB}
 	res, err := RunCLI(ctx, spec, d.ModelRoot, args...)
 	if err != nil && res != nil && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
 		err = nil
@@ -110,6 +112,10 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 	if err != nil {
 		if res != nil && res.TimedOut {
 			return nil, Errf(true, jobs.ErrTimeout, "docling-rs timed out after %s", timeout)
+		}
+		if errors.Is(err, ErrOOM) {
+			return nil, Errf(true, jobs.ErrEngineOOM,
+				"docling-rs exceeded its memory ceiling while parsing this document")
 		}
 		if errors.Is(err, ErrSandboxUnavailable) {
 			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)

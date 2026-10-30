@@ -49,12 +49,21 @@ var webpMagic = func(b []byte) bool {
 }
 var zipMagic = func(b []byte) bool { return len(b) >= 4 && bytes.Equal(b[:4], []byte{'P', 'K', 0x03, 0x04}) }
 
+// ole2Magic is the compound-file signature shared by legacy .doc/.xls/.ppt.
+var ole2Magic = func(b []byte) bool {
+	return len(b) >= 8 && bytes.Equal(b[:8], []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
+}
+
 // Formats is the upload allow-list (P0).
 var Formats = []Format{
 	{Name: "pdf", Mime: "application/pdf", Exts: []string{".pdf"}, Magic: pdfMagic},
 	{Name: "docx", Mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", Exts: []string{".docx"}, ZipBased: true, Magic: zipMagic},
 	{Name: "xlsx", Mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", Exts: []string{".xlsx", ".xlsm"}, ZipBased: true, Magic: zipMagic},
 	{Name: "pptx", Mime: "application/vnd.openxmlformats-officedocument.presentationml.presentation", Exts: []string{".pptx"}, ZipBased: true, Magic: zipMagic},
+	// Legacy OLE2 Office. Text and tables only: no page geometry, no bbox.
+	{Name: "doc", Mime: "application/msword", Exts: []string{".doc", ".dot"}, Magic: ole2Magic},
+	{Name: "xls", Mime: "application/vnd.ms-excel", Exts: []string{".xls", ".xlt"}, Magic: ole2Magic},
+	{Name: "ppt", Mime: "application/vnd.ms-powerpoint", Exts: []string{".ppt", ".pot"}, Magic: ole2Magic},
 	{Name: "csv", Mime: "text/csv", Exts: []string{".csv"}},
 	{Name: "tsv", Mime: "text/tab-separated-values", Exts: []string{".tsv"}},
 	{Name: "txt", Mime: "text/plain", Exts: []string{".txt"}},
@@ -131,6 +140,18 @@ func SniffFormat(fileName string, head []byte, lim Limits) (Format, error) {
 		return Format{}, &ValidationError{Code: "malformed_file", Msg: "empty file"}
 	}
 	byExt, hasExt := LookupByExt(fileName)
+
+	// OLE2 is a shared container (doc/xls/ppt), so like zip its type comes from the
+	// extension; VerifyCompoundFile then validates the header before an engine runs.
+	if ole2Magic(head) {
+		if hasExt && isOLE2Format(byExt.Name) {
+			return byExt, nil
+		}
+		return Format{}, &ValidationError{
+			Code: "unsupported_type",
+			Msg:  "OLE2 compound files are only accepted as .doc/.dot/.xls/.xlt/.ppt/.pot",
+		}
+	}
 
 	// A zip container is shared by docx/xlsx/pptx, so its real type must come
 	// from the extension and is confirmed later by VerifyZipContainer.
@@ -244,6 +265,38 @@ func VerifyZipContainer(path string, format Format, lim Limits) error {
 	}
 	if !haveCore {
 		return &ValidationError{Code: "unsupported_type", Msg: "archive does not match " + format.Name + " structure"}
+	}
+	return nil
+}
+
+func isOLE2Format(name string) bool {
+	return name == "doc" || name == "xls" || name == "ppt"
+}
+
+// VerifyCompoundFile validates the OLE2 (compound file binary) header before an
+// engine is invoked. Legacy Office files are untrusted input like any other: the
+// parser does the real work, this only rejects non-CFB bytes and absurd headers.
+func VerifyCompoundFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	head := make([]byte, 512)
+	if _, err := io.ReadFull(f, head); err != nil {
+		return &ValidationError{Code: "malformed_file", Msg: "compound file shorter than its header"}
+	}
+	if !bytes.Equal(head[:8], []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}) {
+		return &ValidationError{Code: "malformed_file", Msg: "not an OLE2 compound file"}
+	}
+	if head[28] != 0xFE || head[29] != 0xFF {
+		return &ValidationError{Code: "malformed_file", Msg: "compound file byte order marker is invalid"}
+	}
+	sectorShift := uint16(head[30]) | uint16(head[31])<<8
+	major := uint16(head[26]) | uint16(head[27])<<8
+	if (major == 3 && sectorShift != 9) || (major == 4 && sectorShift != 12) ||
+		(major != 3 && major != 4) {
+		return &ValidationError{Code: "malformed_file", Msg: "unsupported compound file version/sector size"}
 	}
 	return nil
 }

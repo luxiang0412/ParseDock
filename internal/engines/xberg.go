@@ -27,6 +27,7 @@ type Xberg struct {
 	// Cache enables xberg's on-disk extraction cache. Disabled by default: a
 	// worker must not persist document text between jobs.
 	Cache    bool
+	MaxRSSMB int64
 	Sandbox  string
 	ExtraEnv []string
 	Timeout  time.Duration
@@ -48,7 +49,8 @@ func (x *Xberg) Device() string { return "cpu" }
 
 // Formats implements Engine.
 func (x *Xberg) Formats() []string {
-	return []string{"pdf", "docx", "xlsx", "pptx", "csv", "tsv", "txt", "md", "png", "jpeg", "webp"}
+	return []string{"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt",
+		"csv", "tsv", "txt", "md", "png", "jpeg", "webp"}
 }
 
 // Modes implements Engine.
@@ -65,7 +67,7 @@ func (x *Xberg) spec() CLISpec {
 	if x.LibDir != "" {
 		env = append(env, "LD_LIBRARY_PATH="+x.LibDir)
 	}
-	return CLISpec{Bin: x.Bin, Env: env, Sandbox: x.Sandbox, MaxOutput: 256 << 20}
+	return CLISpec{Bin: x.Bin, Env: env, Sandbox: x.Sandbox, MaxOutput: 256 << 20, MaxRSSMB: x.MaxRSSMB}
 }
 
 type xbergOutput struct {
@@ -161,6 +163,10 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	if err != nil {
 		if res != nil && res.TimedOut {
 			return nil, Errf(true, jobs.ErrTimeout, "xberg timed out after %s", timeout)
+		}
+		if errors.Is(err, ErrOOM) {
+			return nil, Errf(true, jobs.ErrEngineOOM,
+				"xberg exceeded its memory ceiling while parsing this document")
 		}
 		if errors.Is(err, ErrSandboxUnavailable) {
 			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)

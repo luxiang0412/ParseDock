@@ -117,6 +117,20 @@
   * 1.37 GB image, JVM service to operate, `latest-full` is a moving tag (digest must be pinned).
 * **Verdict:** fallback only (`mode=fast`, low routing priority), not a primary engine.
 
+## 6b. Legacy OLE2 Office (`.doc`, `.xls`, `.ppt`)
+
+Real-corpus finding RC-1 (12 `.doc`, 2 `.xls`) led to accepting OLE2 compound files.
+Both engines handle them, verified on Apache POI test-data fixtures (Apache-2.0):
+
+| Fixture | xberg | docling-rs |
+| --- | --- | --- |
+| `legacy_word6.doc` (Word 6, 6.6 KB) | `method=native`, 43 chars | 1 text element |
+| `legacy_simple.xls` (Excel 5, 13.8 KB) | 1 table, 3 sheets | 1 table |
+
+Contract: **text + tables only**, no page numbers, no bbox; the IR carries a
+`legacy_format` warning. Compound files are pre-flighted (`VerifyCompoundFile`:
+CFB signature, byte-order marker, version/sector-size pair) before an engine runs.
+
 ## 7. Candidate exit record
 
 | Candidate | Exit rule triggered? | Evidence |

@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,7 +23,15 @@ type CLISpec struct {
 	Env       []string // extra environment (PATH, LD_LIBRARY_PATH, model dirs)
 	Sandbox   string   // "", "unshare-net"
 	MaxOutput int64    // stdout byte ceiling (0 = unlimited)
+	// MaxRSSMB kills the parser when its resident set exceeds this ceiling
+	// (0 = unlimited). Cgroup limits are the deployment-level mechanism; this is
+	// the per-invocation guard so one oversized document cannot take the worker
+	// down with it.
+	MaxRSSMB int64
 }
+
+// ErrOOM reports that a parser was killed for exceeding its memory ceiling.
+var ErrOOM = errors.New("engine exceeded its memory ceiling")
 
 // ExecResult is the measured outcome of one subprocess parse.
 type ExecResult struct {
@@ -77,9 +86,38 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	}
 
 	start := time.Now()
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	stopMonitor := make(chan struct{})
+	oom := make(chan struct{})
+	if spec.MaxRSSMB > 0 {
+		go func(pid int) {
+			t := time.NewTicker(200 * time.Millisecond)
+			defer t.Stop()
+			for {
+				select {
+				case <-stopMonitor:
+					return
+				case <-t.C:
+					if rss, ok := processRSSMB(pid); ok && rss > spec.MaxRSSMB {
+						_ = syscall.Kill(-pid, syscall.SIGKILL)
+						close(oom)
+						return
+					}
+				}
+			}
+		}(cmd.Process.Pid)
+	}
+	err := cmd.Wait()
+	close(stopMonitor)
 	elapsed := time.Since(start)
 	res := &ExecResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), Elapsed: elapsed}
+	select {
+	case <-oom:
+		return res, ErrOOM
+	default:
+	}
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 		if ru, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok && ru != nil {
@@ -95,6 +133,28 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 		return res, err
 	}
 	return res, nil
+}
+
+// processRSSMB reports the current resident set of a process in MiB.
+func processRSSMB(pid int) (int64, bool) {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("VmRSS:")) {
+			fields := bytes.Fields(line)
+			if len(fields) < 2 {
+				return 0, false
+			}
+			kb, perr := strconv.ParseInt(string(fields[1]), 10, 64)
+			if perr != nil {
+				return 0, false
+			}
+			return kb / 1024, true
+		}
+	}
+	return 0, false
 }
 
 type limitedWriter struct {

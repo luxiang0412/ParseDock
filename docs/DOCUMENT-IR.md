@@ -100,7 +100,10 @@ Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 `page_limit_reached`, `partial_content`, `encrypted`, `degraded_conversion`,
 `unsupported_element`, `layout_heuristic`, `no_coordinates`, plus adapter-specific
 `sheet_name_unavailable`, `encoding_converted`, `no_page_boundaries`,
-`formula_text_unavailable`, `ocr_quality_unknown`.
+`formula_text_unavailable`, `ocr_quality_unknown`, `legacy_format`.
+
+`legacy_format` marks OLE2 Word/Excel/PowerPoint input: text and tables are
+extracted, page numbers and coordinates are not available.
 
 ## 3. Rules the adapters must follow
 
@@ -125,6 +128,7 @@ Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 | xberg | ✅ page split | ✅ tables only | page text order + tables | ⚠️ from `style_name` annotations | ✅ grid | ❌ (warning) | ⚠️ document-level quality score |
 | MinerU (flash) | ✅ `<!-- page N of M -->` | ❌ | markdown order | ⚠️ from markdown | ✅ via markdown tables | ❌ | ❌ |
 | Tika | ⚠️ only when form feeds exist (never for PDF in 4.2) | ❌ | text order | ⚠️ markdown headings for OOXML | ⚠️ markdown tables for OOXML | ❌ | ❌ |
+| legacy `.doc/.xls/.ppt` | ❌ (`legacy_format` warning) | ❌ | text/table order | xberg: no; docling: section headings where present | xberg: grid per sheet; docling: table cells | xlsx only via `.xls` sheet index | ❌ |
 | native | – (line) | ❌ | line order | ✅ markdown headings | ✅ csv/tsv grid | ⚠️ `csv` pseudo-sheet | ❌ |
 
 ## 5. Validation performed in Phase 0
