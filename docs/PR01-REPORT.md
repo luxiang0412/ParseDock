@@ -16,7 +16,7 @@
 | CI runtime ≤ 8 min for critical PR checks, with caching | **DONE** — 3 m 53 s – 3 m 58 s measured (lifecycle is the critical path) |
 | Licence audit distinguishes control-plane PASS from worker BLOCK | **DONE** — `licence-classification.txt` + `release-gate` enforce mode |
 | No API/ACK/TTL/worker/IR behaviour changes | **DONE** — no runtime code changed; tests unchanged and green |
-| Actually trigger CI (not just local runs) | **DONE** — 5 real runs incl. 1 failure that found a real bug (§6) |
+| Actually trigger CI (not just local runs) | **DONE** — 7 CI runs, 2 nightly runs and 4 engine-changes runs on GitHub-hosted runners, including 1 failing nightly and a negative-control PR (§4, §6, §6b) |
 
 **Verdict: PR-01 is complete except one platform-blocked item** — enforced merge
 blocking (branch protection) requires a paid plan or a public repository. **GO for
