@@ -154,7 +154,7 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		req.Progress(5, "engine_start")
 	}
 	res, err := RunCLI(ctx, x.spec(), req.WorkDir, args...)
-	if err != nil && res != nil && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
+	if err != nil && res != nil && !res.OOM && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
 		// exec.Cmd can report context.Canceled after a successful run when the
 		// context is cancelled while Wait() settles; if the engine produced valid
 		// output, trust the output instead of failing the job.

@@ -41,6 +41,9 @@ type ExecResult struct {
 	PeakRSSMB int64
 	ExitCode  int
 	TimedOut  bool
+	// OOM is set when the RSS monitor killed the parser; ExitCode is forced
+	// non-zero so callers cannot mistake the kill for a clean exit.
+	OOM bool
 }
 
 // RunCLI executes a parser binary with a hard timeout and optional network
@@ -113,17 +116,26 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	close(stopMonitor)
 	elapsed := time.Since(start)
 	res := &ExecResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), Elapsed: elapsed}
-	select {
-	case <-oom:
-		return res, ErrOOM
-	default:
-	}
+	// Fill the measured status *before* any early return: callers inspect
+	// ExitCode and PeakRSSMB to classify failures, and a memory kill must not look
+	// like a clean exit with output.
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 		if ru, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok && ru != nil {
 			// Linux reports ru_maxrss in kibibytes.
 			res.PeakRSSMB = ru.Maxrss / 1024
 		}
+	}
+	select {
+	case <-oom:
+		res.OOM = true
+		if res.ExitCode == 0 {
+			// Killed by the monitor; the exit code is not meaningful, but zero
+			// would be read as success by the adapters.
+			res.ExitCode = -1
+		}
+		return res, ErrOOM
+	default:
 	}
 	if ctx.Err() != nil {
 		res.TimedOut = true

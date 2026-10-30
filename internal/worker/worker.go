@@ -366,6 +366,11 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 			stage.Store(s)
 		},
 	})
+	// The escalation parse below runs under the same lease: heartbeats must keep
+	// flowing, otherwise a long accurate retry loses the attempt (codex review).
+	if perr == nil {
+		result, engine = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
+	}
 	cancelHB()
 	if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
 		// The job was cancelled while the engine was running: stop here even if
@@ -395,8 +400,6 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		result.AddWarning("legacy_format",
 			"legacy OLE2 Office document: text and tables are extracted, page numbers and coordinates are not available", "info")
 	}
-
-	result, engine = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
 
 	result.Source.FileName = task.InputName
 	result.Source.SHA256 = task.InputSHA256
