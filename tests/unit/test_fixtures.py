@@ -56,7 +56,8 @@ class FixtureManifestTest(unittest.TestCase):
         # The real corporate corpus is local-only; nothing under test_data may be tracked.
         tracked = ROOT / "test_data"
         if tracked.exists():
-            self.assertFalse((ROOT / ".git" / "index").stat().st_size == 0)
+            # No assumption about .git being a directory: in a worktree it is a file, and
+            # `git ls-files` already works in both layouts.
             import subprocess
             out = subprocess.run(["git", "-C", str(ROOT), "ls-files", "test_data"],
                                  capture_output=True, text=True, check=True).stdout.strip()

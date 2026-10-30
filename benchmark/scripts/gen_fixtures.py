@@ -297,9 +297,15 @@ def build_corpus(root: Path, count: int) -> list[dict]:
             sep = "," if i % 2 else ";"
             enc = "utf-8" if i % 3 else "gb18030"
             p = corpus / f"corpus_table_{i:03d}.csv"
-            lines = [sep.join(f"col{c}" for c in range(cols))]
+            # GB18030 fixtures must contain non-ASCII text, otherwise the encoding variant
+            # is byte-identical to UTF-8 and tests nothing.
+            header = [f"列{c}" if enc == "gb18030" else f"col{c}" for c in range(cols)]
+            lines = [sep.join(header)]
             for r in range(rows):
-                cells = [f"r{r}c{c}" if (r + c) % 5 else f"{r * 100 + c}" for c in range(cols)]
+                if enc == "gb18030" and (r + 1) % 4 == 0:
+                    cells = [f"第{r}行第{c}列" for c in range(cols)]
+                else:
+                    cells = [f"r{r}c{c}" if (r + c) % 5 else f"{r * 100 + c}" for c in range(cols)]
                 lines.append(sep.join(cells))
             p.write_text("\n".join(lines) + "\n", encoding=enc)
             note(p, "csv_table", "csv", 0, f"{rows}x{cols} {sep} {enc}")
