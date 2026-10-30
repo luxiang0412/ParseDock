@@ -18,12 +18,14 @@ JSON report with timings, which doubles as the RTO input for the restore drill.
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import shutil
 import sqlite3
 import sys
 import time
+import uuid
 from pathlib import Path
 
 # Retention states whose files are still servable. Everything else is cleanup-in-progress
@@ -65,6 +67,8 @@ def main() -> int:
     ap.add_argument("--verify", action="store_true")
     ap.add_argument("--skip-files", action="store_true",
                     help="metadata only (for a quick RPO test on a large tree)")
+    ap.add_argument("--lease-seconds", type=int, default=900,
+                    help="how long the backup pins active jobs against cleanup")
     args = ap.parse_args()
 
     data = Path(args.data_dir)
@@ -72,6 +76,11 @@ def main() -> int:
     src_db = data / "coordinator.db"
     if not src_db.exists():
         print(f"no coordinator.db in {data}", file=sys.stderr)
+        return 1
+    # A reused directory would keep artifacts of jobs that are no longer servable (the copy
+    # only overlays the current set), so the destination must be empty.
+    if out.exists() and any(out.iterdir()):
+        print(f"refusing to reuse non-empty {out} (released artifacts would survive)", file=sys.stderr)
         return 1
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
@@ -95,13 +104,45 @@ def main() -> int:
         "SELECT job_id, kind, path, size, sha256 FROM artifacts").fetchall()
     conn.close()
 
+    # 3. Pin those jobs against the live cleaner while the files are copied. The cleaner
+    # honours download_leases, so an ACK or expiry during the copy cannot delete a directory
+    # the snapshot still claims. Leases are removed afterwards (and expire anyway).
+    lease_ids, db_seconds_lock = [], 0.0
+    if jobs and not args.skip_files:
+        t_lock = time.time()
+        guard = sqlite3.connect(src_db)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        exp = now + datetime.timedelta(seconds=args.lease_seconds)
+        stamp = lambda d: d.isoformat(timespec="microseconds").replace("+00:00", "Z")
+        with guard:
+            for job_id in jobs:
+                lease = f"backup-{uuid.uuid4().hex}"
+                guard.execute(
+                    "INSERT OR IGNORE INTO download_leases"
+                    "(lease_id, job_id, created_at, expires_at, last_renewed_at)"
+                    " SELECT ?, ?, ?, ?, ? WHERE EXISTS"
+                    " (SELECT 1 FROM jobs WHERE id = ? AND retention_status = 'active')",
+                    (lease, job_id, stamp(now), stamp(exp), stamp(now), job_id))
+                lease_ids.append(lease)
+        guard.close()
+        db_seconds_lock = time.time() - t_lock
+
     files = bytes_copied = 0
-    if not args.skip_files:
-        files, bytes_copied = copy_tree(data, out / "files", jobs)
+    try:
+        if not args.skip_files:
+            files, bytes_copied = copy_tree(data, out / "files", jobs)
+    finally:
+        if lease_ids:
+            guard = sqlite3.connect(src_db)
+            with guard:
+                guard.executemany("DELETE FROM download_leases WHERE lease_id = ?",
+                                  [(l,) for l in lease_ids])
+            guard.close()
 
     report = {
         "backup": str(out),
         "db_seconds": round(db_seconds, 3),
+        "lease_seconds": round(db_seconds_lock, 3),
         "total_seconds": round(time.time() - started, 3),
         "jobs_servable": len(jobs),
         "files": files,

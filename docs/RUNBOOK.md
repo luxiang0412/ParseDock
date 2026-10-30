@@ -39,6 +39,15 @@ scripts/backup_online.py --data-dir /data --out /backups/2026-11-01 --verify
 status is `active`. Released and expired results are *not* copied — an ACK is a deletion
 request, and a restore must never resurrect one.
 
+Two properties that make the online variant safe on a live coordinator:
+
+1. **The copy is pinned.** While the files are copied, the tool inserts `download_leases`
+   for the snapshot's active jobs, which the cleaner already honours. A result ACKed or
+   expired *during* the backup therefore cannot be deleted mid-copy.
+2. **The destination must be empty.** Reusing a directory would overlay the new job set on
+   top of the old tree and silently keep artifacts that are no longer servable; the tool
+   refuses instead.
+
 **RPO / RTO.** RPO is your backup interval; the snapshot itself is consistent. RTO was
 measured on the PoC host with the restore drill:
 

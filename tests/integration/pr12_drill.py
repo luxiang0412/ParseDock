@@ -141,6 +141,14 @@ def main():
         results.append(("PR12-03", not os.path.isdir(os.path.join(backup, "files", "results", released)),
                         "released job's artifacts are absent from the backup"))
 
+        # A reused destination would overlay the new set on top of the old tree and keep
+        # artifacts of jobs that are no longer servable.
+        again = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "backup_online.py"),
+                                "--data-dir", live, "--out", backup],
+                               capture_output=True, text=True)
+        results.append(("PR12-06", again.returncode != 0 and "non-empty" in again.stderr,
+                        "second backup into the same directory is refused"))
+
         stack.stop()
         stack = None
 
