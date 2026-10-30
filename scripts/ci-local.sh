@@ -120,6 +120,9 @@ phase_engines() {
   # this run, never a successful record left behind by an earlier one.
   export PARSEDOCK_BENCH_RAW="$OUT/bench-raw"
   export PARSEDOCK_BENCH_SUMMARY="$OUT/bench-summary"
+  # Clear them: summarize.py picks the latest successful record, so a leftover file from a
+  # previous local run would let a currently failing sample inherit an old success.
+  rm -rf "$PARSEDOCK_BENCH_RAW" "$PARSEDOCK_BENCH_SUMMARY"
   mkdir -p "$PARSEDOCK_BENCH_RAW" "$PARSEDOCK_BENCH_SUMMARY"
   step "install real engines" bash "$ROOT/scripts/ci-install-engines.sh" xberg,docling-rs || return 1
   step "build binary" make -C "$ROOT" build || return 1

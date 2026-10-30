@@ -176,6 +176,15 @@ def main() -> int:
                 else:
                     failures.append(msg + " — a missing sample is not a pass")
                 continue
+            # Every metric the baseline recorded must be present now; a sample that only
+            # carries CER must not silently skip its latency checks (and vice versa).
+            for metric in ("cer", "p50_ms", "p95_ms"):
+                if metric in b and metric not in c:
+                    msg = f"{eng}/{f}: {metric} missing from the current run"
+                    if args.allow_missing:
+                        warnings.append(msg + " (skipped)")
+                    else:
+                        failures.append(msg + " — a missing metric is not a pass")
             if "cer" in b and "cer" in c:
                 d = (c["cer"] - b["cer"])  # absolute CER points
                 if d > 0.02:

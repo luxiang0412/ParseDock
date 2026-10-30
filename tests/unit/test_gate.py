@@ -114,6 +114,16 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.run_gate(), 1)
         self.assertEqual(self.run_gate(["--allow-missing"]), 0)
 
+    def test_missing_metric_fails(self):
+        """A sample present with CER but no latency must not skip the latency check."""
+        self.base_case()
+        self.write(
+            [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [],
+            [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 1)
+        self.assertEqual(self.run_gate(["--allow-missing"]), 0)
+
     def test_missing_baseline_is_an_error(self):
         self.write([{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
                    [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],
