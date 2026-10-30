@@ -46,7 +46,8 @@ func (t *Tika) Device() string {
 
 // Formats implements Engine.
 func (t *Tika) Formats() []string {
-	return []string{"pdf", "docx", "xlsx", "pptx", "csv", "tsv", "txt", "md", "png", "jpeg", "webp", "html"}
+	return []string{"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt",
+		"csv", "tsv", "txt", "md", "png", "jpeg", "webp", "html"}
 }
 
 // Modes implements Engine.

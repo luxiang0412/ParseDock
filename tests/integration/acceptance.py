@@ -485,6 +485,8 @@ def t02(stack: Stack) -> dict:
         ("xlsx", FIX / "xlsx_workbook.xlsx"),
         ("csv", FIX / "csv_utf8.csv"),
         ("md", FIX / "md_notes.md"),
+        ("doc", FIX / "legacy_word6.doc"),
+        ("xls", FIX / "legacy_simple.xls"),
         ("png", FIX / "image_png.png") if (FIX / "image_png.png").exists() else ("png", FIX / "image_screenshot.jpg"),
     ]
     out = {}

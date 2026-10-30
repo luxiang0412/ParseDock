@@ -198,6 +198,22 @@ func (d *Document) Finalize() {
 	}
 }
 
+// TextLength counts runes in element text plus table cell text. It is the
+// comparison used when deciding whether an escalated parse is better: ignoring
+// table cells would let a retry silently drop extracted tables.
+func (d *Document) TextLength() int {
+	n := 0
+	for _, el := range d.Elements {
+		n += len([]rune(el.Text))
+	}
+	for _, t := range d.Tables {
+		for _, c := range t.Cells {
+			n += len([]rune(c.Text))
+		}
+	}
+	return n
+}
+
 // HasBBox reports whether any element or table carries geometry. Adapters use it
 // to decide whether a `no_coordinates` warning is truthful.
 func (d *Document) HasBBox() bool {

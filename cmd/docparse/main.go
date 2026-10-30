@@ -83,6 +83,8 @@ type flags struct {
 	xbergTimeout     time.Duration
 	doclingRSTimeout time.Duration
 	mineruTimeout    time.Duration
+	engineMaxRSSMB   int64
+	escalateScans    bool
 	doclingRSBin     string
 	doclingRSModel   string
 	doclingRSText    bool
@@ -155,6 +157,8 @@ func parseFlags() *flags {
 	fs.DurationVar(&f.xbergTimeout, "xberg-timeout", durEnv("PARSEDOCK_XBERG_TIMEOUT", 10*time.Minute), "per-document xberg ceiling (capped by --max-parse-minutes)")
 	fs.DurationVar(&f.doclingRSTimeout, "docling-rs-timeout", durEnv("PARSEDOCK_DOCLING_RS_TIMEOUT", 15*time.Minute), "per-document docling-rs ceiling (capped by --max-parse-minutes)")
 	fs.DurationVar(&f.mineruTimeout, "mineru-timeout", durEnv("PARSEDOCK_MINERU_TIMEOUT", 30*time.Minute), "per-document MinerU ceiling (capped by --max-parse-minutes)")
+	fs.BoolVar(&f.escalateScans, "escalate-scans", env("PARSEDOCK_ESCALATE_SCANS", "1") == "1", "retry a CJK scan once with the accurate engine when the fast engine warns about OCR quality")
+	fs.Int64Var(&f.engineMaxRSSMB, "engine-max-rss-mb", int64Env("PARSEDOCK_ENGINE_MAX_RSS_MB", 0), "kill an engine process above this RSS (0 = unlimited; cgroups are the deployment-level limit)")
 	fs.StringVar(&f.doclingRSBin, "docling-rs-bin", env("PARSEDOCK_DOCLING_RS_BIN", ""), "path to docling-rs CLI")
 	fs.StringVar(&f.doclingRSModel, "docling-rs-models", env("PARSEDOCK_DOCLING_RS_MODELS", ""), "dir containing .models")
 	fs.BoolVar(&f.doclingRSText, "docling-rs-text-layer", env("PARSEDOCK_DOCLING_RS_TEXT_LAYER", "") == "1", "docling-rs text-layer-only mode")
@@ -334,6 +338,7 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 		HeartbeatInterval: f.heartbeat,
 		MaxParseTime:      time.Duration(f.maxParseMinutes) * time.Minute,
 		MaxInputBytes:     f.maxUploadMB << 20,
+		EscalateScans:     f.escalateScans,
 		WorkMaxAge:        f.workMaxAge,
 		WorkScrubInterval: f.workScrubInterval,
 		Engines:           reg.Names(),
@@ -432,7 +437,8 @@ func buildRegistry(f *flags, device string) *engines.Registry {
 			}
 			reg.Add(&engines.Xberg{
 				Bin: f.xbergBin, LibDir: f.xbergLibDir, VersionS: probeVersion(f.xbergBin, f.xbergLibDir),
-				OCR: f.xbergOCR, OCRLang: f.xbergOCRLang, Sandbox: sandboxArg(f.sandbox), Timeout: f.xbergTimeout,
+				OCR: f.xbergOCR, OCRLang: f.xbergOCRLang, Sandbox: sandboxArg(f.sandbox),
+				MaxRSSMB: f.engineMaxRSSMB, Timeout: f.xbergTimeout,
 			})
 		case "docling-rs":
 			if f.doclingRSBin == "" {
@@ -441,7 +447,7 @@ func buildRegistry(f *flags, device string) *engines.Registry {
 			reg.Add(&engines.DoclingRS{
 				Bin: f.doclingRSBin, ModelRoot: f.doclingRSModel, VersionS: probeVersion(f.doclingRSBin, ""),
 				DeviceStr: device, TextLayerOnly: f.doclingRSText, OCR: f.xbergOCR, OCRLang: doclingLang(f.xbergOCRLang),
-				Sandbox: sandboxArg(f.sandbox), Timeout: f.doclingRSTimeout,
+				Sandbox: sandboxArg(f.sandbox), MaxRSSMB: f.engineMaxRSSMB, Timeout: f.doclingRSTimeout,
 			})
 		case "docling-serve":
 			if f.doclingServe == "" {
@@ -463,7 +469,8 @@ func buildRegistry(f *flags, device string) *engines.Registry {
 				continue
 			}
 			reg.Add(&engines.MinerU{Bin: f.mineruBin, Tier: f.mineruTier, Home: f.mineruHome,
-				DeviceStr: device, Sandbox: sandboxArg(f.sandbox), Timeout: f.mineruTimeout})
+				DeviceStr: device, Sandbox: sandboxArg(f.sandbox), MaxRSSMB: f.engineMaxRSSMB,
+				Timeout: f.mineruTimeout})
 		}
 	}
 	return reg

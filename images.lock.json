@@ -12,7 +12,21 @@
     "xberg": "1.3.10",
     "docling_rs": "2.53.3",
     "docling_rs_models": "models-v1",
-    "tesseract_langs": "tesseract-ocr-eng tesseract-ocr-chi-sim"
+    "tesseract_langs": "tesseract-ocr-eng tesseract-ocr-chi-sim",
+    "artifacts": {
+      "xberg_cli": {
+        "url": "https://github.com/xberg-io/xberg/releases/download/v1.3.10/xberg-cli-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "851fb4f8ea9fb2446886555d6f4cae963c234e923c9b73cee2af8efc15bd063f"
+      },
+      "docling_rs": {
+        "url": "https://github.com/docling-project/docling.rs/releases/download/v2.53.3/docling-rs-v2.53.3-x86_64-unknown-linux-gnu.tar.gz",
+        "sha256": "420987b18ae07e7803daf14d011c59cbd5c4af8901440bcf79c6e3059cddf241"
+      },
+      "docling_rs_models_script": {
+        "url": "https://raw.githubusercontent.com/docling-project/docling.rs/abc209482243741f4c9146cfe9fc6bc1e70fa6c4/scripts/install/download_dependencies.sh",
+        "commit": "abc209482243741f4c9146cfe9fc6bc1e70fa6c4"
+      }
+    }
   },
   "python": {
     "ci_requirements": "requirements-ci.txt"

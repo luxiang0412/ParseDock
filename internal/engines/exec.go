@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -22,7 +23,15 @@ type CLISpec struct {
 	Env       []string // extra environment (PATH, LD_LIBRARY_PATH, model dirs)
 	Sandbox   string   // "", "unshare-net"
 	MaxOutput int64    // stdout byte ceiling (0 = unlimited)
+	// MaxRSSMB kills the parser when its resident set exceeds this ceiling
+	// (0 = unlimited). Cgroup limits are the deployment-level mechanism; this is
+	// the per-invocation guard so one oversized document cannot take the worker
+	// down with it.
+	MaxRSSMB int64
 }
+
+// ErrOOM reports that a parser was killed for exceeding its memory ceiling.
+var ErrOOM = errors.New("engine exceeded its memory ceiling")
 
 // ExecResult is the measured outcome of one subprocess parse.
 type ExecResult struct {
@@ -32,6 +41,9 @@ type ExecResult struct {
 	PeakRSSMB int64
 	ExitCode  int
 	TimedOut  bool
+	// OOM is set when the RSS monitor killed the parser; ExitCode is forced
+	// non-zero so callers cannot mistake the kill for a clean exit.
+	OOM bool
 }
 
 // RunCLI executes a parser binary with a hard timeout and optional network
@@ -77,15 +89,62 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	}
 
 	start := time.Now()
-	err := cmd.Run()
+	if err := cmd.Start(); err != nil {
+		return nil, err
+	}
+	stopMonitor := make(chan struct{})
+	oom := make(chan struct{})
+	monitorDone := make(chan struct{})
+	if spec.MaxRSSMB > 0 {
+		go func(pid int) {
+			// monitorDone is closed after the outcome channel has been published,
+			// so Wait() returning first cannot make us miss an OOM kill.
+			defer close(monitorDone)
+			t := time.NewTicker(500 * time.Millisecond)
+			defer t.Stop()
+			for {
+				select {
+				case <-stopMonitor:
+					return
+				case <-t.C:
+					// Engines spawn helpers (tesseract, multiprocessing workers);
+					// measure the whole process group, not just the launcher.
+					if rss, ok := processGroupRSSMB(pid); ok && rss > spec.MaxRSSMB {
+						_ = syscall.Kill(-pid, syscall.SIGKILL)
+						close(oom)
+						return
+					}
+				}
+			}
+		}(cmd.Process.Pid)
+	}
+	err := cmd.Wait()
+	close(stopMonitor)
+	if spec.MaxRSSMB > 0 {
+		<-monitorDone // join the monitor before classifying the result
+	}
 	elapsed := time.Since(start)
 	res := &ExecResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), Elapsed: elapsed}
+	// Fill the measured status *before* any early return: callers inspect
+	// ExitCode and PeakRSSMB to classify failures, and a memory kill must not look
+	// like a clean exit with output.
 	if cmd.ProcessState != nil {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 		if ru, ok := cmd.ProcessState.SysUsage().(*syscall.Rusage); ok && ru != nil {
 			// Linux reports ru_maxrss in kibibytes.
 			res.PeakRSSMB = ru.Maxrss / 1024
 		}
+	}
+	select {
+	case <-oom:
+		res.OOM = true
+		if res.ExitCode == 0 {
+			// Killed by the monitor; the exit code is not meaningful, but zero
+			// would be read as success by the adapters.
+			res.ExitCode = -1
+		}
+		return res, ErrOOM
+	default:
 	}
 	if ctx.Err() != nil {
 		res.TimedOut = true
@@ -95,6 +154,76 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 		return res, err
 	}
 	return res, nil
+}
+
+// processGroupRSSMB sums the resident set of every process in the group led by
+// pgid (we start every parser with Setpgid, so the group id equals its pid).
+func processGroupRSSMB(pgid int) (int64, bool) {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return 0, false
+	}
+	var total int64
+	found := false
+	for _, e := range entries {
+		pid, perr := strconv.Atoi(e.Name())
+		if perr != nil {
+			continue
+		}
+		if groupOf(pid) != pgid {
+			continue
+		}
+		if rss, ok := processRSSMB(pid); ok {
+			total += rss
+			found = true
+		}
+	}
+	return total, found
+}
+
+// groupOf returns a process's process-group id, or 0 when it cannot be read.
+func groupOf(pid int) int {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return 0
+	}
+	// The comm field is parenthesised and may contain spaces; parse after it.
+	i := bytes.LastIndexByte(b, ')')
+	if i < 0 || i+2 > len(b) {
+		return 0
+	}
+	fields := bytes.Fields(b[i+2:])
+	if len(fields) < 3 {
+		return 0
+	}
+	// state(0) ppid(1) pgrp(2)
+	pgid, perr := strconv.Atoi(string(fields[2]))
+	if perr != nil {
+		return 0
+	}
+	return pgid
+}
+
+// processRSSMB reports the current resident set of a process in MiB.
+func processRSSMB(pid int) (int64, bool) {
+	b, err := os.ReadFile(fmt.Sprintf("/proc/%d/status", pid))
+	if err != nil {
+		return 0, false
+	}
+	for _, line := range bytes.Split(b, []byte("\n")) {
+		if bytes.HasPrefix(line, []byte("VmRSS:")) {
+			fields := bytes.Fields(line)
+			if len(fields) < 2 {
+				return 0, false
+			}
+			kb, perr := strconv.ParseInt(string(fields[1]), 10, 64)
+			if perr != nil {
+				return 0, false
+			}
+			return kb / 1024, true
+		}
+	}
+	return 0, false
 }
 
 type limitedWriter struct {

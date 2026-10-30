@@ -91,6 +91,27 @@ def verify(root: Path) -> list[str]:
     if gpu and cuda and cuda not in gpu:
         problems.append("docker/Dockerfile.worker-gpu does not use the locked CUDA base")
 
+    artifacts = (engines.get("artifacts") or {})
+    for name in ("xberg_cli", "docling_rs"):
+        art = artifacts.get(name) or {}
+        sha = art.get("sha256", "")
+        if not re.fullmatch(r"[0-9a-f]{64}", sha):
+            problems.append(f"images.lock.json: engines.artifacts.{name}.sha256 missing or invalid")
+        elif sha not in read(root / "docker" / "Dockerfile.engines"):
+            problems.append(f"docker/Dockerfile.engines does not pin the {name} sha256")
+        else:
+            installer = read(root / "scripts" / "ci-install-engines.sh")
+            # The installer must verify the artefact, either with the literal hash
+            # or by reading the locked value (preferred: one source of truth).
+            if sha not in installer and f"engines.artifacts.{name}.sha256" not in installer:
+                problems.append(f"scripts/ci-install-engines.sh does not verify the {name} sha256")
+    models = artifacts.get("docling_rs_models_script") or {}
+    commit = models.get("commit", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        problems.append("images.lock.json: engines.artifacts.docling_rs_models_script.commit missing")
+    elif f"docling.rs/{commit}/scripts/install/download_dependencies.sh" not in read(root / "docker" / "Dockerfile.engines"):
+        problems.append("docker/Dockerfile.engines does not pin the models download script to the locked commit")
+
     engines_df = read(root / "docker" / "Dockerfile.engines")
     for arg, key in (("XBERG_VERSION", "xberg"), ("DOCLING_RS_VERSION", "docling_rs"),
                      ("DOCLING_RS_MODELS_TAG", "docling_rs_models")):

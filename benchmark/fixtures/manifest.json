@@ -265,6 +265,28 @@
       "gold": "gold/pdf_text_en_30p.gold.txt",
       "notes": "30-page synthetic PDF for GPU/CPU amortised comparison",
       "sensitive": false
+    },
+    {
+      "path": "generated/legacy_word6.doc",
+      "category": "legacy_doc",
+      "format": "doc",
+      "bytes": 6656,
+      "sha256": "58ea3347378e85e7c8d19ad64e74ad533b2f51b30f047594b434f380712f8b50",
+      "pages": 0,
+      "gold": "gold/legacy_word6.gold.txt",
+      "notes": "Word 6 OLE2 file (Apache POI test-data, Apache-2.0)",
+      "sensitive": false
+    },
+    {
+      "path": "generated/legacy_simple.xls",
+      "category": "legacy_xls",
+      "format": "xls",
+      "bytes": 13824,
+      "sha256": "2b5ec8298bacffdca61c50f6f7607da0a4e63cf76fa011c62f203e6a66bc072a",
+      "pages": 3,
+      "gold": "gold/legacy_simple.gold.txt",
+      "notes": "Excel 5 OLE2 file (Apache POI test-data, Apache-2.0)",
+      "sensitive": false
     }
   ]
 }

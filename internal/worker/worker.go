@@ -47,7 +47,10 @@ type Config struct {
 	WorkMaxAge        time.Duration
 	WorkScrubInterval time.Duration
 	Engines           []string // engine names this worker will accept
-	Host              string
+	// EscalateScans retries a CJK scan once with an accurate engine when the fast
+	// engine warns about OCR quality (RC-3 from the real-corpus test).
+	EscalateScans bool
+	Host          string
 }
 
 // Worker is one process-level worker.
@@ -363,6 +366,11 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 			stage.Store(s)
 		},
 	})
+	// The escalation parse below runs under the same lease: heartbeats must keep
+	// flowing, otherwise a long accurate retry loses the attempt (codex review).
+	if perr == nil {
+		result, engine = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
+	}
 	cancelHB()
 	if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
 		// The job was cancelled while the engine was running: stop here even if
@@ -386,6 +394,13 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		}
 		return w.fail(ctx, task, jobs.ErrInternal, perr.Error(), true)
 	}
+	// Legacy OLE2 Office keeps text and tables only; say so instead of letting a
+	// consumer assume page geometry exists.
+	if isLegacyFormat(task.Format) {
+		result.AddWarning("legacy_format",
+			"legacy OLE2 Office document: text and tables are extracted, page numbers and coordinates are not available", "info")
+	}
+
 	result.Source.FileName = task.InputName
 	result.Source.SHA256 = task.InputSHA256
 	result.Source.SizeBytes = task.InputSize
@@ -419,6 +434,57 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	w.Log.Info("task completed", "job", task.JobID, "engine", engine.Name(),
 		"pages", result.PageCount, "elements", len(result.Elements))
 	return nil
+}
+
+// maybeEscalate retries a poor OCR result once with an accurate engine. The
+// replacement is only accepted when it yields at least as much text, and the
+// fallback is recorded in the IR routing so downstream quality checks can see it.
+func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engines.Engine,
+	doc *documentir.Document, workDir, inputPath string) (*documentir.Document, engines.Engine) {
+	if !w.Cfg.EscalateScans || doc == nil {
+		return doc, used
+	}
+	if !engines.ShouldEscalateToAccurate(task.Mode, task.Format, doc) {
+		return doc, used
+	}
+	alt, err := w.Reg.Pick("", task.Format, "accurate")
+	if err != nil || alt.Name() == used.Name() {
+		return doc, used
+	}
+	w.Log.Info("escalating OCR result to accurate engine", "job", task.JobID,
+		"from", used.Name(), "to", alt.Name())
+	res, perr := alt.Parse(ctx, engines.Request{
+		// Always retry from the worker's own input copy, never from an engine's
+		// scratch copy (which the first engine may have already overwritten).
+		JobID: task.JobID, Path: inputPath,
+		Format: task.Format, MimeType: task.MimeType, Mode: task.Mode,
+		Device: w.Cfg.DeviceType, WorkDir: workDir, Timeout: 0,
+		Progress: func(int, string) {},
+	})
+	if perr != nil || res == nil {
+		w.Log.Warn("escalation failed; keeping the fast result", "job", task.JobID, "err", perr)
+		return doc, used
+	}
+	if res.TextLength() < doc.TextLength() {
+		w.Log.Info("escalation produced less text; keeping the fast result", "job", task.JobID)
+		return doc, used
+	}
+	res.Routing.Fallback = true
+	res.Routing.Reason = engines.EscalationReason(used.Name(), alt.Name(), engines.CJKRatio(doc))
+	res.Routing.RequestedMode = task.Mode
+	res.Routing.RequestedDevice = task.Device
+	res.Routing.ActualDevice = alt.Device()
+	res.Routing.Engine = alt.Name()
+	res.Metrics.ParseMs += doc.Metrics.ParseMs
+	return res, alt
+}
+
+func isLegacyFormat(format string) bool {
+	switch format {
+	case "doc", "xls", "ppt":
+		return true
+	}
+	return false
 }
 
 func (w *Worker) downloadInput(ctx context.Context, task *coordClaim, dst string) error {

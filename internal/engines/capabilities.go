@@ -26,13 +26,15 @@ var BuiltinCapabilities = map[string]Capability{
 	},
 	"xberg": {
 		Name: "xberg", Device: "cpu", Priority: 50,
-		Formats: []string{"pdf", "docx", "xlsx", "pptx", "csv", "tsv", "txt", "md", "png", "jpeg", "webp"},
-		Modes:   []string{"fast", "auto"}, Notes: "Rust core; native text + tesseract OCR",
+		Formats: []string{"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt",
+			"csv", "tsv", "txt", "md", "png", "jpeg", "webp"},
+		Modes: []string{"fast", "auto"}, Notes: "Rust core; native text + tesseract OCR",
 	},
 	"docling-rs": {
 		Name: "docling-rs", Device: "cpu", Priority: 40,
-		Formats: []string{"pdf", "docx", "xlsx", "pptx", "html", "md", "txt", "png", "jpeg", "webp"},
-		Modes:   []string{"accurate"}, Notes: "Rust Docling pipeline (layout + TableFormer + OCR)",
+		Formats: []string{"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt",
+			"html", "md", "txt", "png", "jpeg", "webp"},
+		Modes: []string{"accurate"}, Notes: "Rust Docling pipeline (layout + TableFormer + OCR)",
 	},
 	"docling-serve": {
 		Name: "docling-serve", Device: "both", Priority: 60,
@@ -46,8 +48,9 @@ var BuiltinCapabilities = map[string]Capability{
 	},
 	"tika": {
 		Name: "tika", Device: "cpu", Priority: 10,
-		Formats: []string{"pdf", "docx", "xlsx", "pptx", "csv", "tsv", "txt", "md", "png", "jpeg", "webp", "html"},
-		Modes:   []string{"fast"}, Notes: "broad-coverage text fallback",
+		Formats: []string{"pdf", "docx", "xlsx", "pptx", "doc", "xls", "ppt",
+			"csv", "tsv", "txt", "md", "png", "jpeg", "webp", "html"},
+		Modes: []string{"fast"}, Notes: "broad-coverage text fallback",
 	},
 }
 

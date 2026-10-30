@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -321,5 +322,73 @@ func TestZipBombVersusLegitLargeFile(t *testing.T) {
 	var ve *ValidationError
 	if !asValidation(bombErr, &ve) || ve.Code != "expanded_too_large" {
 		t.Fatalf("error = %v, want expanded_too_large", bombErr)
+	}
+}
+
+// PR-04 / RC-1: legacy OLE2 Office is accepted by magic and pre-flighted; a
+// non-CFB file with a .doc extension and a corrupt CFB header are rejected.
+func TestCompoundFileFormats(t *testing.T) {
+	ole2 := []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1}
+	for _, name := range []string{"a.doc", "a.dot", "a.xls", "a.xlt", "a.ppt", "a.pot"} {
+		f, err := SniffFormat(name, ole2, lim())
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		want := map[string]string{".doc": "doc", ".dot": "doc", ".xls": "xls", ".xlt": "xls",
+			".ppt": "ppt", ".pot": "ppt"}[strings.ToLower(filepath.Ext(name))]
+		if f.Name != want {
+			t.Fatalf("%s: format = %s, want %s", name, f.Name, want)
+		}
+	}
+	// OOXML bytes with a legacy extension are rejected (container mismatch).
+	if _, err := SniffFormat("fake.doc", []byte{'P', 'K', 3, 4}, lim()); err == nil {
+		t.Fatal("zip content accepted as .doc")
+	}
+	// Text bytes with a legacy extension are rejected.
+	if _, err := SniffFormat("fake.xls", []byte("hello,world\n"), lim()); err == nil {
+		t.Fatal("text accepted as .xls")
+	}
+}
+
+func TestVerifyCompoundFile(t *testing.T) {
+	dir := t.TempDir()
+	header := func(major, sectorShift byte, byteOrder []byte) []byte {
+		h := make([]byte, 512)
+		copy(h, []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
+		h[26], h[27] = major, 0
+		copy(h[28:30], byteOrder)
+		h[30], h[31] = sectorShift, 0
+		return h
+	}
+	write := func(name string, b []byte) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	good := write("good.doc", header(3, 9, []byte{0xFE, 0xFF}))
+	if err := VerifyCompoundFile(good); err != nil {
+		t.Fatalf("valid CFB rejected: %v", err)
+	}
+	good4 := write("good4.doc", header(4, 12, []byte{0xFE, 0xFF}))
+	if err := VerifyCompoundFile(good4); err != nil {
+		t.Fatalf("v4 CFB rejected: %v", err)
+	}
+	badOrder := write("badorder.doc", header(3, 9, []byte{0xFF, 0xFE}))
+	if err := VerifyCompoundFile(badOrder); err == nil {
+		t.Fatal("bad byte order accepted")
+	}
+	badVersion := write("badver.doc", header(5, 9, []byte{0xFE, 0xFF}))
+	if err := VerifyCompoundFile(badVersion); err == nil {
+		t.Fatal("unknown CFB major version accepted")
+	}
+	short := write("short.doc", []byte{0xD0, 0xCF})
+	if err := VerifyCompoundFile(short); err == nil {
+		t.Fatal("truncated header accepted")
+	}
+	notCFB := write("plain.doc", bytes.Repeat([]byte("A"), 512))
+	if err := VerifyCompoundFile(notCFB); err == nil {
+		t.Fatal("non-CFB file accepted")
 	}
 }
