@@ -100,10 +100,19 @@ GPU image that registers but cannot parse:
 the entrypoint. Engine egress can additionally be blocked with `--sandbox=unshare-net`,
 which fails closed when namespaces are unavailable.
 
-**Free VRAM reporting.** Workers now send `free_vram_bytes` on every register/heartbeat
-(`-1` = unknown, `0` = genuinely full). The coordinator refuses `gpu_required` when no
-live GPU worker has `--engine-min-vram-mb <engine>:<MiB>` free, with a message naming the
-requirement instead of queueing forever.
+**Free VRAM reporting.** Workers send `free_vram_bytes` on every register/heartbeat:
+
+* the value is the **largest free memory of a single card**, not the sum — ParseDock does
+  not pool memory or pick a device, so two 4 GiB cards cannot host an 8 GiB model;
+* `-1` = unknown (no `nvidia-smi`, unusable output, or an older worker that omits the
+  field), `0` = genuinely full. Unknown is treated as eligible so upgrading the
+  coordinator cannot reject healthy GPU hosts.
+
+Admission is enforced twice: at routing (does the fleet contain a GPU worker with room?)
+and at **claim** (does *this* worker have room?), so with two GPU workers the one with a
+full card cannot win the lease just because its sibling has space.
+`--engine-min-vram-mb <engine>:<MiB>` sets the requirement; the refusal names it instead
+of queueing forever.
 
 **docling-serve GPU (still open).** The installed 1.38.2 build exposes no documented
 `device` request option in the tested configuration; the Python Docling CLI was used

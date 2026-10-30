@@ -570,6 +570,23 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 	if caps.Device != "gpu" && caps.Device != "cuda" && caps.Device != "mps" {
 		deviceFilter = "AND requested_device != 'gpu_required'"
 	}
+	// VRAM admission must hold for the worker that actually leases the job, not only
+	// for the fleet: with two GPU workers, the one with a full card must not win the
+	// race just because a sibling has room. -1 means the worker cannot measure its
+	// free memory, which is treated as eligible (the engine still fails loudly).
+	freeMB := int64(-1)
+	var regFree sql.NullInt64
+	if err := s.DB.QueryRowContext(ctx, `SELECT free_vram_bytes FROM workers WHERE worker_id = ?`,
+		caps.WorkerID).Scan(&regFree); err == nil && regFree.Valid {
+		freeMB = regFree.Int64 >> 20
+	}
+	minVRAM := map[string]int{}
+	for _, e := range s.Cfg.Engines {
+		if e.MinVRAMMB > 0 {
+			minVRAM[e.Name] = e.MinVRAMMB
+		}
+	}
+	minJSON, _ := json.Marshal(minVRAM)
 	q := `UPDATE jobs SET processing_status = 'running', started_at = COALESCE(started_at, ?),
 	        current_attempt = current_attempt + 1, progress = 0, progress_stage = 'claimed', updated_at = ?
 	      WHERE id = (
@@ -577,6 +594,8 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 	        WHERE processing_status = 'queued' AND (available_at = '' OR available_at <= ?)
 	          AND (engine_hint IN (` + strings.Join(in, ",") + `) OR engine_hint = '')
 	          AND max_lifetime_at > ? ` + deviceFilter + `
+	          AND (? < 0 OR requested_device != 'gpu_required'
+	               OR COALESCE(json_extract(?, '$.' || engine_hint), 0) <= ?)
 	        ORDER BY priority DESC, created_at ASC LIMIT 1)
 	        AND processing_status = 'queued'
 	      RETURNING id, format, mime_type, input_name, input_sha256, input_size, page_count,
@@ -590,7 +609,7 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 
 	// Parameter order: started_at, updated_at, available_at, engine list, max_lifetime_at.
 	args := append([]any{ts(now), ts(now), ts(now)}, engineArgs...)
-	args = append(args, ts(now))
+	args = append(args, ts(now), freeMB, string(minJSON), freeMB)
 	row := tx.QueryRowContext(ctx, q, args...)
 	var t ClaimedTask
 	var maxLife string
@@ -1089,6 +1108,10 @@ func (s *Service) EndDownload(ctx context.Context, leaseID string) {
 func (s *Service) RegisterWorker(ctx context.Context, w WorkerRegistration) error {
 	now := nowUTC()
 	eng, _ := json.Marshal(w.Engines)
+	free := int64(-1)
+	if w.FreeVRAMBytes != nil {
+		free = *w.FreeVRAMBytes
+	}
 	_, err := s.DB.ExecContext(ctx, `INSERT INTO workers
 		(worker_id, host, engines, device_type, gpu_model, gpu_memory_bytes, free_vram_bytes,
 		 cpu_cores, memory_bytes, max_concurrency, registered_at, heartbeat_at)
@@ -1099,7 +1122,7 @@ func (s *Service) RegisterWorker(ctx context.Context, w WorkerRegistration) erro
 		 cpu_cores=excluded.cpu_cores,
 		 memory_bytes=excluded.memory_bytes, max_concurrency=excluded.max_concurrency,
 		 heartbeat_at=excluded.heartbeat_at`,
-		w.WorkerID, w.Host, string(eng), w.DeviceType, w.GPUModel, w.GPUMemoryBytes, w.FreeVRAMBytes,
+		w.WorkerID, w.Host, string(eng), w.DeviceType, w.GPUModel, w.GPUMemoryBytes, free,
 		w.CPUCores, w.MemoryBytes, w.MaxConcurrency, ts(now), ts(now))
 	if err != nil {
 		return NewError(500, jobs.ErrInternal, err.Error())
@@ -1115,10 +1138,13 @@ type WorkerRegistration struct {
 	DeviceType     string   `json:"device_type"`
 	GPUModel       string   `json:"gpu_model"`
 	GPUMemoryBytes int64    `json:"gpu_memory_bytes"`
-	FreeVRAMBytes  int64    `json:"free_vram_bytes"`
-	CPUCores       int      `json:"cpu_cores"`
-	MemoryBytes    int64    `json:"memory_bytes"`
-	MaxConcurrency int      `json:"max_concurrency"`
+	// FreeVRAMBytes is nil when the worker did not report it (older worker, or a
+	// GPU it cannot measure); that is stored as -1 ("unknown") rather than 0
+	// ("full"), so upgrading the coordinator does not reject healthy GPU hosts.
+	FreeVRAMBytes  *int64 `json:"free_vram_bytes"`
+	CPUCores       int    `json:"cpu_cores"`
+	MemoryBytes    int64  `json:"memory_bytes"`
+	MaxConcurrency int    `json:"max_concurrency"`
 }
 
 // Workers lists known workers (diagnostics).
@@ -1133,11 +1159,16 @@ func (s *Service) Workers(ctx context.Context) ([]WorkerRegistration, error) {
 	for rows.Next() {
 		var w WorkerRegistration
 		var eng string
+		var free sql.NullInt64
 		if err := rows.Scan(&w.WorkerID, &w.Host, &eng, &w.DeviceType, &w.GPUModel, &w.GPUMemoryBytes,
-			&w.FreeVRAMBytes, &w.CPUCores, &w.MemoryBytes, &w.MaxConcurrency); err != nil {
+			&free, &w.CPUCores, &w.MemoryBytes, &w.MaxConcurrency); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal([]byte(eng), &w.Engines)
+		if free.Valid {
+			v := free.Int64
+			w.FreeVRAMBytes = &v
+		}
 		out = append(out, w)
 	}
 	return out, rows.Err()

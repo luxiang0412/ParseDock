@@ -686,7 +686,7 @@ func (w *Worker) freeVRAMBytes() int64 {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
-	if mb, ok := sysinfo.FreeVRAMMB(ctx); ok {
+	if mb, ok := sysinfo.MaxFreeVRAMMB(ctx); ok {
 		return mb << 20
 	}
 	return -1

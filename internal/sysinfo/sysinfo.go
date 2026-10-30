@@ -47,10 +47,12 @@ type GPU struct {
 	ComputeCap string `json:"compute_cap,omitempty"`
 }
 
-// FreeVRAMMB returns the sum of memory.free across visible GPUs. The boolean is
-// false when the value is unknown (no nvidia-smi, driver error), which callers must
-// treat as "no information", not as "no memory".
-func FreeVRAMMB(ctx context.Context) (int64, bool) {
+// MaxFreeVRAMMB returns the largest free memory of any single GPU. It is deliberately
+// not a sum: ParseDock does not pool memory or select a device, so two cards with 4 GiB
+// free cannot host an 8 GiB model. The boolean is false when the value is unknown (no
+// nvidia-smi, unusable output, driver error), which callers must treat as "no
+// information", not as "no memory".
+func MaxFreeVRAMMB(ctx context.Context) (int64, bool) {
 	if _, err := exec.LookPath("nvidia-smi"); err != nil {
 		return 0, false
 	}
@@ -61,11 +63,12 @@ func FreeVRAMMB(ctx context.Context) (int64, bool) {
 	if err != nil {
 		return 0, false
 	}
-	var total int64
-	parsed := 0
+	var best, parsed int64
 	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
 		if v, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64); err == nil {
-			total += v
+			if v > best {
+				best = v
+			}
 			parsed++
 		}
 	}
@@ -75,7 +78,7 @@ func FreeVRAMMB(ctx context.Context) (int64, bool) {
 		// would make the coordinator refuse every GPU job.
 		return 0, false
 	}
-	return total, true
+	return best, true
 }
 
 // DetectGPU probes nvidia-smi with a short timeout. Absence is not an error:

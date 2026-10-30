@@ -1031,8 +1031,9 @@ func TestGPUAdmissionRespectsFreeVRAM(t *testing.T) {
 	})
 	ctx := context.Background()
 	reg := func(freeMB int64) {
+		v := freeMB << 20
 		err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "gpu-1", Host: "h", DeviceType: "gpu",
-			Engines: []string{"mineru"}, GPUMemoryBytes: 16 << 30, FreeVRAMBytes: freeMB << 20})
+			Engines: []string{"mineru"}, GPUMemoryBytes: 16 << 30, FreeVRAMBytes: &v})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -1064,5 +1065,79 @@ func TestGPUAdmissionRespectsFreeVRAM(t *testing.T) {
 	}
 	if _, _, err := s.route(ctx, "pdf", jobs.ModeAccurate, jobs.DeviceGPURequired); AsError(err).Code != jobs.ErrGPUUnavailable {
 		t.Fatalf("stale worker: want gpu_unavailable, got %v", err)
+	}
+}
+
+// PR-08 codex review: an omitted free_vram_bytes (older worker) must be stored as
+// "unknown" (-1), not as "full" (0), otherwise upgrading the coordinator rejects
+// healthy GPU workers.
+func TestOmittedFreeVRAMStaysUnknown(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "old", Host: "h",
+		DeviceType: "gpu", Engines: []string{"mineru"}}); err != nil {
+		t.Fatal(err)
+	}
+	var free int64
+	if err := s.DB.QueryRowContext(ctx, `SELECT free_vram_bytes FROM workers WHERE worker_id = 'old'`).
+		Scan(&free); err != nil {
+		t.Fatal(err)
+	}
+	if free != -1 {
+		t.Fatalf("omitted free VRAM stored as %d, want -1", free)
+	}
+	// An explicit zero still means "full".
+	zero := int64(0)
+	if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: "full", Host: "h",
+		DeviceType: "gpu", Engines: []string{"mineru"}, FreeVRAMBytes: &zero}); err != nil {
+		t.Fatal(err)
+	}
+	_ = s.DB.QueryRowContext(ctx, `SELECT free_vram_bytes FROM workers WHERE worker_id = 'full'`).Scan(&free)
+	if free != 0 {
+		t.Fatalf("explicit zero stored as %d", free)
+	}
+}
+
+// PR-08 codex review: the VRAM requirement must bind the worker that actually leases
+// the job, not just the fleet.
+func TestClaimRespectsClaimingWorkerVRAM(t *testing.T) {
+	s := testService(t, func(c *Config) {
+		c.Engines = []EngineSpec{{Name: "mineru", Device: "gpu", Priority: 10,
+			Formats: []string{"pdf"}, Modes: []string{"accurate"}, MinVRAMMB: 8192}}
+	})
+	ctx := context.Background()
+	full, roomy := int64(1024)<<20, int64(16384)<<20
+	for id, free := range map[string]*int64{"gpu-full": &full, "gpu-roomy": &roomy} {
+		if err := s.RegisterWorker(ctx, WorkerRegistration{WorkerID: id, Host: "h", DeviceType: "gpu",
+			Engines: []string{"mineru"}, FreeVRAMBytes: free}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Insert the queued job directly: the subject here is claim-time admission, not
+	// upload validation, and a synthetic PDF would not survive the structural check.
+	jid := jobs.NewJobID()
+	now := nowUTC()
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO jobs(id, owner_id, input_name, mime_type, format,
+		processing_status, priority, requested_mode, requested_device, engine_hint,
+		created_at, max_lifetime_at, updated_at)
+		VALUES(?,?,?,?,?, 'queued', 0, 'accurate', 'gpu_required', 'mineru', ?, ?, ?)`,
+		jid, "owner-1", "a.pdf", "application/pdf", "pdf",
+		ts(now), ts(now.Add(time.Hour)), ts(now)); err != nil {
+		t.Fatal(err)
+	}
+	// The full card must not be handed the job, even though the fleet has room.
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "gpu-full", Engines: []string{"mineru"}, Device: "gpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task != nil {
+		t.Fatalf("full GPU claimed a job needing 8192 MiB: %+v", task)
+	}
+	task, err = s.Claim(ctx, WorkerCaps{WorkerID: "gpu-roomy", Engines: []string{"mineru"}, Device: "gpu"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if task == nil || task.JobID != jid {
+		t.Fatalf("roomy GPU did not get the job: %+v", task)
 	}
 }
