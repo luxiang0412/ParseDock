@@ -48,6 +48,11 @@ func LiftMarkdown(doc *documentir.Document, md string) {
 			return
 		}
 		if t := parseMarkdownTable(table); t != nil {
+			// ID from the document-wide counter: deriving it from the row count made two
+			// ordinary tables with equal sizes collide, and the renderers resolve a duplicated
+			// ID to different tables (text picks the first, markdown the last), so one table's
+			// content could disappear.
+			t.ID = fmt.Sprintf("tbl_%d", len(doc.Tables)+1)
 			doc.Tables = append(doc.Tables, *t)
 			doc.Elements = append(doc.Elements, documentir.Element{
 				ID: nextID(), Type: documentir.ElTable, TableID: t.ID,
@@ -184,7 +189,7 @@ func parseMarkdownTable(rows []string) *documentir.Table {
 		}
 	}
 	t := &documentir.Table{
-		ID:         fmt.Sprintf("tbl_%d", len(grid)),
+		ID:         "tbl_pending",
 		Rows:       len(grid),
 		Cols:       cols,
 		HeaderRows: headerRows,

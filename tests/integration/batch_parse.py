@@ -142,9 +142,12 @@ def parse_one(api: str, token: str, path: Path, root: Path, mode: str,
     except (ConnectionResetError, BrokenPipeError, urllib.error.URLError, OSError) as e:
         # A rejected/aborted upload can reset the connection; record it and move on
         # instead of failing the whole batch.
-        stats.add({"file_id": file_id(path, root, redact), "ext": path.suffix.lower(),
-                   "bytes": path.stat().st_size, "mode": mode, "status": "client_error",
-                   "error_code": "connection_reset", "error": str(e)[:160]})
+        rec = {"file_id": file_id(path, root, redact), "ext": path.suffix.lower(),
+               "bytes": path.stat().st_size, "mode": mode, "status": "client_error",
+               "error_code": "connection_reset"}
+        if not redact:
+            rec["error"] = str(e)[:160]
+        stats.add(rec)
 
 
 def _parse_one(api: str, token: str, path: Path, root: Path, mode: str,
@@ -160,8 +163,9 @@ def _parse_one(api: str, token: str, path: Path, root: Path, mode: str,
     status, body = upload(api, token, path, mode, timeout)
     if status not in (200, 202):
         rec.update({"status": "rejected", "http": status,
-                    "error_code": (body.get("error") or {}).get("code"),
-                    "error": ((body.get("error") or {}).get("message") or "")[:160]})
+                    "error_code": (body.get("error") or {}).get("code")})
+        if not redact:
+            rec["error"] = ((body.get("error") or {}).get("message") or "")[:160]
         stats.add(rec)
         return
     job_id = body["job_id"]
@@ -172,10 +176,13 @@ def _parse_one(api: str, token: str, path: Path, root: Path, mode: str,
         "pages": job.get("page_count"),
         "client_ms": round(client_ms, 1),
         "error_code": job.get("error_code"),
-        "error": (job.get("error_message") or "")[:160],
         "warnings": job.get("warning_count"),
         "result_version": job.get("result_version"),
     })
+    if not redact and job.get("error_message"):
+        # Engine stderr is embedded in job errors and can quote the document or its path, so
+        # it is only kept when the caller explicitly asked for an unredacted report.
+        rec["error"] = job["error_message"][:160]
     if job.get("status") == "completed":
         st, hdr, raw = request(api, "GET", f"/v1/jobs/{job_id}/result?format=json",
                                headers=auth_headers(token), timeout=timeout)
@@ -332,7 +339,7 @@ def main() -> int:
     out.write_text(json.dumps({"summary": summary, "records": stats.records}, indent=1),
                    encoding="utf-8")
     print(json.dumps(summary, indent=2))
-    print(f"\nreport: {out}")
+    print(f"\nreport: {out.name} (in {out.parent})" if args.no_redact else f"\nreport: {out.name}")
     return 0
 
 

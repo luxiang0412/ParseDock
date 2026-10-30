@@ -276,10 +276,19 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 			rep.Errors = append(rep.Errors, "reap tx: "+err.Error())
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'expired', error = 'lease expired'
-			WHERE job_id = ? AND attempt_no = ? AND state = 'running'`, l.jobID, l.attempt); err != nil {
+		// The candidate list was read outside this transaction: a heartbeat may have renewed
+		// the lease in the meantime, and another cleanup pass may be racing this one. Expire
+		// only a still-running, still-expired attempt, and require exactly one row.
+		res, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'expired', error = 'lease expired'
+			WHERE job_id = ? AND attempt_no = ? AND state = 'running' AND lease_until <= ?`,
+			l.jobID, l.attempt, ts(now))
+		if err != nil {
 			_ = tx.Rollback()
 			rep.Errors = append(rep.Errors, "reap attempt: "+err.Error())
+			continue
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			_ = tx.Rollback() // renewed or already reaped: nothing to do
 			continue
 		}
 		if jobs.ProcessingStatus(status) == jobs.StatusRunning && attemptsMade < maxAttempts {
@@ -287,8 +296,8 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 			if _, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued',
 				progress = 0, progress_stage = 'requeued_after_lease_expiry', error_code = ?,
 				error_message = 'worker lease expired', available_at = ?, updated_at = ?
-				WHERE id = ? AND processing_status = 'running'`,
-				jobs.ErrLeaseLost, ts(now.Add(backoff)), ts(now), l.jobID); err != nil {
+				WHERE id = ? AND processing_status = 'running' AND current_attempt = ?`,
+				jobs.ErrLeaseLost, ts(now.Add(backoff)), ts(now), l.jobID, l.attempt); err != nil {
 				_ = tx.Rollback()
 				rep.Errors = append(rep.Errors, "reap requeue: "+err.Error())
 				continue
@@ -297,8 +306,8 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 			if _, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed',
 				error_code = ?, error_message = 'worker lease expired after max attempts',
 				completed_at = ?, retention_status = 'release_pending', updated_at = ?
-				WHERE id = ? AND processing_status = 'running'`,
-				jobs.ErrLeaseLost, ts(now), ts(now), l.jobID); err != nil {
+				WHERE id = ? AND processing_status = 'running' AND current_attempt = ?`,
+				jobs.ErrLeaseLost, ts(now), ts(now), l.jobID, l.attempt); err != nil {
 				_ = tx.Rollback()
 				rep.Errors = append(rep.Errors, "reap fail: "+err.Error())
 				continue

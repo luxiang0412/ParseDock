@@ -489,19 +489,20 @@ func (s *Service) GetJob(ctx context.Context, jobID, ownerID string) (*jobs.Job,
 	return job, nil
 }
 
-// GetManifest returns the committed result manifest.
-func (s *Service) GetManifest(jobID string) (*storage.Manifest, error) {
-	return s.Store.ReadManifest(jobID)
+// GetManifest returns the committed result manifest of the job's current generation.
+func (s *Service) GetManifest(jobID, version string) (*storage.Manifest, error) {
+	return s.Store.ReadManifestAt(jobID, version)
 }
 
-// OpenResult opens one artifact for reading.
-func (s *Service) OpenResult(jobID, format string) (*os.File, os.FileInfo, *storage.Manifest, error) {
-	m, err := s.Store.ReadManifest(jobID)
+// OpenResult opens one artifact of the job's current result generation. Results are
+// content-addressed, so the version (not just the job id) selects the directory.
+func (s *Service) OpenResult(jobID, version, format string) (*os.File, os.FileInfo, *storage.Manifest, error) {
+	m, err := s.Store.ReadManifestAt(jobID, version)
 	if err != nil {
 		return nil, nil, nil, NewError(410, jobs.ErrGone, "result is no longer available")
 	}
 	name := artifactName(format)
-	p := s.Store.ResultPath(jobID, name)
+	p := filepath.Join(s.Store.ResultDirAt(jobID, version), name)
 	f, err := os.Open(p)
 	if err != nil {
 		return nil, nil, nil, NewError(410, jobs.ErrGone, "result artifact missing")
@@ -768,7 +769,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -789,7 +790,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	var startedRaw sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
 		Scan(&ownerID, &startedRaw); err != nil {
-		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	var attemptStart sql.NullString
@@ -829,22 +830,22 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 			if uerr != nil {
 				_ = tx.Rollback()
-				_ = s.Store.DeleteResults(p.JobID)
+				_ = s.Store.DropResult(p.JobID, manifest.Version)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+uerr.Error())
 			}
 			if n, _ := ures.RowsAffected(); n == 0 {
 				_ = tx.Rollback()
-				_ = s.Store.DeleteResults(p.JobID) // only the result, never the input
+				_ = s.Store.DropResult(p.JobID, manifest.Version) // only the result, never the input
 				return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 			}
 			if _, aerr := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ?
 				WHERE job_id = ? AND lease_token = ?`, msg, p.JobID, p.Token); aerr != nil {
 				_ = tx.Rollback()
-				_ = s.Store.DeleteResults(p.JobID)
+				_ = s.Store.DropResult(p.JobID, manifest.Version)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+aerr.Error())
 			}
 			if cerr := tx.Commit(); cerr != nil {
-				_ = s.Store.DeleteResults(p.JobID)
+				_ = s.Store.DropResult(p.JobID, manifest.Version)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
 			}
 			// The job is terminal now; its input and the rejected result go away unless a
@@ -864,39 +865,46 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		WHERE id = ? AND processing_status = 'running'
 		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
 		  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND lease_until > ?)`,
-		ts(now), ts(expires), manifest.Version, filepath.Join(s.Store.ResultDir(p.JobID), "manifest.json"),
+		ts(now), ts(expires), manifest.Version,
+		filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
 		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 	if err != nil {
-		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, "complete: "+err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
+		// Lost the fence: this generation was never referenced. Drop it, but only if the
+		// winning attempt did not produce byte-identical output (content addressing makes
+		// those the same directory).
+		var committed sql.NullString
+		_ = tx.QueryRowContext(ctx, `SELECT result_version FROM jobs WHERE id = ?`, p.JobID).Scan(&committed)
 		_ = tx.Rollback()
-		// Late result from a superseded attempt: drop only what this attempt wrote. The
-		// input belongs to the job, which another attempt may still be parsing.
-		_ = s.Store.DeleteResults(p.JobID)
+		if !committed.Valid || committed.String != manifest.Version {
+			_ = s.Store.DropResult(p.JobID, manifest.Version)
+		}
 		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'succeeded', engine = ?, device_type = ?
 		WHERE job_id = ? AND lease_token = ?`, p.Engine, p.Device, p.JobID, p.Token); err != nil {
-		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
 	}
 	for _, a := range manifest.Files {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO artifacts(job_id, kind, path, size, sha256, generation, ready_at)
 			VALUES(?,?,?,?,?,1,?) ON CONFLICT(job_id, kind) DO UPDATE SET path=excluded.path, size=excluded.size,
 			sha256=excluded.sha256, generation=artifacts.generation+1, ready_at=excluded.ready_at`,
-			p.JobID, a.Name, s.Store.ResultPath(p.JobID, a.Name), a.Size, a.SHA256, ts(now)); err != nil {
-			_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+			p.JobID, a.Name, filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), a.Name),
+			a.Size, a.SHA256, ts(now)); err != nil {
+			_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
 		}
 	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
-		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	if err := tx.Commit(); err != nil {
-		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
+		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))

@@ -285,7 +285,7 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.Svc.EndDownload(context.WithoutCancel(r.Context()), leaseID)
 
-	f, st, manifest, err := s.Svc.OpenResult(job.ID, string(format))
+	f, st, manifest, err := s.Svc.OpenResult(job.ID, job.ResultVersion, string(format))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -548,7 +548,7 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 				writeErr(w, NewError(422, cur.ErrorCode, cur.ErrorMessage))
 				return
 			}
-			f, _, manifest, err := s.Svc.OpenResult(cur.ID, "json")
+			f, _, manifest, err := s.Svc.OpenResult(cur.ID, cur.ResultVersion, "json")
 			if err != nil {
 				writeErr(w, err)
 				return

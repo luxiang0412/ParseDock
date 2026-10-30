@@ -186,7 +186,7 @@ func TestStoreAtomicCommitAndDelete(t *testing.T) {
 	if m.Version == "" || len(m.Files) != 2 {
 		t.Fatalf("bad manifest %+v", m)
 	}
-	loaded, err := s.ReadManifest("job_test")
+	loaded, err := s.ReadManifestAt("job_test", m.Version)
 	if err != nil || loaded.Version != m.Version {
 		t.Fatalf("manifest round trip failed: %v %v", loaded, err)
 	}

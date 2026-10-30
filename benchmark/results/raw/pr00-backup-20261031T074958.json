@@ -1,0 +1,28 @@
+{
+  "finished_at": "2026-10-30T23:49:58.245775+00:00",
+  "status": "PASS",
+  "detail": {
+    "jobs": {
+      "released": "job_06GRYE2PKEQ107675SJ85CCZK8",
+      "active": "job_06GRYE2T8E61DY19R655XH9WR8"
+    },
+    "files_before_backup": {
+      "released": [],
+      "active": [
+        "results/job_06GRYE2T8E61DY19R655XH9WR8/9451b9fee7c5fb7c3c5609dd1f7e5922e7c36c8b52cb7924c1954475fe9966d8/manifest.json",
+        "results/job_06GRYE2T8E61DY19R655XH9WR8/9451b9fee7c5fb7c3c5609dd1f7e5922e7c36c8b52cb7924c1954475fe9966d8/result.json",
+        "results/job_06GRYE2T8E61DY19R655XH9WR8/9451b9fee7c5fb7c3c5609dd1f7e5922e7c36c8b52cb7924c1954475fe9966d8/result.md",
+        "results/job_06GRYE2T8E61DY19R655XH9WR8/9451b9fee7c5fb7c3c5609dd1f7e5922e7c36c8b52cb7924c1954475fe9966d8/result.txt"
+      ]
+    },
+    "backup_stdout": "backup complete: /home/luxiang/project/work/ParseDock/runtime/pr00-backup/backup (1 active jobs)",
+    "manifest_active_jobs": 1,
+    "backup_result_dirs": [
+      "job_06GRYE2T8E61DY19R655XH9WR8"
+    ],
+    "restore_stdout": "purged 0 artifact dir(s) belonging to non-active retention states\nchecked {'jobs': 1, 'inputs': 1, 'manifests': 1, 'artifacts': 3}; problems: 0\nrestore complete: /home/luxiang/project/work/ParseDock/runtime/pr00-backup/restored\nnote: the coordinator's cleaner will finish any pending retention work on start",
+    "restored_active_download": 200,
+    "restored_released_download": 410,
+    "restored_active_version": "sha256:9451b9fee7c5fb7c3c5609dd1f7e5922e7c36c8b52cb7924c1954475fe9966d8"
+  }
+}

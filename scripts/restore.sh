@@ -3,16 +3,21 @@
 #
 #   scripts/restore.sh <backup-dir> <data-dir>
 #
-# Refuses to overwrite a non-empty data directory. After copying, it verifies
-# that every file referenced by the manifest exists and prints the tombstone
-# warning: the coordinator's cleaner runs on start and will purge anything whose
-# retention state is no longer active, so a restore can never make a released
-# result downloadable again.
+# Refuses to overwrite a non-empty data directory, and refuses a backup that has no file tree
+# (a metadata-only copy would "restore" jobs whose files are gone). After copying it runs
+# scripts/verify_backup.py, which checks the database integrity, every active input, and
+# every completed job's manifest and artifacts. Only then does it announce success. The
+# coordinator's cleaner runs on start and purges anything whose retention state is no longer
+# active, so a restore can never make a released result downloadable again.
 set -euo pipefail
 
 BACKUP_DIR="${1:?usage: restore.sh <backup-dir> <data-dir>}"
 DATA_DIR="${2:?usage: restore.sh <backup-dir> <data-dir>}"
 [[ -f "$BACKUP_DIR/coordinator.db" ]] || { echo "backup has no coordinator.db" >&2; exit 1; }
+if [[ ! -d "$BACKUP_DIR/files" ]]; then
+  echo "backup has no file tree ($BACKUP_DIR/files): refusing a metadata-only restore" >&2
+  exit 1
+fi
 
 mkdir -p "$DATA_DIR"
 if [[ -n "$(ls -A "$DATA_DIR" 2>/dev/null)" ]]; then
@@ -44,6 +49,13 @@ db.execute("PRAGMA wal_checkpoint(TRUNCATE)")
 db.commit()
 print(f"purged {removed} artifact dir(s) belonging to non-active retention states")
 PY
+
+# A restore is only complete when the copy can serve its jobs. Announce success only after
+# the shared verifier agrees (integrity, inputs, manifests, artifacts).
+python3 "$(dirname "$0")/verify_backup.py" --dir "$DATA_DIR" || {
+  echo "restore FAILED verification: the data directory is incomplete" >&2
+  exit 1
+}
 
 echo "restore complete: $DATA_DIR"
 echo "note: the coordinator's cleaner will finish any pending retention work on start"
