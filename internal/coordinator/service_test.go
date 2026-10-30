@@ -1220,3 +1220,34 @@ func TestParseLatencyUsesCompletingAttempt(t *testing.T) {
 	}
 	t.Fatal("no parsedock_parse_seconds_sum line")
 }
+
+// PR-12 codex review: a permanent failure must not delete files under a live download
+// lease — an online backup (or a client) may still be reading them.
+func TestFailKeepsFilesUnderDownloadLease(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// A backup pins the job with a lease row.
+	if _, err := s.DB.ExecContext(ctx, `INSERT INTO download_leases
+		(lease_id, job_id, created_at, expires_at, last_renewed_at) VALUES (?,?,?,?,?)`,
+		"backup-1", job.ID, ts(nowUTC()), ts(nowUTC().Add(10*time.Minute)), ts(nowUTC())); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.Fail(ctx, job.ID, task.LeaseToken, jobs.ErrEngineUnavailable, "parser crashed", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProcessingStatus != jobs.StatusFailed {
+		t.Fatalf("status = %s", got.ProcessingStatus)
+	}
+	if got.RetentionStatus != jobs.RetentionReleasePending {
+		t.Fatalf("retention = %s, want release_pending", got.RetentionStatus)
+	}
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); err != nil {
+		t.Fatalf("input deleted under a live lease: %v", err)
+	}
+}

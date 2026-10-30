@@ -974,8 +974,26 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	s.appendEvent(ctx, jobID, "failed", map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable})
-	_ = s.Store.DeleteJob(jobID) // failed jobs keep metadata only; no input retained
+	// Failed jobs keep metadata only — unless a client (or an online backup) holds a live
+	// download lease on the input. Deleting under an active lease would break a backup that
+	// has already snapshotted this job, so the files are released by the cleaner once the
+	// lease expires instead of being removed here.
+	if le, _ := s.hasActiveDownloadLease(ctx, jobID); le {
+		if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
+			WHERE id = ? AND processing_status = 'failed'`, ts(nowUTC()), jobID); err == nil {
+			return s.GetJob(ctx, jobID, "")
+		}
+	}
+	_ = s.Store.DeleteJob(jobID)
 	return s.GetJob(ctx, jobID, "")
+}
+
+// hasActiveDownloadLease reports whether a live download lease exists for the job.
+func (s *Service) hasActiveDownloadLease(ctx context.Context, jobID string) (bool, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM download_leases
+		WHERE job_id = ? AND expires_at > ?`, jobID, ts(nowUTC())).Scan(&n)
+	return n > 0, err
 }
 
 func (s *Service) checkLease(ctx context.Context, jobID, token string) error {
