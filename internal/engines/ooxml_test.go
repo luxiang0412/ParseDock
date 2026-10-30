@@ -392,3 +392,56 @@ func TestReadZipXMLRespectsCancellation(t *testing.T) {
 		t.Fatalf("live context failed to decode: %v", err)
 	}
 }
+
+// When the used range does not start at A1 the table-local coordinates cannot be
+// mapped to worksheet addresses; enrichment must skip and say so.
+func TestEnrichSkipsWhenOriginIsNotA1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "offset.xlsx")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	add := func(name, body string) {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`)
+	add("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`)
+	// Data starts at C3, so table-local (0,0) is worksheet C3 - unknown offset.
+	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="3"><c r="C3"><f>SUM(C4:C5)</f><v>7</v></c></row></sheetData></worksheet>`)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 1,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "7"}}}}
+	applied, warnings, err := EnrichXLSXFormulas(context.Background(), path, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if applied != 0 {
+		t.Fatalf("applied %d formulas with an unknown origin", applied)
+	}
+	if doc.Tables[0].Cells[0].Formula != "" {
+		t.Fatalf("formula invented: %q", doc.Tables[0].Cells[0].Formula)
+	}
+	found := false
+	for _, w := range warnings {
+		if w.Code == documentir.WarnFormulaMissing {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no warning for the unmappable origin: %v", warnings)
+	}
+}

@@ -2,6 +2,7 @@ package engines
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"encoding/xml"
 	"fmt"
@@ -70,6 +71,14 @@ type xlsxSharedStrings struct {
 	} `xml:"si"`
 }
 
+// sheetFormulas holds the formula cells of one sheet plus the origin of the sheet's
+// used range. Engine table coordinates are table-local, so enrichment is only safe
+// when the used range starts at A1 and the mapping is therefore an identity.
+type sheetFormulas struct {
+	originRow, originCol int
+	cells                map[[2]int]formulaCell
+}
+
 type formulaCell struct {
 	formula  string
 	cached   string
@@ -136,7 +145,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		}
 	}
 
-	formulas := map[string]map[[2]int]formulaCell{}
+	formulas := map[string]sheetFormulas{}
 	var warnings []documentir.Warning
 	for _, sh := range sheets {
 		if err := ctx.Err(); err != nil {
@@ -147,11 +156,18 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 			continue
 		}
 		cells := map[[2]int]formulaCell{}
+		originRow, originCol := -1, -1
 		for _, row := range ws.SheetData.Rows {
 			for _, c := range row.Cells {
 				col, r, ok := parseA1(c.Ref)
 				if !ok {
 					continue
+				}
+				if originRow < 0 || r < originRow {
+					originRow = r
+				}
+				if originCol < 0 || col < originCol {
+					originCol = col
 				}
 				hasFormula := strings.TrimSpace(c.F.Text) != "" || c.F.Type == "shared"
 				if !hasFormula {
@@ -186,8 +202,8 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 				}
 			}
 		}
-		if len(cells) > 0 {
-			formulas[sh.name] = cells
+		if len(cells) > 0 && originRow >= 0 {
+			formulas[sh.name] = sheetFormulas{originRow: originRow, originCol: originCol, cells: cells}
 		}
 	}
 	if len(formulas) == 0 {
@@ -196,6 +212,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 
 	applied := 0
 	sharedSkipped := false
+	originUnknown := false
 	ordered := make([]string, 0, len(sheets))
 	for _, sh := range sheets {
 		ordered = append(ordered, sh.name)
@@ -209,18 +226,27 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		if table.Loc != nil && table.Loc.Sheet != "" {
 			sheet = table.Loc.Sheet
 		}
-		cells, ok := formulas[sheet]
+		sheetData, ok := formulas[sheet]
 		if !ok {
 			// Engines that expose only the sheet *index* (xberg) put it in Loc.Page
 			// (1-based). Use it directly; do not infer a sheet from table order,
 			// which is unreliable (several tables per sheet, skipped sheets).
 			if sheet == "" && table.Loc != nil && table.Loc.Page > 0 && table.Loc.Page-1 < len(ordered) {
-				cells, ok = formulas[ordered[table.Loc.Page-1]]
+				sheetData, ok = formulas[ordered[table.Loc.Page-1]]
 			}
 		}
 		if !ok {
 			continue
 		}
+		// Engine table cells are table-local (0,0 = first cell of the table), while
+		// OOXML references are worksheet-absolute. Only an A1-origin sheet makes the
+		// two coincide; otherwise the offset is unknown and guessing would attach
+		// another cell's formula.
+		if sheetData.originRow != 0 || sheetData.originCol != 0 {
+			originUnknown = true
+			continue
+		}
+		cells := sheetData.cells
 		for ci := range table.Cells {
 			if ci%512 == 0 {
 				if err := ctx.Err(); err != nil {
@@ -254,6 +280,11 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 	if sharedSkipped {
 		warnings = append(warnings, documentir.Warning{Code: documentir.WarnFormulaMissing,
 			Message:  "shared formulas are not expanded; only their cached values are available for non-master cells",
+			Severity: "info"})
+	}
+	if originUnknown {
+		warnings = append(warnings, documentir.Warning{Code: documentir.WarnFormulaMissing,
+			Message:  "formula text unavailable: the sheet's used range does not start at A1, so table-local cells cannot be mapped to worksheet addresses without an origin",
 			Severity: "info"})
 	}
 	return applied, warnings, nil
@@ -331,7 +362,10 @@ func readZipXML[T any](ctx context.Context, zr *zip.ReadCloser, name string) (T,
 	if err := ctx.Err(); err != nil {
 		return out, err
 	}
-	if err := xml.Unmarshal(b, &out); err != nil {
+	// Decode through a ctx-aware reader: unmarshalling a large worksheet is not
+	// interruptible once started, but decoding token by token is.
+	dec := xml.NewDecoder(&ctxReader{ctx: ctx, r: bytes.NewReader(b)})
+	if err := dec.Decode(&out); err != nil {
 		return out, fmt.Errorf("parse %s: %w", name, err)
 	}
 	return out, nil
