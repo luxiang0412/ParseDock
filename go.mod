@@ -3,6 +3,7 @@ module parsedock.dev/parsedock
 go 1.24.4
 
 require (
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	golang.org/x/text v0.22.0
 	modernc.org/sqlite v1.34.5
 )

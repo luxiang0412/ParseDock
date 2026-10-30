@@ -83,6 +83,7 @@ phase_contract() {
     validate -i /local/api/openapi.internal.yaml || return 1
   step "contract (specs, SDK, router drift)" python3 "$ROOT/tests/contract/openapi_contract.py" || return 1
   step "sdk regeneration drift" bash -c "cd '$ROOT' && make sdk >/dev/null && git diff --exit-code -- sdk" || return 1
+  step "IR schema drift" bash -c "cd '$ROOT' && make schema >/dev/null && git diff --exit-code -- api/document-ir-0.1.schema.json" || return 1
 }
 
 phase_lifecycle() {

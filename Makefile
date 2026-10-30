@@ -19,6 +19,9 @@ fmt: ## gofmt
 fmt-check: ## fail when files are not gofmt'd (CI)
 	@out=$$(gofmt -l cmd internal migrations); if [ -n "$$out" ]; then echo "not gofmt'd:"; echo "$$out"; exit 1; fi
 
+schema: ## publish the Document IR JSON Schema to api/
+	cp internal/documentir/schema/document-ir-0.1.schema.json api/document-ir-0.1.schema.json
+
 verify-pins: ## check go.mod / Dockerfiles / workflows against images.lock.json
 	python3 scripts/verify_pins.py
 

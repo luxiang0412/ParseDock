@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parsedock.dev/schema/document-ir-0.1.json",
+  "title": "ParseDock Document IR v0.1",
+  "description": "Engine-independent parse result. Missing provenance (page, bbox, sheet, confidence) is absent, never fabricated. Markdown and text are derived views.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source", "parser_engine", "routing", "page_count", "page_kind", "elements", "warnings", "metrics"],
+  "properties": {
+    "schema_version": { "const": "doc-ir/0.1" },
+    "source": { "$ref": "#/$defs/source" },
+    "parser_engine": { "type": "string", "minLength": 1 },
+    "parser_version": { "type": "string" },
+    "routing": { "$ref": "#/$defs/routing" },
+    "page_count": { "type": "integer", "minimum": 0 },
+    "page_kind": { "type": "string", "enum": ["pdf", "sheet", "slide", "none"] },
+    "elements": { "type": "array", "items": { "$ref": "#/$defs/element" } },
+    "tables": { "type": "array", "items": { "$ref": "#/$defs/table" } },
+    "warnings": { "type": "array", "items": { "$ref": "#/$defs/warning" } },
+    "metrics": { "$ref": "#/$defs/metrics" }
+  },
+  "$defs": {
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "file_name": { "type": "string" },
+        "mime_type": { "type": "string" },
+        "format": { "type": "string" },
+        "size_bytes": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string" }
+      }
+    },
+    "routing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requested_mode": { "type": "string" },
+        "requested_device": { "type": "string" },
+        "actual_device": { "type": "string" },
+        "engine": { "type": "string" },
+        "fallback": { "type": "boolean" },
+        "reason": { "type": "string" }
+      }
+    },
+    "element": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "type", "text", "reading_order"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "type": {
+          "type": "string",
+          "enum": ["title", "section", "paragraph", "list", "list_item", "table", "image", "formula", "caption", "footnote", "header", "footer", "code", "page_break", "unknown"]
+        },
+        "text": { "type": "string" },
+        "level": { "type": "integer", "minimum": 0 },
+        "reading_order": { "type": "integer", "minimum": 0 },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
+        "source_location": { "$ref": "#/$defs/location" },
+        "table_id": { "type": "string" },
+        "image_ref": { "type": "string", "description": "Reserved: no adapter emits one until artifacts are downloadable (PR-06)." },
+        "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind"],
+      "properties": {
+        "kind": { "type": "string", "enum": ["pdf", "sheet", "slide", "none"] },
+        "page": { "type": "integer", "minimum": 0 },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "sheet": { "type": "string" },
+        "cell_range": { "type": "string" },
+        "line": { "type": "integer", "minimum": 0 },
+        "rotation_deg": { "type": "number" },
+        "page_width_pt": { "type": "number" },
+        "page_height_pt": { "type": "number" }
+      }
+    },
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["coord", "x0", "y0", "x1", "y1"],
+      "properties": {
+        "coord": { "type": "string", "enum": ["pdf_user_space_v1", "pdf_top_left_v1", "image_px_v1"] },
+        "x0": { "type": "number" },
+        "y0": { "type": "number" },
+        "x1": { "type": "number" },
+        "y1": { "type": "number" }
+      }
+    },
+    "table": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "rows", "cols", "header_rows", "cells"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "rows": { "type": "integer", "minimum": 0 },
+        "cols": { "type": "integer", "minimum": 0 },
+        "header_rows": { "type": "integer", "minimum": 0 },
+        "cells": { "type": "array", "items": { "$ref": "#/$defs/cell" } },
+        "source_location": { "$ref": "#/$defs/location" },
+        "caption": { "type": "string" },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+    "cell": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["row", "col", "row_span", "col_span", "text"],
+      "properties": {
+        "row": { "type": "integer", "minimum": 0 },
+        "col": { "type": "integer", "minimum": 0 },
+        "row_span": { "type": "integer", "minimum": 1 },
+        "col_span": { "type": "integer", "minimum": 1 },
+        "text": { "type": "string" },
+        "formula": { "type": "string" },
+        "cached_value": { "type": "string" },
+        "data_type": { "type": "string", "enum": ["string", "number", "date", "bool"] },
+        "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "severity"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "message": { "type": "string" },
+        "severity": { "type": "string", "enum": ["info", "warn", "error"] },
+        "source_location": { "$ref": "#/$defs/location" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "parse_ms": { "type": "integer", "minimum": 0 },
+        "input_bytes": { "type": "integer", "minimum": 0 },
+        "output_chars": { "type": "integer", "minimum": 0 },
+        "pages": { "type": "integer", "minimum": 0 },
+        "peak_rss_mb": { "type": ["integer", "null"], "minimum": 0 },
+        "peak_vram_mb": { "type": ["integer", "null"], "minimum": 0 },
+        "model_load_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "started_at": { "type": "string", "format": "date-time" },
+        "finished_at": { "type": "string", "format": "date-time" }
+      }
+    }
+  }
+}

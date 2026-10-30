@@ -1,6 +1,13 @@
 # DOCUMENT IR v0.1
 
 Schema id: `doc-ir/0.1` (const `documentir.SchemaVersion`).
+
+**Normative JSON Schema:** `internal/documentir/schema/document-ir-0.1.schema.json`,
+published as `api/document-ir-0.1.schema.json` by `make schema`. CI validates
+representative IRs against it (`internal/documentir/schema_test.go`), fails when the
+published copy drifts, and pins the Docling→IR mapping with a golden file
+(`internal/engines/testdata/docling_sample.golden.json`, refresh with
+`UPDATE_GOLDEN=1`).
 Implemented in `internal/documentir/ir.go`; renderers in `export.go`.
 JSON is the IR itself; Markdown and Text are **derived views**, never the source of truth.
 
@@ -150,7 +157,12 @@ extracted, page numbers and coordinates are not available.
 
 ## 6. Known gaps (deliberate, tracked)
 
-* **Formula text** (as opposed to cached value) is not extracted by the tested engines.
+* **Formula text** is not exposed by any engine, so ParseDock reads it from the
+  worksheet XML (`internal/engines/ooxml.go`): `<c><f>…</f><v>cached</v></c>` becomes
+  `cell.formula` / `cell.cached_value`. Only cells the engine already produced are
+  enriched; shared-formula slaves (which carry no text of their own) keep their
+  cached value and produce a `formula_text_unavailable` warning rather than a
+  guessed formula.
 * **OCR confidence/bbox**: tesseract's word boxes are not surfaced by xberg's JSON output;
   docling-rs reports page/region boxes but not per-word confidence.
 * **MinerU flash bbox**: page granularity only.

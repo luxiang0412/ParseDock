@@ -170,6 +170,14 @@ retries a CJK scan once with the accurate engine and records `routing.fallback`.
 
 **DoD.** `docs/DOCUMENT-IR.md` is normative, and a breaking change fails CI.
 
+**Status: DONE (PR-05), with image artifacts deferred.** Published
+`api/document-ir-0.1.schema.json` (normative, drift-checked, validated against real
+adapter output and against known-invalid documents); golden Docling→IR conformance
+file; XLSX formula + cached-value enrichment from the worksheet XML (shared-formula
+slaves warn instead of being guessed). `image_ref` remains reserved: publishing
+image artifacts needs a download endpoint plus ACK/TTL participation, which is
+storage work (PR-06) — documented rather than half-implemented.
+
 ---
 
 ## PR-06 — Storage efficiency and quotas
