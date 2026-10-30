@@ -910,3 +910,42 @@ func (s *Service) storedFilesForTest(jobID string) []string {
 	}
 	return out
 }
+
+// Completions rejected by the storage quota must be terminal: the job must not
+// stay running (its input is gone) and the attempt must be closed.
+func TestStorageQuotaRejectionIsTerminal(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 50} })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	big := bytes.Repeat([]byte("x"), 500)
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: big, Text: big, JSON: big}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("want quota rejection, got %v", err)
+	}
+	got, err := s.GetJob(ctx, job.ID, "owner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProcessingStatus != jobs.StatusFailed || got.ErrorCode != jobs.ErrQuotaExceeded {
+		t.Fatalf("job not failed terminally: %s/%s", got.ProcessingStatus, got.ErrorCode)
+	}
+	if got.RetentionStatus != jobs.RetentionReleasePending {
+		t.Fatalf("rejected job not scheduled for cleanup: %s", got.RetentionStatus)
+	}
+	// The attempt is closed, so the reaper will not requeue it.
+	var state string
+	_ = s.DB.QueryRowContext(ctx, `SELECT state FROM attempts WHERE job_id = ?`, job.ID).Scan(&state)
+	if state != jobs.AttemptFailed {
+		t.Fatalf("attempt state = %s", state)
+	}
+	// Cleanup releases it without leaving storage charged.
+	if rep := s.RunCleanup(ctx); rep.Released == 0 {
+		t.Fatalf("rejected job not released: %+v", rep)
+	}
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM owner_storage`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounting leaked: %d", stored)
+	}
+}

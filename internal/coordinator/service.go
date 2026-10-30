@@ -719,6 +719,57 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	// Quota and ownership are checked *before* the completion update: rejecting a
+	// result after marking the job completed would leave a completed job with no
+	// files (codex review PR-06).
+	var resultBytes int64
+	for _, a := range manifest.Files {
+		resultBytes += a.Size
+	}
+	// Read the owner through the transaction: taking another pooled connection
+	// while holding one can starve the pool under concurrent completions.
+	var ownerID string
+	if err := tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.JobID).Scan(&ownerID); err != nil {
+		_ = s.Store.DeleteJob(p.JobID)
+		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
+	}
+	// A result can be much larger than its input, so admission alone cannot bound
+	// tenant storage: enforce the limit transactionally on the committed bytes.
+	if debugQuota {
+		fmt.Fprintf(os.Stderr, "DBG quota=%d resultBytes=%d files=%d\n", s.Cfg.Quota.MaxStorageBytes, resultBytes, len(manifest.Files))
+	}
+	if s.Cfg.Quota.MaxStorageBytes > 0 {
+		var stored int64
+		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
+		if stored+resultBytes > s.Cfg.Quota.MaxStorageBytes {
+			// The job was admitted but its result cannot be stored. Fail it
+			// terminally in this transaction: leaving it 'running' would let the
+			// lease expire and requeue a job whose input was deleted.
+			msg := "result exceeds the owner's storage quota; release older results or raise --quota-storage-mb"
+			if _, uerr := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
+				error_code = ?, error_message = ?, retention_status = 'release_pending',
+				progress_stage = 'quota_rejected', updated_at = ?
+				WHERE id = ? AND processing_status = 'running'`,
+				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID); uerr != nil {
+				_ = tx.Rollback()
+				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+uerr.Error())
+			}
+			if _, aerr := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ?
+				WHERE job_id = ? AND lease_token = ?`, msg, p.JobID, p.Token); aerr != nil {
+				_ = tx.Rollback()
+				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+aerr.Error())
+			}
+			if cerr := tx.Commit(); cerr != nil {
+				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
+			}
+			// The job is terminal now; its input and the rejected result go away.
+			_ = s.Store.DeleteJob(p.JobID)
+			s.appendEvent(ctx, p.JobID, "failed", map[string]any{
+				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false})
+			return nil, NewError(429, jobs.ErrQuotaExceeded, msg)
+		}
+	}
+
 	res, err := tx.ExecContext(ctx, `UPDATE jobs SET
 			processing_status = 'completed', completed_at = ?, result_expires_at = ?,
 			result_version = ?, result_manifest_path = ?, page_count = CASE WHEN ? > 0 THEN ? ELSE page_count END,
@@ -743,10 +794,6 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		_ = s.Store.DeleteJob(p.JobID)
 		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
 	}
-	var resultBytes int64
-	for _, a := range manifest.Files {
-		resultBytes += a.Size
-	}
 	for _, a := range manifest.Files {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO artifacts(job_id, kind, path, size, sha256, generation, ready_at)
 			VALUES(?,?,?,?,?,1,?) ON CONFLICT(job_id, kind) DO UPDATE SET path=excluded.path, size=excluded.size,
@@ -754,24 +801,6 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			p.JobID, a.Name, s.Store.ResultPath(p.JobID, a.Name), a.Size, a.SHA256, ts(now)); err != nil {
 			_ = s.Store.DeleteJob(p.JobID)
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
-		}
-	}
-	// Read the owner through the transaction: taking another pooled connection
-	// while holding one can starve the pool under concurrent completions.
-	var ownerID string
-	if err := tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.JobID).Scan(&ownerID); err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
-		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
-	}
-	// A result can be much larger than its input, so admission alone cannot bound
-	// tenant storage: enforce the limit transactionally on the committed bytes.
-	if s.Cfg.Quota.MaxStorageBytes > 0 {
-		var stored int64
-		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
-		if stored+resultBytes > s.Cfg.Quota.MaxStorageBytes {
-			_ = s.Store.DeleteJob(p.JobID)
-			return nil, NewError(429, jobs.ErrQuotaExceeded,
-				"result would exceed the owner's storage quota; release older results or raise --quota-storage-mb")
 		}
 	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
@@ -1252,3 +1281,5 @@ func nullIfEmpty(s string) any {
 func isUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unique constraint")
 }
+
+var debugQuota = os.Getenv("PARSEDOCK_DEBUG_QUOTA") == "1"
