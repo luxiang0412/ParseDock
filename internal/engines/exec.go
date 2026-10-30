@@ -12,6 +12,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"parsedock.dev/parsedock/internal/jobs"
 )
 
 // CLISpec describes how to launch a parser binary.
@@ -137,3 +139,45 @@ func checkUnshare(ctx context.Context) error {
 
 // workFile returns a scratch path inside the worker's per-attempt directory.
 func workFile(workDir, name string) string { return filepath.Join(workDir, name) }
+
+// ClassifyCLIError turns a parser's stderr into a stable error code plus a short,
+// useful message. Log noise (WARN/INFO lines, timestamps) is dropped: the previous
+// "tail 400 bytes" approach truncated into the middle of a warning and hid the
+// actual cause in a real-corpus run (PR-01 follow-up).
+func ClassifyCLIError(stderr string) (code string, message string) {
+	lines := strings.Split(stderr, "\n")
+	keep := make([]string, 0, len(lines))
+	for _, line := range lines {
+		l := strings.TrimSpace(line)
+		if l == "" {
+			continue
+		}
+		up := strings.ToUpper(l)
+		if strings.Contains(up, " WARN ") || strings.Contains(up, " INFO ") ||
+			strings.Contains(up, " DEBUG ") || strings.Contains(up, " TRACE ") {
+			continue
+		}
+		keep = append(keep, l)
+	}
+	msg := strings.Join(keep, " | ")
+	if msg == "" {
+		msg = strings.TrimSpace(stderr)
+	}
+	if len(msg) > 600 {
+		msg = msg[len(msg)-600:]
+	}
+	low := strings.ToLower(msg)
+	switch {
+	case strings.Contains(low, "archive too large"),
+		strings.Contains(low, "exceeds docling_rs_sheet_max_cells"),
+		strings.Contains(low, "document_too_large"):
+		return jobs.ErrExpandedTooLarge, "document expands beyond the parser limits: " + msg
+	case strings.Contains(low, "timed out"), strings.Contains(low, "deadline exceeded"):
+		return jobs.ErrTimeout, msg
+	case strings.Contains(low, "password"), strings.Contains(low, "encrypted"):
+		return jobs.ErrEncrypted, msg
+	case strings.Contains(low, "unsupported"), strings.Contains(low, "not supported"):
+		return jobs.ErrUnsupportedType, msg
+	}
+	return jobs.ErrMalformed, msg
+}

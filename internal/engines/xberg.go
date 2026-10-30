@@ -152,6 +152,12 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		req.Progress(5, "engine_start")
 	}
 	res, err := RunCLI(ctx, x.spec(), req.WorkDir, args...)
+	if err != nil && res != nil && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
+		// exec.Cmd can report context.Canceled after a successful run when the
+		// context is cancelled while Wait() settles; if the engine produced valid
+		// output, trust the output instead of failing the job.
+		err = nil
+	}
 	if err != nil {
 		if res != nil && res.TimedOut {
 			return nil, Errf(true, jobs.ErrTimeout, "xberg timed out after %s", timeout)
@@ -159,18 +165,25 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		if errors.Is(err, ErrSandboxUnavailable) {
 			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
 		}
-		msg := "xberg failed"
+		code, msg := jobs.ErrMalformed, "xberg failed"
 		if res != nil {
-			msg = fmt.Sprintf("xberg exit %d: %s", res.ExitCode, tail(string(res.Stderr), 400))
+			code, msg = ClassifyCLIError(string(res.Stderr))
+			msg = fmt.Sprintf("xberg exit %d: %s", res.ExitCode, msg)
 		}
-		return nil, Errf(false, jobs.ErrMalformed, "%s", msg)
+		return nil, &Error{Code: code, Message: msg}
 	}
 	if req.Progress != nil {
 		req.Progress(80, "engine_done")
 	}
 	var out xbergOutput
-	if err := json.Unmarshal(res.Stdout, &out); err != nil {
-		return nil, Errf(false, jobs.ErrInternal, "xberg returned invalid JSON: %v", err)
+	if uerr := json.Unmarshal(res.Stdout, &out); uerr != nil {
+		// The engine can exit 0 while aborting mid-stream (e.g. it hit its archive
+		// limit after emitting part of the JSON). Prefer the stderr explanation.
+		code, msg := ClassifyCLIError(string(res.Stderr))
+		if code == jobs.ErrMalformed && strings.TrimSpace(msg) == "" {
+			return nil, Errf(false, jobs.ErrInternal, "xberg returned invalid JSON: %v", uerr)
+		}
+		return nil, &Error{Code: code, Message: fmt.Sprintf("xberg produced %d bytes of unusable output: %s", len(res.Stdout), msg)}
 	}
 	doc := documentir.New()
 	doc.ParserEngine = x.Name()

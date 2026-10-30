@@ -220,3 +220,106 @@ func TestInputWriterLimit(t *testing.T) {
 	}
 	w.Abort()
 }
+
+// Regression from the test_data run: a PDF's trailer markers live at the *end*.
+// The Phase 0 pre-flight only looked at the first MiB and rejected 30 % of a real
+// corpus as "PDF structure markers are missing" (168 of 554 files).
+func TestCheckPDFFindsTrailerInTail(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "trailer-in-tail.pdf")
+	head := []byte("%PDF-1.7\n1 0 obj << /Type /Page >> endobj\n")
+	filler := bytes.Repeat([]byte("stream-data-"), 200000) // ~2.4 MiB
+	tail := []byte("\ntrailer << /Root 1 0 R >>\nstartxref\n12345\n%%EOF\n")
+	body := append(append(append([]byte{}, head...), filler...), tail...)
+	if err := os.WriteFile(p, body, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pages, encrypted, err := CheckPDF(p, lim())
+	if err != nil {
+		t.Fatalf("pre-flight rejected a valid PDF: %v", err)
+	}
+	if pages < 1 {
+		t.Fatalf("page count = %d", pages)
+	}
+	if encrypted {
+		t.Fatal("unexpected encrypted flag")
+	}
+}
+
+// Real files sometimes carry a short preamble before %PDF- (Adobe tolerates up to
+// 1024 bytes). Two files in the test corpus did; they must not be rejected.
+func TestPDFHeaderWithinFirst1024(t *testing.T) {
+	head := append(bytes.Repeat([]byte("JUNK"), 20), []byte("%PDF-1.7\n%%EOF\n")...)
+	f, err := SniffFormat("wrapped.pdf", head, lim())
+	if err != nil {
+		t.Fatalf("prefixed PDF rejected: %v", err)
+	}
+	if f.Name != "pdf" {
+		t.Fatalf("format = %s", f.Name)
+	}
+	// A header beyond 1024 bytes stays rejected: that is not a PDF in practice.
+	far := append(bytes.Repeat([]byte("x"), 2000), []byte("%PDF-1.7")...)
+	if _, err := SniffFormat("far.pdf", far, lim()); err == nil {
+		t.Fatal("PDF header beyond 1024 bytes accepted")
+	}
+}
+
+// A legitimate large Office file must not be classified as a compression bomb,
+// while the deflate bomb fixture still must be.
+func TestZipBombVersusLegitLargeFile(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name string, payload []byte) string {
+		p := filepath.Join(dir, name)
+		f, err := os.Create(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		zw := zip.NewWriter(f)
+		if _, err := zw.Create("word/document.xml"); err != nil {
+			t.Fatal(err)
+		}
+		z, err := zw.Create("word/media/blob.bin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := z.Write(payload); err != nil {
+			t.Fatal(err)
+		}
+		if err := zw.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	// Legit: 100 MiB of pseudo-random data compresses ~1:1 → ratio check passes.
+	random := make([]byte, 4<<20)
+	for i := range random {
+		random[i] = byte((i*2654435761 + 12345) >> 13)
+	}
+	legit := write("legit.docx", bytes.Repeat(random, 25))
+	if err := VerifyZipContainer(legit, MustLookupByName("docx"), lim()); err != nil {
+		t.Fatalf("legitimate large archive rejected: %v", err)
+	}
+
+	// Bomb: 40 MiB of zeros at ~1000:1.
+	bomb := write("bomb.docx", make([]byte, 40<<20))
+	if err := VerifyZipContainer(bomb, MustLookupByName("docx"), lim()); err == nil {
+		t.Fatal("compression bomb accepted")
+	}
+
+	// Expanded-too-large: real file (low ratio) whose total expansion exceeds the
+	// configured limit must be reported as a size problem, not as a bomb.
+	small := lim()
+	small.MaxZipUncompressed = 1 << 20 // 1 MiB
+	bombErr := VerifyZipContainer(legit, MustLookupByName("docx"), small)
+	if bombErr == nil {
+		t.Fatal("expansion limit not enforced")
+	}
+	var ve *ValidationError
+	if !asValidation(bombErr, &ve) || ve.Code != "expanded_too_large" {
+		t.Fatalf("error = %v, want expanded_too_large", bombErr)
+	}
+}
