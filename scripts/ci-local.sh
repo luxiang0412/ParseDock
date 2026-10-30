@@ -26,6 +26,8 @@ LOG="$OUT/$PHASE.log"
 : > "$LOG"
 
 STARTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+MARKER="$OUT/.$PHASE.start"
+touch "$MARKER"
 STEPS_JSON="$OUT/.$PHASE.steps.jsonl"
 : > "$STEPS_JSON"
 FAILED_STEP=""
@@ -126,18 +128,9 @@ phase_container() {
   fi
   step "container smoke with real engines" bash "$ROOT/scripts/container-smoke.sh" || return 1
   step "licence audit (report mode, both images)" bash -c "AUDIT_MODE=report SBOM_DIR='$OUT/sbom' bash '$ROOT/scripts/license_audit.sh' parsedock:smoke parsedock-worker-cpu:smoke" || return 1
-  step "licence classification" python3 - "$OUT/sbom/parsedock_smoke.json" "$OUT/sbom/parsedock-worker-cpu_smoke.json" <<'PY' || return 1
-import json, sys
-control = json.load(open(sys.argv[1]))
-worker = json.load(open(sys.argv[2]))
-if control.get("gpl_libraries"):
-    print("control plane must stay GPL-free"); sys.exit(1)
-if not any("libx265" in p for p in worker.get("gpl_libraries", [])):
-    print("NOTE: worker image no longer bundles libx265 — revisit licence item L1 "
-          "and remove the documented BLOCK"); sys.exit(0)
-print("worker image BLOCKED as expected: libx265 (GPL-2.0) — external distribution "
-      "remains blocked until L1 is signed off")
-PY
+  step "licence classification" bash -c "python3 '$ROOT/scripts/classify_licence.py' \
+    '$OUT/sbom/parsedock_smoke.json' '$OUT/sbom/parsedock-worker-cpu_smoke.json' \
+    | tee '$OUT/licence-classification.txt'" || return 1
 }
 
 run_phase() {
@@ -180,17 +173,26 @@ print(f"phase {phase}: {status} in {sum(s['duration_ms'] for s in steps)/1000:.1
 PY
 
 # Collect the evidence CI uploads as artifacts.
+# Only this phase's evidence, never older runs that happen to sit in the tree.
+collect_new() {
+  local dest="$OUT/raw" f
+  mkdir -p "$dest"
+  for f in "$@"; do
+    if [[ -f "$f" && "$f" -nt "$MARKER" ]]; then
+      cp -a "$f" "$dest/" 2>/dev/null || true
+    fi
+  done
+}
 if [[ "$PHASE" == "lifecycle" || "$PHASE" == "all" ]]; then
-  mkdir -p "$OUT/raw"
-  cp -a "$ROOT"/benchmark/results/raw/acceptance-*.json "$OUT/raw/" 2>/dev/null || true
-  cp -a "$ROOT"/benchmark/results/raw/pr00-*.json "$OUT/raw/" 2>/dev/null || true
-  cp -a "$ROOT"/runtime/logs/acceptance/*.log "$OUT/raw/" 2>/dev/null || true
+  collect_new "$ROOT"/benchmark/results/raw/acceptance-lifecycle-*.json \
+              "$ROOT"/benchmark/results/raw/pr00-*.json \
+              "$ROOT"/runtime/logs/acceptance/*.log
 fi
 if [[ "$PHASE" == "engines" || "$PHASE" == "all" ]]; then
-  mkdir -p "$OUT/raw"
-  cp -a "$ROOT"/benchmark/results/summary/*.csv "$OUT/raw/" 2>/dev/null || true
-  cp -a "$ROOT"/benchmark/results/summary/scores.json "$OUT/raw/" 2>/dev/null || true
-  cp -a "$ROOT"/benchmark/results/raw/acceptance-real-*.json "$OUT/raw/" 2>/dev/null || true
+  collect_new "$ROOT"/benchmark/results/raw/acceptance-real-*.json \
+              "$ROOT"/benchmark/results/summary/benchmarks-quality.csv \
+              "$ROOT"/benchmark/results/summary/benchmarks-perf.csv \
+              "$ROOT"/benchmark/results/summary/scores.json
 fi
 
 [[ "$STATUS" == "pass" ]]
