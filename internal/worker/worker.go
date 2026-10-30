@@ -370,13 +370,25 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	// large workbook can take a while to unzip, and a lost lease would let the
 	// coordinator reclaim a job that is still being processed.
 	if perr == nil && engines.ShouldEnrichFormulas(task.Format) {
-		if n, warns, eerr := engines.EnrichXLSXFormulas(parseCtx, local, result); eerr == nil {
+		n, warns, eerr := engines.EnrichXLSXFormulas(parseCtx, local, result)
+		if eerr != nil {
+			// Enrichment is best effort only for genuine parse problems; a
+			// cancelled/expired context must fail the task instead of uploading a
+			// half-enriched result after the deadline.
+			if parseCtx.Err() != nil {
+				if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
+					w.Log.Info("task cancelled during formula enrichment", "job", task.JobID)
+					return nil
+				}
+				return w.fail(ctx, task, jobs.ErrTimeout,
+					"parse deadline exceeded during formula enrichment", true)
+			}
+			w.Log.Warn("formula enrichment failed", "job", task.JobID, "err", eerr)
+		} else {
 			result.Warnings = append(result.Warnings, warns...)
 			if n > 0 {
 				w.Log.Info("formula enrichment", "job", task.JobID, "cells", n)
 			}
-		} else if parseCtx.Err() == nil {
-			w.Log.Warn("formula enrichment failed", "job", task.JobID, "err", eerr)
 		}
 	}
 	if perr == nil {

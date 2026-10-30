@@ -372,18 +372,25 @@ func cachedText(cellType, raw string, sharedStrings []string) string {
 	}
 }
 
-// verifyTableOrigin reports whether the table's local coordinates line up with the
-// worksheet's addresses. Evidence comes from non-formula cells only: a formula
-// cell's engine text may be a formatted rendering (a date, a currency) that does
-// not equal the raw cached value. At least one comparable cell must agree and at
-// least half of them must agree; otherwise the table is treated as unmappable
-// rather than guessed.
+// verifyTableOrigin proves that the engine's table-local coordinates are the
+// worksheet's addresses. The evidence must be unambiguous:
+//
+//   - only non-formula cells are compared (a formula cell's engine text may be a
+//     formatted rendering such as a date or currency);
+//   - every comparable cell must match — a majority is not enough, because
+//     repeated headers/labels can otherwise mask a shifted table;
+//   - a cell the sheet leaves blank while the table carries text counts as a
+//     mismatch;
+//   - at least two cells must be comparable.
+//
+// Numbers are compared by value so "48,120" and "48120" agree. Anything short of
+// this returns false and the caller skips enrichment with a warning.
 func verifyTableOrigin(table *documentir.Table, values map[[2]int]string,
 	formulaCells map[[2]int]formulaCell) bool {
 	if len(values) == 0 {
 		return false
 	}
-	compared, matched := 0, 0
+	compared := 0
 	for _, c := range table.Cells {
 		key := [2]int{c.Row, c.Col}
 		if _, isFormula := formulaCells[key]; isFormula {
@@ -393,19 +400,34 @@ func verifyTableOrigin(table *documentir.Table, values map[[2]int]string,
 		if text == "" {
 			continue
 		}
-		got := strings.TrimSpace(values[key])
-		if got == "" {
-			continue
-		}
 		compared++
-		if got == text {
-			matched++
+		got := strings.TrimSpace(values[key])
+		if got == "" || !sameCellValue(text, got) {
+			return false
 		}
 		if compared >= 50 {
 			break
 		}
 	}
-	return matched >= 1 && matched*2 >= compared
+	return compared >= 2
+}
+
+// sameCellValue compares cell text, treating numeric renderings as equal when
+// their numeric value is equal after removing thousands separators and spaces.
+func sameCellValue(a, b string) bool {
+	if a == b {
+		return true
+	}
+	norm := func(v string) string {
+		return strings.NewReplacer(",", "", " ", "", "\u00a0", "").Replace(v)
+	}
+	na, nb := norm(a), norm(b)
+	if na == nb {
+		return true
+	}
+	fa, ea := strconv.ParseFloat(na, 64)
+	fb, eb := strconv.ParseFloat(nb, 64)
+	return ea == nil && eb == nil && fa == fb
 }
 
 func hasSheet(formulas map[string]sheetFormulas, ordered []string, name string) bool {

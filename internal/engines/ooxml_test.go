@@ -236,7 +236,7 @@ func TestEnrichKeepsEngineDateType(t *testing.T) {
 	add("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`)
 	add("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`)
 	// Numeric serial 45123 with a date style, no t="d".
-	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" s="1"><f>TODAY()</f><v>45123</v></c><c r="B1" t="inlineStr"><is><t>label</t></is></c></row></sheetData></worksheet>`)
+	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" s="1"><f>TODAY()</f><v>45123</v></c><c r="B1" t="inlineStr"><is><t>label</t></is></c><c r="C1"><v>5</v></c></row></sheetData></worksheet>`)
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -249,6 +249,7 @@ func TestEnrichKeepsEngineDateType(t *testing.T) {
 		Cells: []documentir.Cell{
 			{Row: 0, Col: 0, Text: "45123", DataType: "date"},
 			{Row: 0, Col: 1, Text: "label", DataType: "string"},
+			{Row: 0, Col: 2, Text: "5", DataType: "number"},
 		}}}
 	EnrichXLSXFormulas(context.Background(), path, doc)
 	cell := doc.Tables[0].Cells[0]
@@ -279,7 +280,7 @@ func TestEnrichWarnsOnUncachedSharedFormula(t *testing.T) {
 	}
 	add("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`)
 	add("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`)
-	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">A2+1</f><v>2</v></c><c r="B1"><v>2</v></c><c r="A2"><f t="shared" si="0"/></c></row></sheetData></worksheet>`)
+	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">A2+1</f><v>2</v></c><c r="B1"><v>2</v></c><c r="C1"><v>9</v></c><c r="A2"><f t="shared" si="0"/></c></row></sheetData></worksheet>`)
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -288,8 +289,9 @@ func TestEnrichWarnsOnUncachedSharedFormula(t *testing.T) {
 	}
 	doc := documentir.New()
 	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 1,
-		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
-		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 1, Col: 0}, {Row: 0, Col: 1, Text: "2"}}}}
+		Loc: &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 1, Col: 0},
+			{Row: 0, Col: 1, Text: "2"}, {Row: 0, Col: 2, Text: "9"}}}}
 	applied, warnings, gerr := EnrichXLSXFormulas(context.Background(), path, doc)
 	if gerr != nil || applied != 1 {
 		t.Fatalf("applied = %d err = %v, want the master only", applied, gerr)
@@ -327,8 +329,9 @@ func TestEnrichUsesReportedSheetIndex(t *testing.T) {
 	path := writeMinimalXLSX(t)
 	doc := documentir.New()
 	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 4,
-		Loc:   &documentir.SourceLocation{Kind: "sheet", Page: 1}, // sheet 1, no name
-		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "1"}, {Row: 1, Col: 1, Text: "42"}}}}
+		Loc: &documentir.SourceLocation{Kind: "sheet", Page: 1}, // sheet 1, no name
+		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "1"}, {Row: 0, Col: 3, Text: "Shared label"},
+			{Row: 1, Col: 1, Text: "42"}}}}
 	applied, _, err := EnrichXLSXFormulas(context.Background(), path, doc)
 	if err != nil || applied != 1 {
 		t.Fatalf("applied = %d err = %v", applied, err)
