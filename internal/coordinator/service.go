@@ -959,9 +959,13 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		return s.GetJob(ctx, jobID, "")
 	}
 
+	// Failed jobs are metadata-only, so the files become cleanup's responsibility in the
+	// same transaction that records the failure. Moving to release_pending here (rather than
+	// after a separate lease check) is what makes the decision atomic: a concurrent backup
+	// pin only accepts 'active' rows, so it either wins (and Fail sees the lease) or loses
+	// (and the backup retries with a fresh snapshot).
 	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
-		error_code = ?, error_message = ?, retention_status = CASE WHEN retention_status = 'active'
-		THEN 'active' ELSE retention_status END, updated_at = ?
+		error_code = ?, error_message = ?, retention_status = 'release_pending', updated_at = ?
 		WHERE id = ? AND processing_status = 'running'`,
 		ts(now), code, truncate(msg, 500), ts(now), jobID); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
@@ -974,15 +978,11 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	s.appendEvent(ctx, jobID, "failed", map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable})
-	// Failed jobs keep metadata only — unless a client (or an online backup) holds a live
-	// download lease on the input. Deleting under an active lease would break a backup that
-	// has already snapshotted this job, so the files are released by the cleaner once the
-	// lease expires instead of being removed here.
+	// A client (or an online backup) may hold a live download lease on the input; deleting
+	// under it would pull the bytes out from under a reader. In that case the cleaner removes
+	// the files once the lease expires (it already honours download_leases).
 	if le, _ := s.hasActiveDownloadLease(ctx, jobID); le {
-		if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
-			WHERE id = ? AND processing_status = 'failed'`, ts(nowUTC()), jobID); err == nil {
-			return s.GetJob(ctx, jobID, "")
-		}
+		return s.GetJob(ctx, jobID, "")
 	}
 	_ = s.Store.DeleteJob(jobID)
 	return s.GetJob(ctx, jobID, "")
