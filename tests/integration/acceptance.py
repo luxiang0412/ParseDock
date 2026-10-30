@@ -922,8 +922,16 @@ def t17(stack: Stack) -> dict:
     # no result may appear afterwards.
     time.sleep(4)
     after = stack.get_job(jid).json()
-    worker_log = stack.logs["worker0"].read_text(errors="replace")
-    worker_stopped = jid in worker_log and "cancelled by coordinator" in worker_log
+    # After T09 the original worker may have been replaced; check every worker log
+    # this stack produced.
+    worker_stopped = False
+    for key, path in stack.logs.items():
+        if not key.startswith("worker"):
+            continue
+        text = path.read_text(errors="replace")
+        if jid in text and "cancelled by coordinator" in text:
+            worker_stopped = True
+            break
     assert after["status"] == "cancelled" and not after.get("result_urls"), after
     assert worker_stopped, "worker never logged that it stopped on cancellation"
 

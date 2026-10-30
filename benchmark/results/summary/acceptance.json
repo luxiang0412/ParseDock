@@ -1,11 +1,24 @@
 {
   "profiles": {
     "lifecycle": {
-      "updated_at": "2026-10-30T12:21:26.370362+00:00",
+      "updated_at": "2026-10-30T12:25:56.450096+00:00",
       "results": {
+        "T03": "PASS",
+        "T04": "PASS",
+        "T05": "PASS",
+        "T06": "PASS",
+        "T07": "PASS",
+        "T08": "PASS",
+        "T09": "PASS",
+        "T10": "PASS",
+        "T12": "PASS",
+        "T13": "PASS",
+        "T14": "PASS",
+        "T15": "PASS",
+        "T16": "PASS",
         "T17": "PASS"
       },
-      "raw": "benchmark/results/raw/acceptance-lifecycle-20261030T202126.json",
+      "raw": "benchmark/results/raw/acceptance-lifecycle-20261030T202556.json",
       "engines": "native,xberg,docling-rs"
     },
     "real": {
