@@ -318,3 +318,19 @@ func TestEnrichWarnsOnUncachedSharedFormula(t *testing.T) {
 		t.Fatalf("no shared-formula warning: %v", warnings)
 	}
 }
+
+// A table that names its sheet must not inherit another sheet's formulas.
+func TestEnrichDoesNotCrossSheets(t *testing.T) {
+	path := writeMinimalXLSX(t) // one sheet "Sheet1" with formulas
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 4,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "OtherSheet"},
+		Cells: []documentir.Cell{{Row: 1, Col: 1, Text: "42"}}}}
+	applied, _ := EnrichXLSXFormulas(path, doc)
+	if applied != 0 {
+		t.Fatalf("formulas from another sheet were applied: %d", applied)
+	}
+	if doc.Tables[0].Cells[0].Formula != "" || doc.Tables[0].Cells[0].CachedValue != "" {
+		t.Fatalf("cross-sheet enrichment: %+v", doc.Tables[0].Cells[0])
+	}
+}

@@ -201,9 +201,10 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 		}
 		cells, ok := formulas[sheet]
 		if !ok {
-			// Engines that expose only the sheet index: fall back to document order
-			// when the counts line up (never guess otherwise).
-			if ti < len(ordered) && len(doc.Tables) == len(ordered) {
+			// Positional fallback exists only for engines that expose the sheet
+			// *index* and no name (xberg). A table that states its sheet must never
+			// inherit another sheet's formulas just because its own sheet has none.
+			if sheet == "" && ti < len(ordered) && len(doc.Tables) == len(ordered) {
 				cells, ok = formulas[ordered[ti]]
 			}
 		}
