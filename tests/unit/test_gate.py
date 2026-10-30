@@ -39,7 +39,8 @@ class GateTest(unittest.TestCase):
             for r in quality_rows:
                 w.writerow(r)
         with (self.dir / "summary" / "benchmarks-perf.csv").open("w", newline="") as fh:
-            w = csv.DictWriter(fh, fieldnames=["engine", "file", "p50_ms", "p95_ms"])
+            # Mirror the real summarize.py schema: the median column is `median_ms`.
+            w = csv.DictWriter(fh, fieldnames=["engine", "file", "median_ms", "p95_ms"])
             w.writeheader()
             for r in perf_rows:
                 w.writerow(r)
@@ -48,7 +49,7 @@ class GateTest(unittest.TestCase):
     def base_case(self):
         self.write(
             [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
-            [{"engine": "xberg", "file": "a.pdf", "p50_ms": "100", "p95_ms": "200"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],
             [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
         sys.argv = ["gate.py", "--update"]
         self.assertEqual(self.gate.main(), 0)
@@ -65,7 +66,7 @@ class GateTest(unittest.TestCase):
         self.base_case()
         self.write(
             [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
-            [{"engine": "xberg", "file": "a.pdf", "p50_ms": "100", "p95_ms": "200"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],
             [{"engine": "xberg", "dimensions": {"quality": 8.5}, "quality_sub": {"structure": 9.0}}])
         self.assertEqual(self.run_gate(), 1)
 
@@ -73,7 +74,7 @@ class GateTest(unittest.TestCase):
         self.base_case()
         self.write(
             [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
-            [{"engine": "xberg", "file": "a.pdf", "p50_ms": "100", "p95_ms": "260"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "400"}],
             [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
         self.assertEqual(self.run_gate(), 1)
 
@@ -81,13 +82,31 @@ class GateTest(unittest.TestCase):
         self.base_case()
         self.write(
             [{"engine": "xberg", "file": "a.pdf", "cer": "0.05", "table_cell_accuracy": "0.9"}],
-            [{"engine": "xberg", "file": "a.pdf", "p50_ms": "100", "p95_ms": "200"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],
+            [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 1)
+
+    def test_small_absolute_latency_noise_is_ignored(self):
+        """6.9 → 9.0 ms is 30 % but only 2 ms: millisecond noise, not a regression."""
+        self.base_case()
+        self.write(
+            [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "7", "p95_ms": "200"}],
+            [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 0)
+
+    def test_median_regression_fails(self):
+        """median_ms is the column summarize.py actually writes."""
+        self.base_case()
+        self.write(
+            [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "150", "p95_ms": "200"}],
             [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
         self.assertEqual(self.run_gate(), 1)
 
     def test_missing_baseline_is_an_error(self):
         self.write([{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
-                   [{"engine": "xberg", "file": "a.pdf", "p50_ms": "100", "p95_ms": "200"}],
+                   [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],
                    [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
         self.assertEqual(self.run_gate(), 2)
 

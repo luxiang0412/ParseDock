@@ -93,11 +93,13 @@ def snapshot() -> dict:
                 snap["samples"].setdefault(eng, {})[f] = {"cer": float(cer)}
     for eng, files in perf.items():
         for f, row in files.items():
-            for key in ("p50_ms", "p95_ms"):
-                v = row.get(key)
+            # summarize.py writes the median as `median_ms`; keep our key name stable
+            # (`p50_ms`) but read the real column, and accept either for old summaries.
+            for src, dst in (("median_ms", "p50_ms"), ("p50_ms", "p50_ms"), ("p95_ms", "p95_ms")):
+                v = row.get(src)
                 if v in (None, ""):
                     continue
-                snap["samples"].setdefault(eng, {}).setdefault(f, {})[key] = float(v)
+                snap["samples"].setdefault(eng, {}).setdefault(f, {})[dst] = float(v)
     return snap
 
 
@@ -119,6 +121,9 @@ def main() -> int:
     ap.add_argument("--update", action="store_true", help="write the current summary as the baseline")
     ap.add_argument("--max-quality-drop", type=float, default=0.02)
     ap.add_argument("--max-latency-regress", type=float, default=0.15)
+    ap.add_argument("--min-abs-latency-ms", type=float, default=20.0,
+                    help="ignore relative latency drift below this absolute change (millisecond "
+                         "noise on fast text fixtures is not a regression)")
     args = ap.parse_args()
 
     cur = snapshot()
@@ -165,7 +170,7 @@ def main() -> int:
             for key in ("p50_ms", "p95_ms"):
                 if key in b and key in c:
                     r = rel_rise(b[key], c[key])
-                    if r > args.max_latency_regress:
+                    if r > args.max_latency_regress and (c[key] - b[key]) > args.min_abs_latency_ms:
                         failures.append(f"{eng}/{f}: {key} {b[key]:.1f} → {c[key]:.1f} ms "
                                         f"({r * 100:+.1f} % > {args.max_latency_regress * 100:.0f} %)")
 

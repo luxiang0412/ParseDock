@@ -31,11 +31,12 @@
       "structure": 9.725
     }
   },
-  "generated_at": "2026-10-30T18:29:37Z",
+  "generated_at": "2026-10-30T18:40:27+00:00",
   "samples": {
     "docling-rs": {
       "generated/docx_report.docx": {
         "cer": 0.284,
+        "p50_ms": 14.6,
         "p95_ms": 16.5
       },
       "generated/image_screenshot.webp": {
@@ -43,14 +44,17 @@
       },
       "generated/md_notes.md": {
         "cer": 0.2123,
+        "p50_ms": 3.1,
         "p95_ms": 3.1
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 0.8836,
+        "p50_ms": 679.4,
         "p95_ms": 682.1
       },
       "generated/pdf_scanned_zh.pdf": {
         "cer": 0.098,
+        "p50_ms": 697.6,
         "p95_ms": 715.8
       },
       "generated/pdf_text_en_30p.pdf": {
@@ -58,14 +62,17 @@
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.0072,
-        "p95_ms": 814.7
+        "p50_ms": 815.1,
+        "p95_ms": 819.4
       },
       "generated/pdf_text_zh_2p.pdf": {
         "cer": 0.0337,
+        "p50_ms": 741.2,
         "p95_ms": 753.4
       },
       "generated/pdf_two_column_en.pdf": {
         "cer": 0.2772,
+        "p50_ms": 273.6,
         "p95_ms": 274.3
       },
       "generated/scan_source_en.png": {
@@ -73,20 +80,24 @@
       },
       "generated/scan_source_zh.png": {
         "cer": 0.098,
+        "p50_ms": 1045.5,
         "p95_ms": 1049.7
       },
       "generated/txt_plain.txt": {
         "cer": 0.0,
+        "p50_ms": 3.1,
         "p95_ms": 3.1
       },
       "generated/xlsx_workbook.xlsx": {
         "cer": 0.2539,
+        "p50_ms": 5.6,
         "p95_ms": 18.8
       }
     },
     "docling-serve": {
       "generated/docx_report.docx": {
         "cer": 0.284,
+        "p50_ms": 2009.4,
         "p95_ms": 2010.2
       },
       "generated/image_screenshot.webp": {
@@ -94,14 +105,17 @@
       },
       "generated/md_notes.md": {
         "cer": 0.216,
+        "p50_ms": 2009.5,
         "p95_ms": 2009.5
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 1.0,
+        "p50_ms": 2008.6,
         "p95_ms": 2008.9
       },
       "generated/pdf_scanned_zh.pdf": {
         "cer": 1.0,
+        "p50_ms": 2009.7,
         "p95_ms": 2009.7
       },
       "generated/pdf_text_en_30p.pdf": {
@@ -109,14 +123,17 @@
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.006,
+        "p50_ms": 2007.1,
         "p95_ms": 2009.6
       },
       "generated/pdf_text_zh_2p.pdf": {
         "cer": 0.0337,
+        "p50_ms": 2010.3,
         "p95_ms": 2010.3
       },
       "generated/pdf_two_column_en.pdf": {
         "cer": 0.2772,
+        "p50_ms": 2009.0,
         "p95_ms": 2009.2
       },
       "generated/scan_source_en.png": {
@@ -124,10 +141,12 @@
       },
       "generated/scan_source_zh.png": {
         "cer": 1.0,
+        "p50_ms": 2008.5,
         "p95_ms": 2008.7
       },
       "generated/xlsx_workbook.xlsx": {
         "cer": 0.2539,
+        "p50_ms": 2010.5,
         "p95_ms": 2010.8
       }
     },
@@ -137,10 +156,12 @@
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 0.6644,
+        "p50_ms": 866.6,
         "p95_ms": 867.0
       },
       "generated/pdf_scanned_zh.pdf": {
         "cer": 0.451,
+        "p50_ms": 877.3,
         "p95_ms": 879.0
       },
       "generated/pdf_text_en_30p.pdf": {
@@ -148,14 +169,17 @@
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.1666,
+        "p50_ms": 927.6,
         "p95_ms": 928.0
       },
       "generated/pdf_text_zh_2p.pdf": {
         "cer": 0.6276,
+        "p50_ms": 930.2,
         "p95_ms": 933.8
       },
       "generated/pdf_two_column_en.pdf": {
         "cer": 0.2759,
+        "p50_ms": 919.6,
         "p95_ms": 936.7
       },
       "generated/scan_source_en.png": {
@@ -163,50 +187,61 @@
       },
       "generated/scan_source_zh.png": {
         "cer": 0.451,
+        "p50_ms": 1519.3,
         "p95_ms": 1519.3
       }
     },
     "native": {
       "generated/csv_gb18030.csv": {
         "cer": 0.0,
+        "p50_ms": 0.0,
         "p95_ms": 0.0
       },
       "generated/csv_semicolon_eu.csv": {
         "cer": 0.0,
+        "p50_ms": 0.0,
         "p95_ms": 0.0
       },
       "generated/csv_utf8.csv": {
         "cer": 0.0,
+        "p50_ms": 0.0,
         "p95_ms": 0.0
       },
       "generated/md_notes.md": {
         "cer": 0.0,
+        "p50_ms": 0.0,
         "p95_ms": 0.0
       },
       "generated/tsv_data.tsv": {
         "cer": 0.0,
+        "p50_ms": 0.0,
         "p95_ms": 0.0
       },
       "generated/txt_plain.txt": {
         "cer": 0.0,
+        "p50_ms": 0.0,
         "p95_ms": 0.0
       }
     },
     "tika": {
       "generated/csv_gb18030.csv": {
         "cer": 0.0775,
+        "p50_ms": 3.3,
         "p95_ms": 3.3
       },
       "generated/csv_semicolon_eu.csv": {
         "cer": 0.0364,
+        "p50_ms": 2.6,
         "p95_ms": 2.6
       },
       "generated/csv_utf8.csv": {
         "cer": 0.0602,
+        "p50_ms": 2.7,
         "p95_ms": 2.7
       },
       "generated/docx_report.docx": {
         "cer": 0.0447,
+        "p50_ms": 91.7,
         "p95_ms": 94.0
       },
       "generated/image_screenshot.webp": {
@@ -214,14 +249,17 @@
       },
       "generated/md_notes.md": {
         "cer": 0.0472,
+        "p50_ms": 3.1,
         "p95_ms": 3.1
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 0.1986,
+        "p50_ms": 340.6,
         "p95_ms": 342.3
       },
       "generated/pdf_scanned_zh.pdf": {
         "cer": 1.2549,
+        "p50_ms": 329.2,
         "p95_ms": 335.4
       },
       "generated/pdf_text_en_30p.pdf": {
@@ -229,14 +267,17 @@
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.1233,
+        "p50_ms": 9.5,
         "p95_ms": 11.2
       },
       "generated/pdf_text_zh_2p.pdf": {
         "cer": 0.5104,
+        "p50_ms": 7.8,
         "p95_ms": 8.5
       },
       "generated/pdf_two_column_en.pdf": {
         "cer": 0.2958,
+        "p50_ms": 4.6,
         "p95_ms": 4.7
       },
       "generated/scan_source_en.png": {
@@ -244,51 +285,62 @@
       },
       "generated/scan_source_zh.png": {
         "cer": 0.9412,
+        "p50_ms": 220.4,
         "p95_ms": 221.3
       },
       "generated/tsv_data.tsv": {
         "cer": 0.0517,
+        "p50_ms": 2.0,
         "p95_ms": 2.0
       },
       "generated/txt_plain.txt": {
         "cer": 0.0027,
+        "p50_ms": 2.3,
         "p95_ms": 2.3
       },
       "generated/xlsx_workbook.xlsx": {
         "cer": 0.3135,
+        "p50_ms": 7.0,
         "p95_ms": 7.1
       }
     },
     "xberg": {
       "generated/csv_gb18030.csv": {
         "cer": 0.1473,
+        "p50_ms": 7.4,
         "p95_ms": 7.4
       },
       "generated/csv_semicolon_eu.csv": {
         "cer": 0.1091,
-        "p95_ms": 6.9
+        "p50_ms": 9.0,
+        "p95_ms": 9.3
       },
       "generated/csv_utf8.csv": {
         "cer": 0.1128,
-        "p95_ms": 7.6
+        "p50_ms": 7.9,
+        "p95_ms": 8.0
       },
       "generated/docx_report.docx": {
         "cer": 0.0824,
-        "p95_ms": 24.7
+        "p50_ms": 11.3,
+        "p95_ms": 12.9
       },
       "generated/image_screenshot.webp": {
         "cer": 0.0517
       },
       "generated/md_notes.md": {
         "cer": 0.0762,
+        "p50_ms": 7.1,
         "p95_ms": 7.1
       },
       "generated/pdf_scanned_en.pdf": {
         "cer": 0.0548,
+        "p50_ms": 217.3,
         "p95_ms": 222.3
       },
       "generated/pdf_scanned_zh.pdf": {
         "cer": 0.8235,
+        "p50_ms": 216.6,
         "p95_ms": 217.1
       },
       "generated/pdf_text_en_30p.pdf": {
@@ -296,14 +348,17 @@
       },
       "generated/pdf_text_en_3p.pdf": {
         "cer": 0.1157,
-        "p95_ms": 20.6
+        "p50_ms": 14.5,
+        "p95_ms": 15.6
       },
       "generated/pdf_text_zh_2p.pdf": {
         "cer": 0.4398,
+        "p50_ms": 11.3,
         "p95_ms": 11.6
       },
       "generated/pdf_two_column_en.pdf": {
         "cer": 0.2865,
+        "p50_ms": 9.9,
         "p95_ms": 10.2
       },
       "generated/scan_source_en.png": {
@@ -311,18 +366,22 @@
       },
       "generated/scan_source_zh.png": {
         "cer": 0.8431,
+        "p50_ms": 692.0,
         "p95_ms": 695.7
       },
       "generated/tsv_data.tsv": {
         "cer": 0.0,
+        "p50_ms": 8.3,
         "p95_ms": 8.3
       },
       "generated/txt_plain.txt": {
         "cer": 0.0,
+        "p50_ms": 8.8,
         "p95_ms": 8.8
       },
       "generated/xlsx_workbook.xlsx": {
         "cer": 0.0251,
+        "p50_ms": 8.2,
         "p95_ms": 16.7
       }
     }

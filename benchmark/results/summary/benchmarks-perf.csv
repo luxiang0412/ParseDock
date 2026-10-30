@@ -1,9 +1,9 @@
 engine,version,config_hash,file,file_sha256,format,pages,mode,device,runs,median_ms,p95_ms,median_rss_mb,peak_rss_mb,cold_ms,status
-docling-rs,2.53.3,1cf27cf79c0027eb,generated/docx_report.docx,69a12bc98abbeadc84257c766301e321f8d9a4bc5f9e9a5ce876a8e2e615f690,docx,0,auto,cpu,5,15.1,16.5,22.6,22.6,16.9,ok
+docling-rs,2.53.3,1cf27cf79c0027eb,generated/docx_report.docx,69a12bc98abbeadc84257c766301e321f8d9a4bc5f9e9a5ce876a8e2e615f690,docx,0,auto,cpu,5,13.6,14.6,22.6,22.8,15.4,ok
 docling-rs,2.53.3,1cf27cf79c0027eb,generated/md_notes.md,3562c5b961c1339f4eedd8c51b14889651cd9f13f5f30d06da8f916e0c39f851,md,0,auto,cpu,3,3.1,3.1,16.4,16.7,3.1,ok
 docling-rs,2.53.3,1cf27cf79c0027eb,generated/pdf_scanned_en.pdf,04906ebddd4ecf6ffb720740ea3a680efee86d44b7285a3c67cb87e3aad894d8,pdf,1,auto,cpu,5,679.4,682.1,818.2,818.9,680.0,ok
 docling-rs,2.53.3,1cf27cf79c0027eb,generated/pdf_scanned_zh.pdf,2048e6aefffe85c7654a8e8852dc54b00cee45358faa3e1456ac3b9b663babc2,pdf,1,auto,cpu,5,697.6,715.8,852.4,853.2,702.4,ok
-docling-rs,2.53.3,1cf27cf79c0027eb,generated/pdf_text_en_3p.pdf,2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd,pdf,3,auto,cpu,5,811.3,814.7,941.8,943.8,814.2,ok
+docling-rs,2.53.3,1cf27cf79c0027eb,generated/pdf_text_en_3p.pdf,2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd,pdf,3,auto,cpu,5,815.3,819.4,940.2,941.3,815.2,ok
 docling-rs,2.53.3,1cf27cf79c0027eb,generated/pdf_text_zh_2p.pdf,d2fc8e385e10c9ff3df4fda3073aa4ea85ef3735e19df9dda99113e04cc1ed36,pdf,2,auto,cpu,5,741.2,753.4,932.3,933.8,750.0,ok
 docling-rs,2.53.3,1cf27cf79c0027eb,generated/pdf_two_column_en.pdf,5703e979466ff591d69dbf05061d50422ce7fa7ed0de260defcb4d5ba54e595b,pdf,1,auto,cpu,5,273.6,274.3,529.1,550.2,275.6,ok
 docling-rs,2.53.3,1cf27cf79c0027eb,generated/scan_source_zh.png,33c7d5eb5a655779ad9a4b740114b26808a79b8a01a1c0435a668f7472a4fb65,png,1,auto,cpu,5,1045.5,1049.7,1169.1,1171.3,1045.0,ok
@@ -25,8 +25,8 @@ mineru,4.1.2,236a5c3c10dd0d55,generated/pdf_text_zh_2p.pdf,d2fc8e385e10c9ff3df4f
 mineru,4.1.2,236a5c3c10dd0d55,generated/pdf_two_column_en.pdf,5703e979466ff591d69dbf05061d50422ce7fa7ed0de260defcb4d5ba54e595b,pdf,1,auto,cpu,5,919.6,936.7,53.9,54.0,918.0,ok
 mineru,4.1.2,236a5c3c10dd0d55,generated/scan_source_zh.png,33c7d5eb5a655779ad9a4b740114b26808a79b8a01a1c0435a668f7472a4fb65,png,1,auto,cpu,3,1519.3,1519.3,54.1,54.1,1519.3,ok
 native,go-native-1,44136fa355b3678a,generated/csv_gb18030.csv,6d92f25e33cbec7b1fe2cb7aad91493a8c15d7de0cd4de7e37f192c69b8f287d,csv,0,auto,cpu,3,0.0,0.0,,,0.0,ok
-native,go-native-1,44136fa355b3678a,generated/csv_semicolon_eu.csv,61c0f6d8630da79d21610d60b5a0a0d5876a563347b19d6d9b15f9b6e0a71429,csv,0,auto,cpu,3,0.0,0.0,,,0.0,ok
-native,go-native-1,44136fa355b3678a,generated/csv_utf8.csv,4052d9e6ad58a2df1bd17c7d94a71251fa18b90fe23f988e34998756ec6a1af5,csv,0,auto,cpu,3,0.0,0.0,,,0.0,ok
+native,go-native-1,44136fa355b3678a,generated/csv_semicolon_eu.csv,61c0f6d8630da79d21610d60b5a0a0d5876a563347b19d6d9b15f9b6e0a71429,csv,0,auto,cpu,5,0.0,0.0,,,0.0,ok
+native,go-native-1,44136fa355b3678a,generated/csv_utf8.csv,4052d9e6ad58a2df1bd17c7d94a71251fa18b90fe23f988e34998756ec6a1af5,csv,0,auto,cpu,5,0.0,0.0,,,0.0,ok
 native,go-native-1,44136fa355b3678a,generated/md_notes.md,3562c5b961c1339f4eedd8c51b14889651cd9f13f5f30d06da8f916e0c39f851,md,0,auto,cpu,3,0.0,0.0,,,0.0,ok
 native,go-native-1,44136fa355b3678a,generated/tsv_data.tsv,7330018418c1886211a9875e60b911d8aec2e27cc2ebaf240ece0d734ee7d226,tsv,0,auto,cpu,3,0.0,0.0,,,0.0,ok
 native,go-native-1,44136fa355b3678a,generated/txt_plain.txt,4267c50391431b26356a829ff6c42a5be3b483c57438f0a17f4c5d66964ee900,txt,0,auto,cpu,3,0.0,0.0,,,0.0,ok
@@ -45,13 +45,13 @@ tika,Apache Tika 4.2.0,6dca5ec6e90635bf,generated/tsv_data.tsv,7330018418c188621
 tika,Apache Tika 4.2.0,6dca5ec6e90635bf,generated/txt_plain.txt,4267c50391431b26356a829ff6c42a5be3b483c57438f0a17f4c5d66964ee900,txt,0,auto,cpu,3,2.3,2.3,,,2.3,ok
 tika,Apache Tika 4.2.0,6dca5ec6e90635bf,generated/xlsx_workbook.xlsx,e9527d24ebe4cf838b74e14d60ac2d3f1e03b5580875ed4e29f081e5eec2c291,xlsx,2,auto,cpu,5,7.0,7.1,,,6.4,ok
 xberg,1.3.10,8af5104159b6f477,generated/csv_gb18030.csv,6d92f25e33cbec7b1fe2cb7aad91493a8c15d7de0cd4de7e37f192c69b8f287d,csv,0,auto,cpu,3,7.4,7.4,31.1,31.2,7.4,ok
-xberg,1.3.10,8af5104159b6f477,generated/csv_semicolon_eu.csv,61c0f6d8630da79d21610d60b5a0a0d5876a563347b19d6d9b15f9b6e0a71429,csv,0,auto,cpu,3,6.9,6.9,31.1,31.5,6.9,ok
-xberg,1.3.10,8af5104159b6f477,generated/csv_utf8.csv,4052d9e6ad58a2df1bd17c7d94a71251fa18b90fe23f988e34998756ec6a1af5,csv,0,auto,cpu,3,7.6,7.6,30.8,31.3,7.6,ok
-xberg,1.3.10,8af5104159b6f477,generated/docx_report.docx,69a12bc98abbeadc84257c766301e321f8d9a4bc5f9e9a5ce876a8e2e615f690,docx,0,auto,cpu,5,12.9,24.7,33.1,33.2,17.4,ok
+xberg,1.3.10,8af5104159b6f477,generated/csv_semicolon_eu.csv,61c0f6d8630da79d21610d60b5a0a0d5876a563347b19d6d9b15f9b6e0a71429,csv,0,auto,cpu,5,8.2,9.0,32.5,32.9,8.2,ok
+xberg,1.3.10,8af5104159b6f477,generated/csv_utf8.csv,4052d9e6ad58a2df1bd17c7d94a71251fa18b90fe23f988e34998756ec6a1af5,csv,0,auto,cpu,5,8.0,10.2,32.5,32.9,7.9,ok
+xberg,1.3.10,8af5104159b6f477,generated/docx_report.docx,69a12bc98abbeadc84257c766301e321f8d9a4bc5f9e9a5ce876a8e2e615f690,docx,0,auto,cpu,5,10.7,13.8,34.9,35.4,13.4,ok
 xberg,1.3.10,8af5104159b6f477,generated/md_notes.md,3562c5b961c1339f4eedd8c51b14889651cd9f13f5f30d06da8f916e0c39f851,md,0,auto,cpu,3,7.1,7.1,31.5,31.6,7.1,ok
 xberg,1.3.10,8af5104159b6f477,generated/pdf_scanned_en.pdf,04906ebddd4ecf6ffb720740ea3a680efee86d44b7285a3c67cb87e3aad894d8,pdf,1,auto,cpu,5,217.3,222.3,105.5,107.7,217.2,ok
 xberg,1.3.10,8af5104159b6f477,generated/pdf_scanned_zh.pdf,2048e6aefffe85c7654a8e8852dc54b00cee45358faa3e1456ac3b9b663babc2,pdf,1,auto,cpu,5,216.6,217.1,98.1,98.4,213.3,ok
-xberg,1.3.10,8af5104159b6f477,generated/pdf_text_en_3p.pdf,2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd,pdf,3,auto,cpu,5,18.9,20.6,38.9,39.6,17.1,ok
+xberg,1.3.10,8af5104159b6f477,generated/pdf_text_en_3p.pdf,2afddc70afb333ed62006821b7d5b4aebbe5a05cad40527cb61e618907abedfd,pdf,3,auto,cpu,5,13.9,14.0,40.7,41.1,14.6,ok
 xberg,1.3.10,8af5104159b6f477,generated/pdf_text_zh_2p.pdf,d2fc8e385e10c9ff3df4fda3073aa4ea85ef3735e19df9dda99113e04cc1ed36,pdf,2,auto,cpu,5,11.3,11.6,39.1,39.2,10.7,ok
 xberg,1.3.10,8af5104159b6f477,generated/pdf_two_column_en.pdf,5703e979466ff591d69dbf05061d50422ce7fa7ed0de260defcb4d5ba54e595b,pdf,1,auto,cpu,5,9.9,10.2,38.7,38.8,10.8,ok
 xberg,1.3.10,8af5104159b6f477,generated/scan_source_zh.png,33c7d5eb5a655779ad9a4b740114b26808a79b8a01a1c0435a668f7472a4fb65,png,1,auto,cpu,5,692.0,695.7,232.6,232.7,688.8,ok
