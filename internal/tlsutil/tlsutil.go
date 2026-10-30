@@ -11,7 +11,9 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 )
 
 // ServerConfig returns a TLS config for the Coordinator's internal listener.
@@ -76,4 +78,23 @@ func loadPool(path string) (*x509.CertPool, error) {
 		return nil, fmt.Errorf("tls: %s contains no PEM certificates", path)
 	}
 	return pool, nil
+}
+
+// Transport returns a client transport that keeps the standard dial and handshake
+// timeouts (a zero-valued Transport has none, so a stalled handshake would block a
+// worker's registration forever) and applies cfg. When cfg is nil the default
+// transport is cloned unchanged, so callers can always use the result.
+func Transport(cfg *tls.Config) *http.Transport {
+	base, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
+	}
+	t := base.Clone()
+	t.MaxIdleConns = 128
+	t.MaxIdleConnsPerHost = 32
+	t.IdleConnTimeout = 90 * time.Second
+	if cfg != nil {
+		t.TLSClientConfig = cfg
+	}
+	return t
 }

@@ -415,7 +415,7 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	if terr != nil {
 		return terr
 	}
-	w.HTTP.Transport = &http.Transport{TLSClientConfig: workerTLS}
+	w.HTTP.Transport = tlsutil.Transport(workerTLS)
 	return w.Run(ctx)
 }
 

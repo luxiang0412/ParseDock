@@ -19,6 +19,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"parsedock.dev/parsedock/internal/tlsutil"
 )
 
 // Config configures the gateway.
@@ -62,14 +64,7 @@ func New(cfg Config) (*Server, error) {
 		cfg.RateBurst = 40
 	}
 	s := &Server{cfg: cfg, log: cfg.Log, limiter: newLimiter(cfg.RateLimitRPS, cfg.RateBurst)}
-	transport := &http.Transport{
-		MaxIdleConns:        128,
-		MaxIdleConnsPerHost: 32,
-		IdleConnTimeout:     90 * time.Second,
-	}
-	if cfg.TLS != nil {
-		transport.TLSClientConfig = cfg.TLS
-	}
+	transport := tlsutil.Transport(cfg.TLS)
 
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
