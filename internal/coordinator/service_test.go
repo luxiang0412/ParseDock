@@ -1333,3 +1333,105 @@ func TestSupersededCompletionKeepsInput(t *testing.T) {
 		t.Fatalf("superseded completion moved retention to %s", got.RetentionStatus)
 	}
 }
+
+// Audit (whole-repo review): ACK authorises deletion, so it must prove a completed result.
+func TestAckRejectsUnfinishedJob(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+
+	if _, err := s.Ack(ctx, job.ID, "owner-1", "sha256:made-up", "release"); AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("ACK on a queued job: want conflict, got %v", err)
+	}
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.RetentionStatus != jobs.RetentionActive {
+		t.Fatalf("ACK moved an unfinished job to %s", got.RetentionStatus)
+	}
+
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if _, err := s.Ack(ctx, job.ID, "owner-1", "sha256:made-up", "release"); AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("ACK on a running job: want conflict, got %v", err)
+	}
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ack(ctx, job.ID, "owner-1", "sha256:made-up", "release"); AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("ACK with a wrong version: want conflict, got %v", err)
+	}
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatalf("ACK with the current version: %v", err)
+	}
+}
+
+// Audit: a failure report from a superseded attempt must not touch the newer attempt's job.
+func TestFailIgnoredForSupersededAttempt(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	first, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || first == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Expire the first attempt and let the job be re-claimed by a second one.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued', available_at = '' WHERE id = ?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'expired', lease_until = ? WHERE job_id = ? AND lease_token = ?`,
+		ts(nowUTC().Add(-time.Minute)), job.ID, first.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Claim(ctx, WorkerCaps{WorkerID: "w2", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || second == nil {
+		t.Fatalf("re-claim: %v", err)
+	}
+	if _, err := s.Fail(ctx, job.ID, first.LeaseToken, jobs.ErrEngineUnavailable, "stale report", false); AsError(err).Code != jobs.ErrLeaseLost {
+		t.Fatalf("stale Fail: want lease_lost, got %v", err)
+	}
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.ProcessingStatus != jobs.StatusRunning {
+		t.Fatalf("stale Fail changed the job to %s", got.ProcessingStatus)
+	}
+	if got.RetentionStatus != jobs.RetentionActive {
+		t.Fatalf("stale Fail moved retention to %s", got.RetentionStatus)
+	}
+	// The live attempt can still complete.
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: second.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")}); err != nil {
+		t.Fatalf("live attempt could not complete: %v", err)
+	}
+}
+
+// Audit (P0): a failed DB lookup must never be read as "orphaned", or a shutdown that
+// cancels the cleanup context would delete live inputs and results.
+func TestSweepOrphansSkipsOnLookupError(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	if _, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"}); err != nil {
+		t.Fatal(err)
+	}
+	// Older than the orphan cutoff (10 minutes).
+	old := time.Now().Add(-time.Hour)
+	for _, sub := range []string{"inputs", "results"} {
+		dir := filepath.Join(s.Store.Root, sub, job.ID)
+		if _, err := os.Stat(dir); err == nil {
+			if err := os.Chtimes(dir, old, old); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	cancelled, cancel := context.WithCancel(ctx)
+	cancel()
+	var rep CleanupReport
+	if n := s.sweepOrphans(cancelled, &rep); n != 0 {
+		t.Fatalf("sweep removed %d directories on a cancelled context", n)
+	}
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); err != nil {
+		t.Fatalf("live input deleted on a failed lookup: %v", err)
+	}
+	if len(rep.Errors) == 0 {
+		t.Fatal("the lookup error was not reported")
+	}
+}

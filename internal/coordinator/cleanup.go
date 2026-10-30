@@ -336,9 +336,19 @@ func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 			var status, retention string
 			err = s.DB.QueryRowContext(ctx, `SELECT processing_status, retention_status FROM jobs WHERE id = ?`, e.Name()).
 				Scan(&status, &retention)
-			alive := err == nil && !jobs.RetentionStatus(retention).Terminal()
-			if alive {
+			switch {
+			case errors.Is(err, sql.ErrNoRows):
+				// The row is gone (tombstone purge), so the directory is definitively orphaned.
+			case err != nil:
+				// A failed lookup is not evidence of an orphan: a cancelled context during
+				// shutdown makes every query fail, and deleting then would remove live data.
+				rep.Errors = append(rep.Errors, "orphan scan: "+err.Error())
 				continue
+			case !jobs.RetentionStatus(retention).Terminal():
+				continue
+			}
+			if ctx.Err() != nil {
+				return removed
 			}
 			// A completed job without a DB row can only happen after the
 			// tombstone purge, so the files are definitively orphaned.

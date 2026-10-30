@@ -1,7 +1,6 @@
 package engines
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/csv"
@@ -208,8 +207,10 @@ func guessType(s string) string {
 }
 
 func liftPlainText(doc *documentir.Document, text string) {
-	sc := bufio.NewScanner(strings.NewReader(text))
-	sc.Buffer(make([]byte, 0, 1<<20), 1<<20)
+	// The text is already in memory, so it is split directly. A bufio.Scanner here had a
+	// 1 MiB token limit and its error was never checked: a file containing one long line
+	// (minified JSON, a single-row export, a log dump) completed with everything after
+	// that line silently dropped.
 	var para []string
 	line := 0
 	flush := func() {
@@ -228,9 +229,9 @@ func liftPlainText(doc *documentir.Document, text string) {
 			Loc:  &documentir.SourceLocation{Kind: "none", Line: line},
 		})
 	}
-	for sc.Scan() {
+	for _, l := range strings.Split(text, "\n") {
+		l = strings.TrimSuffix(l, "\r")
 		line++
-		l := sc.Text()
 		if strings.TrimSpace(l) == "" {
 			flush()
 			continue

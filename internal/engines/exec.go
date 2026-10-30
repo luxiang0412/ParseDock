@@ -44,7 +44,12 @@ type ExecResult struct {
 	// OOM is set when the RSS monitor killed the parser; ExitCode is forced
 	// non-zero so callers cannot mistake the kill for a clean exit.
 	OOM bool
+	// Truncated is set when stdout exceeded the configured ceiling and was cut.
+	Truncated bool
 }
+
+// ErrOutputTooLarge reports that a parser produced more output than the ceiling allows.
+var ErrOutputTooLarge = errors.New("engine output exceeded its size ceiling")
 
 // RunCLI executes a parser binary with a hard timeout and optional network
 // namespace isolation.
@@ -128,6 +133,11 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	}
 	elapsed := time.Since(start)
 	res := &ExecResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), Elapsed: elapsed}
+	if lw, ok := cmd.Stdout.(*limitedWriter); ok && lw.overflow {
+		// The parser produced more than we are willing to hold: say so explicitly instead of
+		// letting a truncated JSON document look like a parse failure.
+		res.Truncated = true
+	}
 	// Fill the measured status *before* any early return: callers inspect
 	// ExitCode and PeakRSSMB to classify failures, and a memory kill must not look
 	// like a clean exit with output.
@@ -232,18 +242,32 @@ func processRSSMB(pid int) (int64, bool) {
 type limitedWriter struct {
 	w *bytes.Buffer
 	n int64
+	// overflow records that output was truncated, so callers can reject the result
+	// deliberately instead of treating it as a parser failure.
+	overflow bool
 }
 
+// Write keeps draining past the limit while retaining only the first l.n bytes, and always
+// reports the full length it consumed. Returning a short count with a nil error breaks the
+// io.Writer contract (io.Copy answers io.ErrShortWrite), which stopped the drain and let the
+// child block on a full pipe until the timeout fired.
 func (l *limitedWriter) Write(p []byte) (int, error) {
+	n := len(p)
 	if l.n <= 0 {
-		return len(p), nil
+		l.overflow = true
+		return n, nil
 	}
-	if int64(len(p)) > l.n {
-		p = p[:l.n]
+	keep := p
+	if int64(len(keep)) > l.n {
+		keep = keep[:l.n]
+		l.overflow = true
 	}
-	n, err := l.w.Write(p)
-	l.n -= int64(n)
-	return len(p), err
+	w, err := l.w.Write(keep)
+	l.n -= int64(w)
+	if err != nil {
+		return w, err
+	}
+	return n, nil
 }
 
 // ErrSandboxUnavailable reports that a requested isolation primitive is not

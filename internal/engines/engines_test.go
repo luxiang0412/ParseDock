@@ -243,3 +243,38 @@ func TestClassifyCLIError(t *testing.T) {
 		})
 	}
 }
+
+// Audit (P1): a plain-text file with a single very long line used to be truncated silently
+// at the bufio.Scanner token limit.
+func TestLongLineIsNotTruncated(t *testing.T) {
+	long := strings.Repeat("x", 2<<20) // 2 MiB, above the old 1 MiB token limit
+	doc, err := (&Native{}).Parse(context.Background(), Request{
+		Format: "txt", Path: writeTemp(t, "long.txt", []byte(long)),
+	})
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	var got int
+	for _, e := range doc.Elements {
+		got += len(e.Text)
+	}
+	if got != len(long) {
+		t.Fatalf("text truncated: kept %d of %d bytes", got, len(long))
+	}
+}
+
+// Audit (P2): the output limiter must keep draining past the ceiling and report truncation,
+// instead of returning a short write that stalls the child on a full pipe.
+func TestLimitedWriterDrainsPastLimit(t *testing.T) {
+	res, err := RunCLI(context.Background(), CLISpec{Bin: "/bin/sh", MaxOutput: 1024},
+		t.TempDir(), "-c", "head -c 100000 /dev/zero | tr '\\0' 'a'")
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if !res.Truncated {
+		t.Fatal("truncation was not reported")
+	}
+	if len(res.Stdout) != 1024 {
+		t.Fatalf("kept %d bytes, want 1024", len(res.Stdout))
+	}
+}

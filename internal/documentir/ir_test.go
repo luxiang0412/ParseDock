@@ -130,3 +130,37 @@ func TestTextLengthIncludesTables(t *testing.T) {
 		t.Fatalf("TextLength = %d, want %d", got, without+50)
 	}
 }
+
+// Audit (P1 DoS): rendering materialises Rows x Cols, so the declared shape is validated
+// before anything allocates.
+func TestLimitsRejectGiganticTable(t *testing.T) {
+	d := &Document{SchemaVersion: "doc-ir/0.1", Tables: []Table{
+		{ID: "t1", Rows: 200_000, Cols: 100_000}, // 20 billion cells
+	}}
+	if err := DefaultLimits.Validate(d); err == nil {
+		t.Fatal("a 20-billion-cell table was accepted")
+	}
+	// Rendering the same table must not allocate the grid.
+	if g := tableGrid(&d.Tables[0]); g != nil {
+		t.Fatalf("renderer allocated a %d-row grid", len(g))
+	}
+	// A realistic document passes.
+	ok := &Document{SchemaVersion: "doc-ir/0.1",
+		Elements: []Element{{ID: "e1", Type: ElParagraph, Text: "hello"}},
+		Tables:   []Table{{ID: "t1", Rows: 40, Cols: 8}}}
+	if err := DefaultLimits.Validate(ok); err != nil {
+		t.Fatalf("realistic document rejected: %v", err)
+	}
+}
+
+func TestLimitsRejectNegativeAndOverflow(t *testing.T) {
+	for _, tbl := range []Table{
+		{ID: "neg", Rows: -1, Cols: 4},
+		{ID: "overflow", Rows: 1 << 40, Cols: 1 << 40},
+	} {
+		d := &Document{Tables: []Table{tbl}}
+		if err := DefaultLimits.Validate(d); err == nil {
+			t.Fatalf("%s was accepted", tbl.ID)
+		}
+	}
+}
