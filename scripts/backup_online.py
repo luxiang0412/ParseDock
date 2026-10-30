@@ -99,10 +99,15 @@ class Leases:
         with self.conn:
             for job_id in sorted(jobs):
                 lease = f"backup-{uuid.uuid4().hex}"
+                # Only a job that is still 'active' can be protected: once cleanup has
+                # marked it 'deleting' it deletes files without re-checking leases, and a
+                # released/expired job has nothing to protect. A job that changed state
+                # between the snapshot and this INSERT is reported, and the caller retries.
                 cur = self.conn.execute(
                     "INSERT OR IGNORE INTO download_leases"
                     "(lease_id, job_id, created_at, expires_at, last_renewed_at)"
-                    " SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM jobs WHERE id = ?)",
+                    " SELECT ?, ?, ?, ?, ? WHERE EXISTS"
+                    " (SELECT 1 FROM jobs WHERE id = ? AND retention_status = 'active')",
                     (lease, job_id, stamp(now), stamp(exp), stamp(now), job_id))
                 if cur.rowcount == 1:
                     self.ids.append(lease)
@@ -171,7 +176,6 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     started = time.time()
 
-    # 1. Consistent database snapshot (online).
     t0 = time.time()
     src = sqlite3.connect(f"file:{src_db}?mode=ro", uri=True)
     dst = sqlite3.connect(out / "coordinator.db")
@@ -188,6 +192,10 @@ def main() -> int:
         SERVABLE)}
     artifacts = conn.execute(
         "SELECT job_id, kind, path, size, sha256 FROM artifacts").fetchall()
+    conn_inputs = conn.execute(
+        "SELECT id, input_size, input_sha256 FROM jobs WHERE retention_status = 'active'").fetchall()
+    input_sha = {row[0]: row[2] for row in conn_inputs}
+    conn_inputs = [(row[0], row[1]) for row in conn_inputs]
     conn.close()
 
     # 3. Pin every job in the snapshot before copying files. Pinning deliberately does not
@@ -200,22 +208,21 @@ def main() -> int:
         leases = Leases(src_db, args.lease_seconds)
         unpinnable = leases.pin(jobs)
         db_seconds_lock = time.time() - t_lock
-        # A pin can succeed while the files are already gone: the cleaner may have released
-        # and deleted them between the snapshot and the INSERT (only the tombstone row
-        # remains). Detect that directly instead of trusting the pin.
+        # A job that left 'active' between the snapshot and the pin (ACK, TTL, cancel) cannot
+        # be protected: cleanup may delete its files without re-checking leases. Rather than
+        # producing an incomplete backup that looks fine, abort and let the operator retry —
+        # the window is milliseconds and the next attempt takes a fresh snapshot.
         jobs_with_artifacts = {a[0] for a in artifacts}
         vanished = [j for j in sorted(jobs)
                     if j in jobs_with_artifacts and not (data / "results" / j).exists()]
-        if unpinnable:
-            vanished.extend(j for j in unpinnable
-                            if not (data / "results" / j).exists()
-                            and not (data / "inputs" / j).exists())
-            jobs = jobs - set(unpinnable)
-        if vanished:
+        if unpinnable or vanished:
             leases.release()
-            print(json.dumps({"error": "incomplete backup: snapshot results were deleted "
-                                       "before they could be pinned", "jobs": sorted(set(vanished))},
-                             indent=2), file=sys.stderr)
+            print(json.dumps({
+                "error": "snapshot and pinning disagreed: jobs changed retention state during "
+                         "the backup. Retry (a new snapshot is taken).",
+                "unpinnable": sorted(set(unpinnable)),
+                "missing_files": sorted(set(vanished)),
+            }, indent=2), file=sys.stderr)
             return 1
 
     files = bytes_copied = 0
@@ -247,6 +254,18 @@ def main() -> int:
         ok = check.execute("PRAGMA integrity_check").fetchone()[0]
         if ok != "ok":
             problems.append(f"integrity_check: {ok}")
+        # Inputs are what a queued/running job needs to resume; artifacts exist only for
+        # completed jobs, so checking just artifacts would bless an unrestorable backup.
+        for job_id, input_size in conn_inputs:
+            p = out / "files" / "inputs" / job_id / "input.bin"
+            if not p.exists():
+                if job_id in jobs:
+                    problems.append(f"missing input {job_id}")
+                continue
+            if input_size and p.stat().st_size != input_size:
+                problems.append(f"input size mismatch {job_id}: {p.stat().st_size} != {input_size}")
+            if sha256(p) != input_sha[job_id]:
+                problems.append(f"input hash mismatch {job_id}")
         for job_id, kind, rel, size, want in artifacts:
             # The JSON manifest records paths under the source data dir; resolve the copy.
             p = out / "files" / "results" / job_id / Path(rel).name
