@@ -67,7 +67,11 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 			writeErr(w, NewError(401, jobs.ErrUnauthorized, "missing owner identity"))
 			return
 		}
-		next(w, r.WithContext(context.WithValue(r.Context(), ownerKey{}, owner)))
+		ctx := context.WithValue(r.Context(), ownerKey{}, owner)
+		if rid := r.Header.Get("X-Request-Id"); rid != "" && len(rid) <= 128 {
+			ctx = WithRequestID(ctx, rid)
+		}
+		next(w, r.WithContext(ctx))
 	}
 }
 
@@ -872,6 +876,9 @@ func writeErr(w http.ResponseWriter, err error) {
 	ce := AsError(err)
 	if ce.Status == 0 {
 		ce.Status = 500
+	}
+	if ce.RetryAfter > 0 {
+		w.Header().Set("Retry-After", strconv.Itoa(ce.RetryAfter))
 	}
 	writeJSON(w, ce.Status, map[string]any{
 		"error": map[string]any{

@@ -112,6 +112,7 @@ paths:
               schema: { $ref: '#/components/schemas/Job' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '409':
           description: A GPU worker is required but none is registered, or the idempotency key conflicts.
           content:
@@ -128,7 +129,17 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-        '429': { $ref: '#/components/responses/RateLimited' }
+        '429':
+          description: |
+            Per-owner limits. `rate_limited` = request-rate budget (all requests,
+            including status polling); `quota_exceeded` = concurrent jobs, jobs/day
+            or bytes/day for this owner. Both carry `Retry-After` in seconds.
+          headers:
+            Retry-After:
+              schema: { type: integer }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
         '507':
           description: Storage below the safety watermark; retry later (existing results stay readable).
           content:
@@ -152,6 +163,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Job' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
         '503': { $ref: '#/components/responses/CoordinatorDown' }
 
@@ -213,6 +225,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/DocumentIR' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: The result is not ready yet (job queued/running/failed).
@@ -275,6 +288,7 @@ paths:
                   message: { type: string }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: result_version does not match the current result.
@@ -324,6 +338,7 @@ paths:
                   processing_deadline_at: { type: string, format: date-time }
                   message: { type: string }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
           description: Job already completed — cancel needs `result_version`.
@@ -377,6 +392,7 @@ paths:
                   Frames contain `id:`, `event:` and `data:` (JSON with
                   `event_id`, `event_type`, `job_id`, `payload`, `created_at`).
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /v1/parse:
@@ -420,6 +436,7 @@ paths:
               schema: { $ref: '#/components/schemas/Job' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/InsufficientScope' }
         '413': { $ref: '#/components/responses/TooLarge' }
         '422':
           description: Parse failed or the document is unsupported.
@@ -467,7 +484,18 @@ components:
     bearerAuth:
       type: http
       scheme: bearer
-      description: API token mapped to an owner id server-side.
+      description: |
+        API token mapped to a stable owner id server-side. Keys are stored only as
+        SHA-256 hashes (`--api-keys-file`); plaintext entries are hashed at startup
+        and never logged.
+
+        Each key carries scopes:
+        * `jobs:write` — `POST /v1/jobs`, `POST /v1/parse`
+        * `jobs:read` — `GET /v1/jobs/{id}`, `/result`, `/events`
+        * `jobs:ack` — `POST /v1/jobs/{id}/ack`, `/cancel`
+
+        A missing scope returns `403 insufficient_scope`. Keys without an explicit
+        scope list (legacy `token:owner` form) hold all three.
 
   parameters:
     JobId:
@@ -516,6 +544,11 @@ components:
   responses:
     BadRequest:
       description: Invalid parameters.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    InsufficientScope:
+      description: The API key is valid but does not grant the scope this operation needs.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -581,6 +614,7 @@ components:
                 - gone
                 - conflict
                 - unauthorized
+                - insufficient_scope
                 - rate_limited
                 - coordinator_unavailable
             message: { type: string }

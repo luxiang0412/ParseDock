@@ -87,6 +87,7 @@ public class EventsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Event stream. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
@@ -175,6 +176,7 @@ public class EventsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Event stream. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
@@ -198,6 +200,7 @@ public class EventsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Event stream. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */
@@ -223,6 +226,7 @@ public class EventsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Event stream. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
      </table>
      */

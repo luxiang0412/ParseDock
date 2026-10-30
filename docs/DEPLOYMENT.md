@@ -89,11 +89,37 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--min-free-gb` | `PARSEDOCK_MIN_FREE_GB` | `2` | disk watermark |
 | `--max-attempts` | `PARSEDOCK_MAX_ATTEMPTS` | `3` | retries |
 | `--rate-limit` / `--rate-burst` | `PARSEDOCK_RATE_LIMIT(_BURST)` | `20` / `40` | per-owner, **all** requests: status polling counts against it (a batch client polling at 5 rps/thread exhausted the default 20 rps and received `429`; use SSE or raise the limit for batch tenants) |
+| `--api-keys-file` | `PARSEDOCK_API_KEYS_FILE` | – | one `<secret\|sha256:hash>:<owner>[:scopes]` per line; **preferred over `--api-keys`**, because argv is readable by other local users |
+| `--api-keys` | `PARSEDOCK_API_KEYS` | – | comma-separated same format; hashed at startup, kept for development |
+| `--quota-concurrent` | `PARSEDOCK_QUOTA_CONCURRENT` | `0` (off) | queued+running jobs per owner |
+| `--quota-jobs-per-day` | `PARSEDOCK_QUOTA_JOBS_PER_DAY` | `0` (off) | jobs per owner per rolling 24 h |
+| `--quota-bytes-per-day` | `PARSEDOCK_QUOTA_BYTES_PER_DAY` | `0` (off) | input bytes per owner per rolling 24 h |
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | engine paths | `PARSEDOCK_XBERG_BIN`, `PARSEDOCK_DOCLING_RS_BIN`, … | – | adapters |
 
 `docparse --check` prints host facts, the effective config and the routing table as
 JSON — useful as a deployment smoke test and for support tickets.
+
+### Key rotation
+
+Keys are hashed at startup; two entries mapping to the same owner rotate without
+touching jobs:
+
+```
+# /run/secrets/parsedock-api-keys
+sha256:<hex of old key>:acme:jobs:write+jobs:read+jobs:ack
+sha256:<hex of new key>:acme:jobs:write+jobs:read+jobs:ack
+```
+
+`printf '%s' "$TOKEN" | sha256sum` produces the hash. Remove the old line and
+reload the API replicas; jobs keep their owner id, so nothing is lost. A key that
+is no longer in the file is rejected with `401` (revocation).
+
+### Audit shipping
+
+Coordinator log lines with `audit=true` are the audit trail; forward them to your
+log pipeline separately from application logs (they contain identities and sizes,
+never document text). Example event schema: `docs/ARCHITECTURE.md` §6.
 
 ## 5. Probes
 

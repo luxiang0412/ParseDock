@@ -35,19 +35,23 @@ import (
 )
 
 type flags struct {
-	role           string
-	listen         string
-	internalListen string
-	coordinatorURL string
-	dataDir        string
-	dbPath         string
-	workDir        string
-	internalToken  string
-	apiKeys        string
-	devInsecure    bool
-	logLevel       string
-	engines        string
-	sandbox        string
+	role             string
+	listen           string
+	internalListen   string
+	coordinatorURL   string
+	dataDir          string
+	dbPath           string
+	workDir          string
+	internalToken    string
+	apiKeys          string
+	apiKeysFile      string
+	quotaConcurrent  int
+	quotaJobsPerDay  int
+	quotaBytesPerDay int64
+	devInsecure      bool
+	logLevel         string
+	engines          string
+	sandbox          string
 
 	ttl             time.Duration
 	maxTTL          time.Duration
@@ -108,7 +112,11 @@ func parseFlags() *flags {
 	fs.StringVar(&f.dbPath, "db", env("PARSEDOCK_DB", ""), "sqlite path (default <data-dir>/coordinator.db)")
 	fs.StringVar(&f.workDir, "work-dir", env("PARSEDOCK_WORK_DIR", "./runtime/work"), "worker scratch directory")
 	fs.StringVar(&f.internalToken, "internal-token", env("PARSEDOCK_INTERNAL_TOKEN", ""), "shared internal token")
-	fs.StringVar(&f.apiKeys, "api-keys", env("PARSEDOCK_API_KEYS", ""), "comma list token:owner")
+	fs.StringVar(&f.apiKeys, "api-keys", env("PARSEDOCK_API_KEYS", ""), "comma list <token:owner[:scopes]> or sha256:<hex>:owner[:scopes]")
+	fs.StringVar(&f.apiKeysFile, "api-keys-file", env("PARSEDOCK_API_KEYS_FILE", ""), "file with one key entry per line (preferred: argv is world-readable)")
+	fs.IntVar(&f.quotaConcurrent, "quota-concurrent", intEnv("PARSEDOCK_QUOTA_CONCURRENT", 0), "max queued+running jobs per owner (0 = unlimited)")
+	fs.IntVar(&f.quotaJobsPerDay, "quota-jobs-per-day", intEnv("PARSEDOCK_QUOTA_JOBS_PER_DAY", 0), "max jobs per owner per rolling 24h (0 = unlimited)")
+	fs.Int64Var(&f.quotaBytesPerDay, "quota-bytes-per-day", int64Env("PARSEDOCK_QUOTA_BYTES_PER_DAY", 0), "max input bytes per owner per rolling 24h (0 = unlimited)")
 	fs.BoolVar(&f.devInsecure, "dev-insecure", env("PARSEDOCK_DEV_INSECURE", "") == "1", "allow anonymous access (tests only)")
 	fs.StringVar(&f.logLevel, "log-level", env("PARSEDOCK_LOG_LEVEL", "info"), "debug|info|warn|error")
 	fs.StringVar(&f.engines, "engines", env("PARSEDOCK_ENGINES", "native"), "worker engines (comma list)")
@@ -189,6 +197,11 @@ func run(f *flags) error {
 		MaxZipEntries:      5000,
 	}
 	cfg.Engines = engineSpecs(f)
+	cfg.Quota = coordinator.Quota{
+		MaxConcurrent:  f.quotaConcurrent,
+		MaxJobsPerDay:  f.quotaJobsPerDay,
+		MaxBytesPerDay: f.quotaBytesPerDay,
+	}
 
 	if f.check {
 		return printCheck(f, cfg)
@@ -235,6 +248,10 @@ func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *
 		return err
 	}
 	svc := coordinator.NewService(db, store, cfg)
+	// Audit lines are structured JSON on stdout (one line per decision); they
+	// never contain document text or tokens. Forward them to the process log so
+	// a collector can ship them separately by `audit=true`.
+	svc.Audit = log
 	srv := coordinator.NewServer(svc, f.internalToken, log)
 
 	go svc.StartCleanup(ctx)
@@ -260,7 +277,10 @@ func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *
 }
 
 func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
-	keys := parseKeys(f.apiKeys)
+	keys, err := buildAPIKeys(f)
+	if err != nil {
+		return err
+	}
 	gw, err := api.New(api.Config{
 		CoordinatorURL: f.coordinatorURL,
 		InternalToken:  f.internalToken,
@@ -345,10 +365,15 @@ func runStandalone(ctx context.Context, f *flags, cfg coordinator.Config, log *s
 
 	apiErr := make(chan error, 1)
 	go func() {
+		keys, kerr := buildAPIKeys(f)
+		if kerr != nil {
+			apiErr <- kerr
+			return
+		}
 		gw, err := api.New(api.Config{
 			CoordinatorURL: "http://" + f.internalListen,
 			InternalToken:  f.internalToken,
-			Keys:           parseKeys(f.apiKeys),
+			Keys:           keys,
 			DevInsecure:    f.devInsecure,
 			RateLimitRPS:   f.rateLimit,
 			RateBurst:      f.rateBurst,
@@ -500,21 +525,16 @@ func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {
 	return srv.Shutdown(shutdownCtx)
 }
 
-func parseKeys(s string) map[string]string {
-	out := map[string]string{}
-	for _, pair := range strings.Split(s, ",") {
-		pair = strings.TrimSpace(pair)
-		if pair == "" {
-			continue
-		}
-		parts := strings.SplitN(pair, ":", 2)
-		owner := "default"
-		if len(parts) == 2 && parts[1] != "" {
-			owner = parts[1]
-		}
-		out[parts[0]] = owner
+// buildAPIKeys loads hashed API credentials from a file (preferred) or from the
+// --api-keys value. Plaintext entries are hashed immediately and never retained.
+func buildAPIKeys(f *flags) ([]api.Key, error) {
+	if f.apiKeysFile != "" {
+		return api.ParseKeysFile(f.apiKeysFile)
 	}
-	return out
+	if f.apiKeys == "" {
+		return nil, nil
+	}
+	return api.ParseKeys(f.apiKeys)
 }
 
 func splitList(s string) []string {

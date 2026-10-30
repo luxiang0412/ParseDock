@@ -83,6 +83,7 @@ public class Example {
 | **202** | Release accepted (not necessarily deleted yet). |  -  |
 | **400** | Invalid parameters. |  -  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
 | **409** | result_version does not match the current result. |  -  |
 
@@ -157,6 +158,7 @@ public class Example {
 |-------------|-------------|------------------|
 | **202** | Cancellation (or release) accepted. |  -  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
 | **409** | Job already completed — cancel needs &#x60;result_version&#x60;. |  -  |
 
@@ -247,11 +249,12 @@ public class Example {
 | **200** | Idempotent replay — the existing job is returned, nothing new was created. |  -  |
 | **400** | Invalid parameters. |  -  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **409** | A GPU worker is required but none is registered, or the idempotency key conflicts. |  -  |
 | **413** | Upload exceeds the configured limit. |  -  |
 | **415** | Format not in the allow-list, or content does not match the extension. |  -  |
 | **422** | Malformed, encrypted or structurally invalid document. |  -  |
-| **429** | Per-owner rate limit exceeded. |  * Retry-After -  <br>  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  |  * Retry-After -  <br>  |
 | **507** | Storage below the safety watermark; retry later (existing results stay readable). |  -  |
 
 <a id="downloadResult"></a>
@@ -324,6 +327,7 @@ public class Example {
 | **304** | The client&#39;s &#x60;If-None-Match&#x60; matches the current artifact. |  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  |
 | **200** | The requested representation. |  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
 | **409** | The result is not ready yet (job queued/running/failed). |  -  |
 | **410** | The result was released or expired (tombstone window). |  -  |
@@ -395,6 +399,7 @@ public class Example {
 |-------------|-------------|------------------|
 | **200** | Current job state. |  -  |
 | **401** | Missing/invalid token. |  -  |
+| **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
 | **503** | The coordinator is unreachable (API replicas stay healthy). |  -  |
 

@@ -92,6 +92,7 @@ public class SyncApi {
         <tr><td> 202 </td><td> Still running; the job continues in the background. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Parse failed or the document is unsupported. </td><td>  -  </td></tr>
      </table>
@@ -185,6 +186,7 @@ public class SyncApi {
         <tr><td> 202 </td><td> Still running; the job continues in the background. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Parse failed or the document is unsupported. </td><td>  -  </td></tr>
      </table>
@@ -211,6 +213,7 @@ public class SyncApi {
         <tr><td> 202 </td><td> Still running; the job continues in the background. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Parse failed or the document is unsupported. </td><td>  -  </td></tr>
      </table>
@@ -239,6 +242,7 @@ public class SyncApi {
         <tr><td> 202 </td><td> Still running; the job continues in the background. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Parse failed or the document is unsupported. </td><td>  -  </td></tr>
      </table>

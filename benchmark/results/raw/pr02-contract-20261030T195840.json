@@ -1,0 +1,68 @@
+{
+  "finished_at": "2026-10-30T11:58:40.971006+00:00",
+  "checks": [
+    {
+      "id": "PR02-01",
+      "name": "scoped keys: write/read/ack separation enforced",
+      "status": "PASS",
+      "detail": {
+        "write_only_upload": 202,
+        "write_only_read": 403,
+        "write_only_ack": 403,
+        "read_only_read": 200,
+        "read_only_upload": 403
+      },
+      "elapsed_s": 0.01
+    },
+    {
+      "id": "PR02-02",
+      "name": "hashed key form works; unknown/revoked key is 401",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 105, in pr02_02_hashed_key_and_revocation\n    assert r.status == 202, f\"hashed key upload: {r.status} {r.text()[:200]}\"\n           ^^^^^^^^^^^^^^^\nAssertionError: hashed key upload: 429 {\"error\":{\"code\":\"quota_exceeded\",\"message\":\"concurrent job limit reached (2); retry after one completes\"}}\n\n"
+      },
+      "error": "AssertionError: hashed key upload: 429 {\"error\":{\"code\":\"quota_exceeded\",\"message\":\"concurrent job limit reached (2); retry after one completes\"}}\n",
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-03",
+      "name": "nosniff + request-id echo/validation",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 114, in pr02_03_headers_and_request_id\n    assert r.headers.get(\"x-content-type-options\") == \"nosniff\", r.headers\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: {'content-type': 'application/json; charset=utf-8', 'date': 'Fri, 30 Oct 2026 11:58:40 GMT', 'content-length': '29'}\n"
+      },
+      "error": "AssertionError: {'content-type': 'application/json; charset=utf-8', 'date': 'Fri, 30 Oct 2026 11:58:40 GMT', 'content-length': '29'}",
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-04",
+      "name": "audit lines: identity + decisions, no content",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 131, in pr02_04_audit_log\n    assert r.status == 202, r.status\n           ^^^^^^^^^^^^^^^\nAssertionError: 429\n"
+      },
+      "error": "AssertionError: 429",
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-05",
+      "name": "per-owner concurrency quota with Retry-After",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 170, in pr02_05_quota_and_isolation\n    assert other.status == 202, f\"quota leaked across owners: {other.status}\"\n           ^^^^^^^^^^^^^^^^^^^\nAssertionError: quota leaked across owners: 429\n"
+      },
+      "error": "AssertionError: quota leaked across owners: 429",
+      "elapsed_s": 0.01
+    },
+    {
+      "id": "PR02-06",
+      "name": "rotation: create/read/ack across keys with scopes",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 39, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr02_contract.py\", line 189, in pr02_06_rotation_with_scopes\n    jid = r.json()[\"job_id\"]\n          ~~~~~~~~^^^^^^^^^^\nKeyError: 'job_id'\n"
+      },
+      "error": "KeyError: 'job_id'",
+      "elapsed_s": 0.0
+    }
+  ]
+}

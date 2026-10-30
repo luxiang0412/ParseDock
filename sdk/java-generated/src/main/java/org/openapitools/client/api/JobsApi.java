@@ -94,6 +94,7 @@ public class JobsApi {
         <tr><td> 202 </td><td> Release accepted (not necessarily deleted yet). </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
@@ -180,6 +181,7 @@ public class JobsApi {
         <tr><td> 202 </td><td> Release accepted (not necessarily deleted yet). </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
@@ -204,6 +206,7 @@ public class JobsApi {
         <tr><td> 202 </td><td> Release accepted (not necessarily deleted yet). </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
@@ -230,6 +233,7 @@ public class JobsApi {
         <tr><td> 202 </td><td> Release accepted (not necessarily deleted yet). </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
@@ -255,6 +259,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
      </table>
@@ -335,6 +340,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
      </table>
@@ -358,6 +364,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
      </table>
@@ -383,6 +390,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
      </table>
@@ -417,11 +425,12 @@ public class JobsApi {
         <tr><td> 200 </td><td> Idempotent replay — the existing job is returned, nothing new was created. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner rate limit exceeded. </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -545,11 +554,12 @@ public class JobsApi {
         <tr><td> 200 </td><td> Idempotent replay — the existing job is returned, nothing new was created. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner rate limit exceeded. </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -581,11 +591,12 @@ public class JobsApi {
         <tr><td> 200 </td><td> Idempotent replay — the existing job is returned, nothing new was created. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner rate limit exceeded. </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -619,11 +630,12 @@ public class JobsApi {
         <tr><td> 200 </td><td> Idempotent replay — the existing job is returned, nothing new was created. </td><td>  -  </td></tr>
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner rate limit exceeded. </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -648,6 +660,7 @@ public class JobsApi {
         <tr><td> 304 </td><td> The client&#39;s &#x60;If-None-Match&#x60; matches the current artifact. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  </td></tr>
         <tr><td> 200 </td><td> The requested representation. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
@@ -729,6 +742,7 @@ public class JobsApi {
         <tr><td> 304 </td><td> The client&#39;s &#x60;If-None-Match&#x60; matches the current artifact. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  </td></tr>
         <tr><td> 200 </td><td> The requested representation. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
@@ -753,6 +767,7 @@ public class JobsApi {
         <tr><td> 304 </td><td> The client&#39;s &#x60;If-None-Match&#x60; matches the current artifact. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  </td></tr>
         <tr><td> 200 </td><td> The requested representation. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
@@ -779,6 +794,7 @@ public class JobsApi {
         <tr><td> 304 </td><td> The client&#39;s &#x60;If-None-Match&#x60; matches the current artifact. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  </td></tr>
         <tr><td> 200 </td><td> The requested representation. </td><td>  * ETag - Strong validator of this representation (per-artifact sha256). <br>  * X-Result-Version - Manifest hash, identical for all formats; echo this in the ACK. <br>  * X-Download-Lease -  <br>  * Content-Length -  <br>  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
@@ -803,6 +819,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Current job state. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
@@ -875,6 +892,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Current job state. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
@@ -896,6 +914,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Current job state. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
@@ -919,6 +938,7 @@ public class JobsApi {
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
         <tr><td> 200 </td><td> Current job state. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
+        <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>

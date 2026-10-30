@@ -58,6 +58,14 @@ quota → 429 with `Retry-After`, audit line present for each lifecycle transiti
 
 **DoD.** No plaintext tokens on disk; audit schema documented in `docs/ARCHITECTURE.md`.
 
+**Status: DONE (PR-02).** SHA-256 key store with per-key scopes and rotation
+(`--api-keys-file`), `403 insufficient_scope`, per-owner quotas (concurrent /
+jobs per day / bytes per day) enforced by the coordinator with `429`+`Retry-After`,
+structured audit lines (`audit=true`, no content), `X-Request-Id` validation and
+`X-Content-Type-Options: nosniff` on every response including proxied streams.
+Tests: `internal/api/keys_test.go`, coordinator quota/audit tests,
+`tests/integration/pr02_contract.py` (6 checks).
+
 ---
 
 ## PR-03 — Cancel and timeout semantics that actually stop work

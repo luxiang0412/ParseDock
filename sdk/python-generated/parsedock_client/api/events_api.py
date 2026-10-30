@@ -105,6 +105,7 @@ class EventsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "str",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
         }
         response_data = self.api_client.call_api(
@@ -186,6 +187,7 @@ class EventsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "str",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
         }
         response_data = self.api_client.call_api(
@@ -267,6 +269,7 @@ class EventsApi:
         _response_types_map: Dict[str, Optional[str]] = {
             '200': "str",
             '401': "Error",
+            '403': "Error",
             '404': "Error",
         }
         response_data = self.api_client.call_api(

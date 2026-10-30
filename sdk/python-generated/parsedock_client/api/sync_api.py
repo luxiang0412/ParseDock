@@ -108,6 +108,7 @@ class SyncApi:
             '202': "Job",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '413': "Error",
             '422': "Error",
         }
@@ -192,6 +193,7 @@ class SyncApi:
             '202': "Job",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '413': "Error",
             '422': "Error",
         }
@@ -276,6 +278,7 @@ class SyncApi:
             '202': "Job",
             '400': "Error",
             '401': "Error",
+            '403': "Error",
             '413': "Error",
             '422': "Error",
         }

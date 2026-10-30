@@ -96,6 +96,8 @@ public class ErrorError {
     
     UNAUTHORIZED("unauthorized"),
     
+    INSUFFICIENT_SCOPE("insufficient_scope"),
+    
     RATE_LIMITED("rate_limited"),
     
     COORDINATOR_UNAVAILABLE("coordinator_unavailable");

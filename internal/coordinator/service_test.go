@@ -3,6 +3,7 @@ package coordinator
 import (
 	"bytes"
 	"context"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -585,5 +586,108 @@ func TestValidateInternalBinding(t *testing.T) {
 			t.Errorf("ValidateInternalBinding(%q, token=%q, dev=%v) = %v, wantErr=%v",
 				c.addr, c.token, c.dev, err, c.wantErr)
 		}
+	}
+}
+
+// PR-02: quotas are enforced by the coordinator (the only stateful component),
+// so they hold across any number of stateless API replicas.
+func TestQuotaConcurrency(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 2} })
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	}
+	_, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))})
+	ce := AsError(err)
+	if ce.Code != jobs.ErrQuotaExceeded || ce.Status != 429 {
+		t.Fatalf("third job = %v (status %d), want 429 quota", err, ce.Status)
+	}
+	if ce.RetryAfter <= 0 {
+		t.Fatal("quota errors must suggest a retry delay")
+	}
+	// Completing a job frees the slot.
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if _, err := s.Complete(ctx, CompleteParams{JobID: task.JobID, Token: task.LeaseToken,
+		Engine: "native", Version: "1", Markdown: []byte("x"), Text: []byte("x"), JSON: []byte("{}")}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))}); err != nil {
+		t.Fatalf("job after completion rejected: %v", err)
+	}
+}
+
+func TestQuotaDailyJobsAndBytes(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxJobsPerDay: 2} })
+	ctx := context.Background()
+	create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	create(t, s, "b.txt", []byte("hello"), CreateParams{})
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "c.txt",
+		Body: bytes.NewReader([]byte("hello"))}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("daily job quota not enforced: %v", err)
+	}
+
+	b := testService(t, func(c *Config) { c.Quota = Quota{MaxBytesPerDay: 10} })
+	create(t, b, "a.txt", []byte("12345"), CreateParams{})
+	if _, _, err := b.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "b.txt",
+		Body: bytes.NewReader([]byte("123456"))}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("daily byte quota not enforced: %v", err)
+	}
+
+	// Zero means unlimited.
+	u := testService(t, func(c *Config) { c.Quota = Quota{} })
+	for i := 0; i < 5; i++ {
+		create(t, u, "a.txt", []byte("hello"), CreateParams{})
+	}
+}
+
+// Quotas are per owner, not global.
+func TestQuotaIsPerOwner(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 1} })
+	ctx := context.Background()
+	create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-2", InputName: "b.txt",
+		Body: bytes.NewReader([]byte("hello"))}); err != nil {
+		t.Fatalf("other owner blocked by quota: %v", err)
+	}
+}
+
+// PR-02: audit lines carry identity and decisions, never document content.
+func TestAuditLinesContainNoContent(t *testing.T) {
+	var buf bytes.Buffer
+	s := testService(t, nil)
+	s.Audit = slog.New(slog.NewJSONHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ctx := WithRequestID(context.Background(), "req_test123")
+	secret := "SENTINEL-DOCUMENT-TEXT-0f2a"
+	job, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "a.txt",
+		Body: bytes.NewReader([]byte(secret))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# x"), Text: []byte("x"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+
+	out := buf.String()
+	for _, want := range []string{`"audit":true`, `"event":"job_created"`, `"event":"job_acked"`,
+		`"event":"job_released"`, `"job_id":"` + job.ID + `"`, `"request_id":"req_test123"`,
+		`"owner_id":"owner-1"`} {
+		if !strings.Contains(out, want) {
+			t.Errorf("audit log missing %s\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("audit log leaked document content:\n%s", out)
 	}
 }

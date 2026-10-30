@@ -111,7 +111,7 @@ cleaner (every 60 s):
 
 | Boundary | Control |
 | --- | --- |
-| public → api | bearer token → owner; per-owner token bucket; `MaxBytesReader` |
+| public → api | bearer token → owner; keys stored as SHA-256 with scopes (`jobs:write`/`read`/`ack`); per-owner token bucket; `MaxBytesReader`; `X-Content-Type-Options: nosniff`; validated `X-Request-Id` |
 | api → coordinator | internal shared token; owner header stripped from client input |
 | worker → coordinator | internal token + per-task lease token; input/result authorised by token |
 | upload | extension + magic bytes + OOXML structure + zip-bomb ratio + PDF markers + page limit; multipart parts may arrive in any order without buffering the document |
@@ -120,7 +120,29 @@ cleaner (every 60 s):
 | engine | subprocess, timeout, private scratch dir, optional netns; no shell interpolation |
 | logs | no document text, no tokens, no result bodies; only ids/counters/error codes |
 | cross-tenant | a foreign job id returns **404** with the same body as an unknown id |
+| quotas | per owner, enforced by the coordinator (not the stateless API): concurrent jobs, jobs/day, bytes/day; `429` + `Retry-After` |
 | egress | no URL fetching, no webhooks, MinerU remote tiers disabled |
+
+### Audit log
+
+The coordinator writes one JSON object per decision to the process log with
+`audit=true` (ship it separately from application logs):
+
+```json
+{"audit":true,"event":"job_created","owner_id":"acme","job_id":"job_01…",
+ "format":"pdf","bytes":4855,"request_id":"req_…","engine_hint":"xberg",
+ "mode":"auto","device":"auto","time":"2026-10-30T12:00:00Z"}
+```
+
+Events: `job_created`, `job_acked` (both ACK and cancel-after-complete),
+`job_cancelled`, `job_released`, `job_expired`. Fields are limited to identities,
+ids, sizes, engine/mode and the decision — **never document text, filenames from
+the client, tokens or result bodies**. `request_id` comes from the API gateway and
+is generated/validated there (charset `[A-Za-z0-9._:-]`, ≤128 chars).
+
+Key handling: `--api-keys-file` (one `<secret|sha256:hash>:<owner>[:scopes]` per
+line) is the production form; plaintext `--api-keys` is hashed at startup but
+visible in argv, so it is for development only.
 
 ## 7. Non-goals restated
 
