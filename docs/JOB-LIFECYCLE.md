@@ -107,6 +107,29 @@ Why no automatic ACK: an HTTP 200 means the bytes left the server, not that the
 client consumed them. SDKs expose `ack()` and an opt-in `download_and_ack()` that
 only fires after the caller's own sink reports success.
 
+### Cancellation
+
+`POST /v1/jobs/{id}/cancel` on a `queued`/`running` job:
+
+1. the job becomes `cancelled` immediately and `cancel_requested_at` is recorded
+   (visible to clients and operators before the worker has stopped);
+2. the attempt row is marked `cancelled`, so any later heartbeat returns
+   `409 cancelled` and any later result commit fails the fencing check;
+3. the worker aborts the engine process at its next heartbeat (default 10 s;
+   `--heartbeat`), then calls `/fail`, which is an idempotent no-op for a cancelled
+   attempt — a cancelled job is never turned into `failed`;
+4. if the engine had already produced a result, the worker discards it instead of
+   uploading (PR-03): a cancelled job cannot publish a result that would race the
+   cleanup;
+5. input and partial work are removed by the retention path.
+
+Measured: cancellation is observed and the worker stopped **within one heartbeat
+interval** (T17 asserts < 12 s with a 1 s test interval; the mock engine runs 40 s
+so the job is genuinely mid-parse). Per-engine ceilings (`--xberg-timeout`,
+`--docling-rs-timeout`, `--mineru-timeout`, default 10/15/30 min) bound a single
+engine invocation and are capped by `--max-parse-minutes` and the job's
+`processing_deadline_at`.
+
 ## 5. Failure matrix (§4.3 of the task guide) and how it is covered
 
 | Scenario | Behaviour | Evidence |
@@ -119,7 +142,8 @@ only fires after the caller's own sink reports success.
 | repeated ACK | 202, idempotent | T06 |
 | Coordinator `SIGKILL` during cleanup | restart resumes `deleting`, files removed | T08 (3 jobs, 6 files left at kill, all gone after restart) |
 | Worker `SIGKILL` mid-task | lease expires, job requeued, attempt 2 succeeds; stale token rejected | T09 (attempts: expired → succeeded; stale result/heartbeat `409`) |
-| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and calls `/fail`, which is an idempotent no-op; the job stays `cancelled` | `TestCancelledAttemptFinalisation`, PR00-03 |
+| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and calls `/fail`, which is an idempotent no-op; the job stays `cancelled`; a result produced after the cancel is discarded | `TestCancelledAttemptFinalisation`, `TestCancelRecordsRequestTime`, T17 |
+| Cancel a job whose engine already finished | the worker discards the result; no artifact is published | PR-03 worker guard, T17 |
 | No GPU and `device=gpu_required` | `409 gpu_unavailable`, **no job row created** | T12 |
 | Invalid/adversarial upload | `4xx` with stable code, service stays healthy | T13 |
 | Disk below watermark | new upload `507`, existing results still downloadable | T14 |

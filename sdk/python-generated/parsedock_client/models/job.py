@@ -54,6 +54,7 @@ class Job(BaseModel):
     routing_reason: Optional[StrictStr] = Field(default=None, description="Human-readable routing decision")
     progress_percent: Optional[Annotated[int, Field(le=100, strict=True, ge=0)]] = None
     progress_stage: Optional[StrictStr] = None
+    cancel_requested_at: Optional[datetime] = Field(default=None, description="Set when cancellation was requested (queued/running jobs). The worker stops at its next heartbeat (default interval 10 s) and finalises the attempt; the job is already `cancelled` when this field appears. ")
     result_version: Optional[StrictStr] = Field(default=None, description="Manifest hash; echo it in the ACK (`X-Result-Version`).")
     result_urls: Optional[JobResultUrls] = None
     warning_count: Optional[StrictInt] = None
@@ -63,7 +64,7 @@ class Job(BaseModel):
     events_url: Optional[StrictStr] = None
     ack_url: Optional[StrictStr] = None
     cancel_url: Optional[StrictStr] = None
-    __properties: ClassVar[List[str]] = ["job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "processing_deadline_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"]
+    __properties: ClassVar[List[str]] = ["job_id", "status", "processing_status", "retention_status", "input_name", "format", "mime_type", "input_size", "input_sha256", "page_count", "created_at", "started_at", "completed_at", "updated_at", "result_expires_at", "processing_deadline_at", "max_lifetime_at", "attempt", "requested_mode", "requested_device", "engine", "routing_reason", "progress_percent", "progress_stage", "cancel_requested_at", "result_version", "result_urls", "warning_count", "error_code", "error_message", "status_url", "events_url", "ack_url", "cancel_url"]
 
     @field_validator('status')
     def status_validate_enum(cls, value):
@@ -126,6 +127,11 @@ class Job(BaseModel):
         if self.result_expires_at is None and "result_expires_at" in self.model_fields_set:
             _dict['result_expires_at'] = None
 
+        # set to None if cancel_requested_at (nullable) is None
+        # and model_fields_set contains the field
+        if self.cancel_requested_at is None and "cancel_requested_at" in self.model_fields_set:
+            _dict['cancel_requested_at'] = None
+
         # set to None if result_version (nullable) is None
         # and model_fields_set contains the field
         if self.result_version is None and "result_version" in self.model_fields_set:
@@ -172,6 +178,7 @@ class Job(BaseModel):
             "routing_reason": obj.get("routing_reason"),
             "progress_percent": obj.get("progress_percent"),
             "progress_stage": obj.get("progress_stage"),
+            "cancel_requested_at": obj.get("cancel_requested_at"),
             "result_version": obj.get("result_version"),
             "result_urls": JobResultUrls.from_dict(obj["result_urls"]) if obj.get("result_urls") is not None else None,
             "warning_count": obj.get("warning_count"),

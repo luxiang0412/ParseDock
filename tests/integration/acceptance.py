@@ -886,8 +886,58 @@ def t16(stack: Stack) -> dict:
     return out
 
 
+@case("T17", "cancel during a parse stops the worker within the heartbeat budget")
+def t17(stack: Stack) -> dict:
+    r = stack.create_job(FIX / "txt_plain.txt")
+    jid = r.json()["job_id"]
+    # The kill stack runs a 40 s mock parse, so the job is running when we cancel.
+    deadline = time.time() + 30
+    running = False
+    while time.time() < deadline:
+        job = stack.get_job(jid).json()
+        if job["status"] == "running":
+            running = True
+            break
+        if job["status"] in ("completed", "failed", "cancelled"):
+            break
+        time.sleep(0.2)
+    assert running, f"job never reached running (last={job['status']})"
+
+    t0 = time.time()
+    cancelled = stack.cancel(jid)
+    assert cancelled.status == 202, (cancelled.status, cancelled.text()[:200])
+    assert cancelled.json()["status"] == "cancelled"
+    final = stack.wait_status(jid, {"cancelled"}, timeout=15)
+    observed_in = time.time() - t0
+    assert observed_in < 12, f"cancellation took {observed_in:.1f}s"
+    assert final.get("cancel_requested_at"), "cancel_requested_at not exposed"
+    assert not final.get("result_urls"), "a cancelled job must not expose result urls"
+
+    with stack.db() as db:
+        states = [row["state"] for row in db.execute(
+            "SELECT state FROM attempts WHERE job_id=?", (jid,))]
+    assert all(s in ("cancelled", "failed", "expired") for s in states), states
+
+    # Give the worker 3 heartbeats: it must have seen the cancel and stopped, and
+    # no result may appear afterwards.
+    time.sleep(4)
+    after = stack.get_job(jid).json()
+    worker_log = stack.logs["worker0"].read_text(errors="replace")
+    worker_stopped = jid in worker_log and "cancelled by coordinator" in worker_log
+    assert after["status"] == "cancelled" and not after.get("result_urls"), after
+    assert worker_stopped, "worker never logged that it stopped on cancellation"
+
+    # The input is cleaned up by the normal retention path.
+    released = stack.wait_retention(jid, {"released"}, timeout=60)
+    assert not stack.stored_files(jid), "cancelled job left files behind"
+    return {"job_id": jid, "cancel_observed_s": round(observed_in, 2),
+            "cancel_requested_at": final["cancel_requested_at"],
+            "worker_stopped": worker_stopped, "attempt_states": states,
+            "retention": released["retention_status"]}
+
+
 # --------------------------------------------------------------------------- runner
-LIFECYCLE_CASES = ["T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T12", "T13", "T14", "T15", "T16"]
+LIFECYCLE_CASES = ["T03", "T04", "T05", "T06", "T07", "T08", "T09", "T10", "T12", "T13", "T14", "T15", "T16", "T17"]
 REAL_CASES = ["T01", "T02", "T11"]
 
 
@@ -926,6 +976,7 @@ def build_stacks(profile: str, engines: str) -> dict[str, Stack]:
 CASE_STACK = {
     "T05": "bigstream",
     "T09": "kill",
+    "T17": "kill",
 }
 
 
@@ -945,7 +996,7 @@ def main() -> int:
     SUMFILE.parent.mkdir(parents=True, exist_ok=True)
 
     cases = {f._case[0]: f for f in
-             (t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13, t14, t15, t16)}
+             (t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13, t14, t15, t16, t17)}
     order = LIFECYCLE_CASES if args.profile == "lifecycle" else REAL_CASES
     if args.only:
         order = [x.strip() for x in args.only.split(",") if x.strip()]

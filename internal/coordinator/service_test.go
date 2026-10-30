@@ -788,3 +788,34 @@ func TestQuotaOldRunningJobDoesNotConsumeDailyBudget(t *testing.T) {
 	create(t, s, "a.txt", []byte("hello"), CreateParams{})
 	create(t, s, "b.txt", []byte("hello"), CreateParams{})
 }
+
+// PR-03: a cancellation records when it was requested and the job never yields a
+// result afterwards.
+func TestCancelRecordsRequestTime(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	cancelled, err := s.Cancel(ctx, job.ID, "owner-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cancelled.ProcessingStatus != jobs.StatusCancelled {
+		t.Fatalf("status = %s", cancelled.ProcessingStatus)
+	}
+	if cancelled.CancelRequestedAt == nil {
+		t.Fatal("cancel_requested_at not recorded")
+	}
+	read, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if read.CancelRequestedAt == nil {
+		t.Fatal("cancel_requested_at not persisted")
+	}
+	// A repeated cancel keeps the original timestamp (idempotent).
+	first := *read.CancelRequestedAt
+	again, err := s.Cancel(ctx, job.ID, "owner-1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.CancelRequestedAt == nil || !again.CancelRequestedAt.Equal(first) {
+		t.Fatalf("repeat cancel changed the request time: %v vs %v", again.CancelRequestedAt, first)
+	}
+}

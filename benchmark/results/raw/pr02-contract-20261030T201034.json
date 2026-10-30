@@ -1,0 +1,86 @@
+{
+  "finished_at": "2026-10-30T12:10:34.170780+00:00",
+  "checks": [
+    {
+      "id": "PR02-01",
+      "name": "scoped keys: write/read/ack separation enforced",
+      "status": "PASS",
+      "detail": {
+        "write_only_upload": 202,
+        "write_only_read": 403,
+        "write_only_ack": 403,
+        "read_only_read": 200,
+        "read_only_upload": 403
+      },
+      "elapsed_s": 0.01
+    },
+    {
+      "id": "PR02-02",
+      "name": "hashed key form works; unknown/revoked key is 401",
+      "status": "PASS",
+      "detail": {
+        "hashed_key_upload": 202,
+        "unknown_key": 401
+      },
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-03",
+      "name": "nosniff + request-id echo/validation",
+      "status": "PASS",
+      "detail": {
+        "nosniff": "nosniff",
+        "echoed_request_id": "req_abc-123",
+        "generated_request_id": "req_0ffb8ca847a651a45f7138a1c7d5ea8b"
+      },
+      "elapsed_s": 0.0
+    },
+    {
+      "id": "PR02-04",
+      "name": "audit lines: identity + decisions, no content",
+      "status": "PASS",
+      "detail": {
+        "audit_events": [
+          "job_created",
+          "job_created",
+          "job_created",
+          "job_created",
+          "job_acked",
+          "job_released"
+        ],
+        "created": {
+          "owner_id": "itest-owner",
+          "job_id": "job_06GRSDZEDA4R677ST348T9N888",
+          "request_id": "req_audit-1",
+          "bytes": 45,
+          "format": "txt"
+        }
+      },
+      "elapsed_s": 2.91
+    },
+    {
+      "id": "PR02-05",
+      "name": "per-owner concurrency quota with Retry-After",
+      "status": "PASS",
+      "detail": {
+        "blocked_http": 429,
+        "code": "quota_exceeded",
+        "retry_after": "5",
+        "other_owner": 202,
+        "after_release": 202
+      },
+      "elapsed_s": 3.38
+    },
+    {
+      "id": "PR02-06",
+      "name": "rotation: create/read/ack across keys with scopes",
+      "status": "PASS",
+      "detail": {
+        "created_with": "full-key",
+        "read_with": "read-only",
+        "ack_with": "ack-only"
+      },
+      "elapsed_s": 1.08
+    }
+  ]
+}

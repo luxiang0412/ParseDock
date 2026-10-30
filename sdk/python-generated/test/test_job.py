@@ -59,6 +59,7 @@ class TestJob(unittest.TestCase):
                 routing_reason = '',
                 progress_percent = 0,
                 progress_stage = '',
+                cancel_requested_at = datetime.datetime.strptime('2013-10-20 19:20:30.00', '%Y-%m-%d %H:%M:%S.%f'),
                 result_version = '',
                 result_urls = parsedock_client.models.job_result_urls.JobResultUrls(
                     markdown = '', 

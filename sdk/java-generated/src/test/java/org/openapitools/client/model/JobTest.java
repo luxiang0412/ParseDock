@@ -233,6 +233,14 @@ public class JobTest {
     }
 
     /**
+     * Test the property 'cancelRequestedAt'
+     */
+    @Test
+    public void cancelRequestedAtTest() {
+        // TODO: test cancelRequestedAt
+    }
+
+    /**
      * Test the property 'resultVersion'
      */
     @Test

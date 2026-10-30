@@ -25,7 +25,7 @@ const jobCols = `id, owner_id, input_name, mime_type, format, input_sha256, inpu
 	actual_engine, routing_reason, idempotency_key, created_at, started_at, completed_at,
 	result_expires_at, max_lifetime_at, current_attempt, max_attempts, result_version,
 	result_manifest_path, error_code, error_message, warning_count, progress, progress_stage,
-	requested_ttl_seconds, available_at, tombstone_expires_at, updated_at, request_id`
+	requested_ttl_seconds, available_at, tombstone_expires_at, updated_at, request_id, cancel_requested_at`
 
 // Service is the Coordinator: the only component that touches SQLite and the
 // authoritative file store.
@@ -237,12 +237,12 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
 	}
 	defer func() { _ = tx.Rollback() }()
-	_, err = tx.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(36)+`)`,
+	_, err = tx.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(37)+`)`,
 		job.ID, job.OwnerID, job.InputName, job.MimeType, job.Format, job.InputSHA256, job.InputSize,
 		job.PageCount, string(job.ProcessingStatus), string(job.RetentionStatus), job.Priority,
 		job.RequestedMode, job.RequestedDevice, job.EngineHint, job.ActualEngine, job.RoutingReason,
 		nullIfEmpty(job.IdempotencyKey), ts(job.CreatedAt), nil, nil, nil, ts(job.MaxLifetimeAt), 0, job.MaxAttempts,
-		nil, nil, nil, nil, 0, 0, "", ttl, ts(now), nil, ts(now), requestID(ctx))
+		nil, nil, nil, nil, 0, 0, "", ttl, ts(now), nil, ts(now), requestID(ctx), nil)
 	if err != nil {
 		_ = s.Store.DeleteJob(jobID)
 		if isUniqueViolation(err) && job.IdempotencyKey != "" {
@@ -899,10 +899,19 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID, resultVersion stri
 	now := nowUTC()
 	switch job.ProcessingStatus {
 	case jobs.StatusQueued, jobs.StatusRunning:
-		if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'cancelled', completed_at = ?,
+		res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'cancelled',
+			cancel_requested_at = COALESCE(cancel_requested_at, ?), completed_at = ?,
 			retention_status = 'release_pending', progress_stage = 'cancelled', updated_at = ?
-			WHERE id = ? AND processing_status IN ('queued','running')`, ts(now), ts(now), jobID); err != nil {
+			WHERE id = ? AND processing_status IN ('queued','running')`, ts(now), ts(now), ts(now), jobID)
+		if err != nil {
 			return nil, NewError(500, jobs.ErrInternal, err.Error())
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			// Lost a race with completion: re-read and fall through to the
+			// completed branch so the caller gets the real state.
+			if latest, gerr := s.GetJob(ctx, jobID, ownerID); gerr == nil {
+				return latest, nil
+			}
 		}
 		_, _ = s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`, jobID)
 		s.appendEvent(ctx, jobID, "cancelled", map[string]any{"reason": "client_request"})
@@ -1115,12 +1124,12 @@ func scanJob(row rowScanner) (*jobs.Job, error) {
 		resultVersion, manifestPath, errCode, errMsg, progressStage, availableAt, tombstone, updatedAt sql.NullString
 	var pageCount, attempt, maxAttempts, warnings, progress, reqTTL sql.NullInt64
 	var priority sql.NullInt64
-	var requestIDCol sql.NullString
+	var requestIDCol, cancelReq sql.NullString
 	if err := row.Scan(&j.ID, &j.OwnerID, &j.InputName, &j.MimeType, &j.Format, &j.InputSHA256, &j.InputSize,
 		&pageCount, &proc, &ret, &priority, &j.RequestedMode, &j.RequestedDevice, &j.EngineHint,
 		&actualEngine, &routing, &idem, &createdAt, &startedAt, &completedAt, &expiresAt, &maxLife,
 		&attempt, &maxAttempts, &resultVersion, &manifestPath, &errCode, &errMsg, &warnings, &progress,
-		&progressStage, &reqTTL, &availableAt, &tombstone, &updatedAt, &requestIDCol); err != nil {
+		&progressStage, &reqTTL, &availableAt, &tombstone, &updatedAt, &requestIDCol, &cancelReq); err != nil {
 		return nil, err
 	}
 	j.ProcessingStatus = jobs.ProcessingStatus(proc)
@@ -1153,6 +1162,7 @@ func scanJob(row rowScanner) (*jobs.Job, error) {
 	j.ResultExpiresAt = parseTSPtr(expiresAt)
 	j.TombstoneExpiresAt = parseTSPtr(tombstone)
 	j.RequestID = requestIDCol.String
+	j.CancelRequestedAt = parseTSPtr(cancelReq)
 	return &j, nil
 }
 
