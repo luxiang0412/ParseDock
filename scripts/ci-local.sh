@@ -68,6 +68,7 @@ phase_static() {
 }
 
 phase_unit() {
+  step "SDK and version consistency (python)" bash -c "bash '$ROOT/scripts/sdk-check.sh' --no-java" || return 1
   step "go test" bash -c "cd '$ROOT' && go test ./... -count=1 -timeout 300s" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
   step "CI merge-gate unit tests" python3 "$ROOT/tests/unit/test_ci_summary.py" || return 1
@@ -82,7 +83,7 @@ phase_contract() {
   step "openapi validate (internal)" docker run --rm -v "$ROOT:/local" "$OPENAPI_GENERATOR_IMAGE" \
     validate -i /local/api/openapi.internal.yaml || return 1
   step "contract (specs, SDK, router drift)" python3 "$ROOT/tests/contract/openapi_contract.py" || return 1
-  step "sdk regeneration drift" bash -c "cd '$ROOT' && make sdk >/dev/null && git diff --exit-code -- sdk" || return 1
+  step "sdk regeneration drift" bash -c "cd '$ROOT' && make sdk >/dev/null && git diff --exit-code -- sdk/python-generated sdk/java-generated" || return 1
   step "IR schema drift" bash -c "cd '$ROOT' && make schema >/dev/null && git diff --exit-code -- api/document-ir-0.1.schema.json" || return 1
 }
 

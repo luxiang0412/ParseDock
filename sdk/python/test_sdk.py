@@ -27,7 +27,8 @@ sys.path.insert(0, str(ROOT / "sdk" / "python"))
 
 from parsedock_sdk import ParseDockClient, ParseDockError  # noqa: E402
 
-BIN = ROOT / "runtime" / "bin" / "docparse"
+# Honour DOCPARSE_BIN so scripts/sdk-check.sh tests the binary it just validated.
+BIN = Path(os.environ.get("DOCPARSE_BIN") or (ROOT / "runtime" / "bin" / "docparse"))
 FIXTURE = ROOT / "benchmark" / "fixtures" / "generated" / "pdf_text_en_3p.pdf"
 API_PORT, INT_PORT = 18180, 18181
 TOKEN = "sdk-test-token"
@@ -38,6 +39,28 @@ def free(port: int) -> None:
         s.settimeout(0.3)
         if s.connect_ex(("127.0.0.1", port)) == 0:
             raise SystemExit(f"port {port} busy; stop the previous run")
+
+
+def test_cli(stack_api: str, token: str, sample: Path) -> None:
+    """The console script must parse a file end to end and print the bytes."""
+    out = subprocess.run(
+        [sys.executable, "-m", "parsedock_sdk.cli", "parse", str(sample), "--format", "markdown",
+         "--api", stack_api, "--token", token],
+        capture_output=True)
+    assert out.returncode == 0, out.stderr.decode()
+    # A connection error must be exit 2, not a traceback or a false success.
+    dead = subprocess.run(
+        [sys.executable, "-m", "parsedock_sdk.cli", "parse", str(sample),
+         "--api", "http://127.0.0.1:1", "--token", token],
+        capture_output=True)
+    assert dead.returncode == 2, (dead.returncode, dead.stderr.decode()[:200])
+    assert out.stdout.strip(), "CLI printed nothing"
+    # --keep leaves the result downloadable; the default ACKs it.
+    out = subprocess.run(
+        [sys.executable, "-m", "parsedock_sdk.cli", "parse", str(sample), "--api", stack_api,
+         "--token", token, "--keep", "-o", os.devnull],
+        capture_output=True)
+    assert out.returncode == 0, out.stderr.decode()
 
 
 def main() -> int:
@@ -153,6 +176,10 @@ def main() -> int:
             ir = c.parse_sync(FIXTURE, mode="fast")
             assert ir.get("schema_version") == "doc-ir/0.1", ir
             print("[ok] synchronous parse returned doc-ir/0.1")
+
+            # 10. CLI (console script / python -m) parses and optionally keeps the result.
+            test_cli(base, TOKEN, FIXTURE)
+            print("[ok] CLI parse wrote output and exited 0")
     except AssertionError as e:
         failures.append(f"assertion: {e}")
     finally:

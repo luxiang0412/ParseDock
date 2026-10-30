@@ -60,6 +60,25 @@ jobs:
           path: build/ci/
           if-no-files-found: warn
 
+  sdks:
+    name: sdk-check
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: sdk-check (python e2e, CLI, version consistency, Java build)
+        run: bash scripts/sdk-check.sh
+
   container:
     name: container-smoke
     runs-on: ubuntu-24.04

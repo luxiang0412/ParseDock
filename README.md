@@ -156,6 +156,10 @@ make pr00             # PR-00 runtime contract (10 scenarios) + backup/restore
 make acceptance        # T03–T16 lifecycle (mock engine): ACK/TTL/lease/fencing/restart
 make acceptance-real   # T01/T02/T11 against xberg + docling-rs
 make sdk-test          # Python SDK lifecycle incl. "failing sink does not release"
+make sdk-check         # Python + CLI + Java SDK build + one version across all artefacts
+make metrics           # Prometheus exposition, throttling visibility, no content leakage
+make load              # cluster-lite load report (mock engine, 2 api + 2 workers)
+make gpu-check         # GPU worker image end-to-end (needs a GPU host)
 make bench             # quality + latency + concurrency (needs engine servers)
 make score             # regenerate the scoring tables from the raw data
 make gpu-bench         # CPU vs CUDA, VRAM measurements
