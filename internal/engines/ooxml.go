@@ -167,7 +167,9 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 					// the cached value is used and the gap is reported once.
 					fc.shared = true
 				}
-				if fc.formula != "" || fc.cached != "" {
+				// Keep shared-formula slaves even when they have no cache: the warning
+				// that the formula text is unavailable depends on seeing them.
+				if fc.formula != "" || fc.cached != "" || fc.shared {
 					cells[[2]int{r, col}] = fc
 				}
 			}
@@ -217,7 +219,10 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 			}
 			if fc.cached != "" && cell.CachedValue == "" {
 				cell.CachedValue = fc.cached
-				if fc.dataType != "" {
+				// The engine may have inferred a richer type (e.g. a date from a
+				// formatted numeric serial, which OOXML stores without t="d");
+				// only fill a type the engine left empty.
+				if cell.DataType == "" && fc.dataType != "" {
 					cell.DataType = fc.dataType
 				}
 			}

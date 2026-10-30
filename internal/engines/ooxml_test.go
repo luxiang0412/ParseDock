@@ -230,3 +230,89 @@ func writeMinimalXLSX(t *testing.T) string {
 }
 
 var _ = context.Background
+
+// A formula whose cached value is a date serial: the engine's date type wins.
+func TestEnrichKeepsEngineDateType(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "date.xlsx")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	add := func(name, body string) {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`)
+	add("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`)
+	// Numeric serial 45123 with a date style, no t="d".
+	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" s="1"><f>TODAY()</f><v>45123</v></c></row></sheetData></worksheet>`)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 1,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0, Text: "2023-07-15", DataType: "date"}}}}
+	EnrichXLSXFormulas(path, doc)
+	cell := doc.Tables[0].Cells[0]
+	if cell.DataType != "date" {
+		t.Fatalf("engine date type overwritten: %q", cell.DataType)
+	}
+	if cell.Formula != "=TODAY()" {
+		t.Fatalf("formula = %q", cell.Formula)
+	}
+}
+
+// An uncached shared-formula slave must still trigger the warning.
+func TestEnrichWarnsOnUncachedSharedFormula(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "shared.xlsx")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	add := func(name, body string) {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`)
+	add("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`)
+	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><f t="shared" ref="A1:A2" si="0">A2+1</f><v>2</v></c><c r="A2"><f t="shared" si="0"/></c></row></sheetData></worksheet>`)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 2, Cols: 1,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 1, Col: 0}}}}
+	applied, warnings := EnrichXLSXFormulas(path, doc)
+	if applied != 1 {
+		t.Fatalf("applied = %d, want the master only", applied)
+	}
+	found := false
+	for _, w := range warnings {
+		if w.Code == documentir.WarnFormulaMissing {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no shared-formula warning: %v", warnings)
+	}
+}
