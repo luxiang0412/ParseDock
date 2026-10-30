@@ -1,0 +1,37 @@
+{
+  "profile": "lifecycle",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T09:15:30.851800+00:00",
+  "finished_at": "2026-10-30T09:15:35.980889+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "e6b1d259bc3893c6cc86cb48499a7747a18e20d302d7dc2b36a6390ff0da1b3d",
+  "cases": [
+    {
+      "id": "T05",
+      "name": "ACK during an active download waits for the download lease",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRR5Y7E4HHECG4W6N3RZ1K68",
+        "lease_id": "dl_06GRR5YE0ZHGN201PP2K628AQ4",
+        "first_download_bytes": 33554601,
+        "ack_http": 202,
+        "second_download_http": 410,
+        "files_during_ack": {
+          "inputs/job_06GRR5Y7E4HHECG4W6N3RZ1K68/meta.json": 107,
+          "inputs/job_06GRR5Y7E4HHECG4W6N3RZ1K68/input.bin": 746,
+          "results/job_06GRR5Y7E4HHECG4W6N3RZ1K68/result.txt": 33554597,
+          "results/job_06GRR5Y7E4HHECG4W6N3RZ1K68/result.md": 33554601,
+          "results/job_06GRR5Y7E4HHECG4W6N3RZ1K68/result.json": 34087970,
+          "results/job_06GRR5Y7E4HHECG4W6N3RZ1K68/manifest.json": 705
+        },
+        "final_retention": "released",
+        "elapsed_s": 5.11
+      },
+      "error": ""
+    }
+  ]
+}

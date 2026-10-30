@@ -1,0 +1,140 @@
+{
+  "finished_at": "2026-10-30T09:10:39.339593+00:00",
+  "checks": [
+    {
+      "id": "PR00-02",
+      "name": "TXT/CSV/GB18030 decode correctly in auto|fast|accurate",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr00_contract.py\", line 36, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr00_contract.py\", line 84, in pr00_02\n    assert final[\"status\"] == \"completed\", (mode, final)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ('accurate', {'ack_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC/ack', 'attempt': 1, 'cancel_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC/cancel', 'completed_at': '2026-10-30T09:10:19.557036Z', 'created_at': '2026-10-30T09:10:18.498018Z', 'engine': '', 'error_code': 'unsupported_type', 'error_message': 'unsupported_type: no engine for format \"csv\" (mode \"accurate\")', 'events_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC/events', 'format': 'csv', 'input_name': 'csv_gb18030.csv', 'input_sha256': '6d92f25e33cbec7b1fe2cb7aad91493a8c15d7de0cd4de7e37f192c69b8f287d', 'input_size': 132, 'job_id': 'job_06GRR4R2G04WS1AJ340F4GADPC', 'max_lifetime_at': '2026-10-31T09:10:18.498018Z', 'mime_type': 'text/csv', 'page_count': 0, 'processing_status': 'failed', 'progress_percent': 0, 'progress_stage': 'claimed', 'requested_device': 'auto', 'requested_mode': 'accurate', 'result_expires_at': None, 'result_urls': None, 'result_version': None, 'retention_status': 'active', 'routing_reason': 'format=csv mode=accurate device=auto -> native (native); text formats always use the native engine (encoding-correct, no model load)', 'started_at': '2026-10-30T09:10:19.549986Z', 'status': 'failed', 'status_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC', 'updated_at': '2026-10-30T09:10:19.557036Z'})\n"
+      },
+      "error": "AssertionError: ('accurate', {'ack_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC/ack', 'attempt': 1, 'cancel_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC/cancel', 'completed_at': '2026-10-30T09:10:19.557036Z', 'created_at': '2026-10-30T09:10:18.498018Z', 'engine': '', 'error_code': 'unsupported_type', 'error_message': 'unsupported_type: no engine for format \"csv\" (mode \"accurate\")', 'events_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC/events', 'format': 'csv', 'input_name': 'csv_gb18030.csv', 'input_sha256': '6d92f25e33cbec7b1fe2cb7aad91493a8c15d7de0cd4de7e37f192c69b8f287d', 'input_size': 132, 'job_id': 'job_06GRR4R2G04WS1AJ340F4GADPC', 'max_lifetime_at': '2026-10-31T09:10:18.498018Z', 'mime_type': 'text/csv', 'page_count': 0, 'processing_status': 'failed', 'progress_percent': 0, 'progress_stage': 'claimed', 'requested_device': 'auto', 'requested_mode': 'accurate', 'result_expires_at': None, 'result_urls': None, 'result_version': None, 'retention_status': 'active', 'routing_reason': 'format=csv mode=accurate device=auto -> native (native); text formats always use the native engine (encoding-correct, no model load)', 'started_at': '2026-10-30T09:10:19.549986Z', 'status': 'failed', 'status_url': '/v1/jobs/job_06GRR4R2G04WS1AJ340F4GADPC', 'updated_at': '2026-10-30T09:10:19.557036Z'})",
+      "elapsed_s": 3.55
+    },
+    {
+      "id": "PR00-03",
+      "name": "cancel semantics: completed needs result_version; running cancels",
+      "status": "PASS",
+      "detail": {
+        "completed_cancel_no_version": 409,
+        "completed_cancel_with_version": 202,
+        "running_cancel_status": "cancelled",
+        "attempts": []
+      },
+      "elapsed_s": 2.16
+    },
+    {
+      "id": "PR00-04",
+      "name": "sync parse is one-shot; timeout converts to async",
+      "status": "PASS",
+      "detail": {
+        "sync_http": 200,
+        "sync_result_after": 410,
+        "async_http": 202,
+        "async_final": "completed"
+      },
+      "elapsed_s": 2.26
+    },
+    {
+      "id": "PR00-05",
+      "name": "ACK vs in-flight download: lease protects the stream",
+      "status": "FAIL",
+      "detail": {
+        "traceback": "Traceback (most recent call last):\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr00_contract.py\", line 36, in record\n    detail = fn() or {}\n             ^^^^\n  File \"/home/luxiang/project/work/ParseDock/tests/integration/pr00_contract.py\", line 169, in pr00_05\n    assert mock.stored_files(jid), \"cleaner deleted files under a live lease\"\n           ^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: cleaner deleted files under a live lease\n"
+      },
+      "error": "AssertionError: cleaner deleted files under a live lease",
+      "elapsed_s": 4.35
+    },
+    {
+      "id": "PR00-06",
+      "name": "per-representation ETag, shared X-Result-Version, 304",
+      "status": "PASS",
+      "detail": {
+        "etags": {
+          "markdown": "\"sha256:411a4ac8e839fba6bfc1a3207ad1d681d58e1f6ebd17b8640f689934b98958bc\"",
+          "text": "\"sha256:f0426b468bc33bdcef3ae6eb327adfa9792ba0f67eb473cc29a5cc4d481df33f\"",
+          "json": "\"sha256:ee99eed2099367f094d6956fc77539cc29c70561a0ef4ffa118dcb868c1ccdb7\""
+        },
+        "result_version": "sha256:a948cb9042a219e91859a8dfabc8338786566603fb1da275a438c03ad8df59f2",
+        "conditional": 304
+      },
+      "elapsed_s": 1.73
+    },
+    {
+      "id": "PR00-07",
+      "name": "SSE scope, retention events, cursor reset",
+      "status": "PASS",
+      "detail": {
+        "processing_events": [
+          "snapshot",
+          "created",
+          "running",
+          "completed",
+          "stream_end"
+        ],
+        "retention_events": [
+          "snapshot",
+          "created",
+          "running",
+          "completed",
+          "release_pending",
+          "released",
+          "stream_end"
+        ],
+        "reset_events": [
+          "snapshot",
+          "cursor_reset",
+          "created",
+          "running",
+          "completed",
+          "release_pending",
+          "released",
+          "stream_end"
+        ]
+      },
+      "elapsed_s": 5.19
+    },
+    {
+      "id": "PR00-09",
+      "name": "multipart parts in any order, fields honoured",
+      "status": "PASS",
+      "detail": {
+        "file_first": {
+          "status": 202,
+          "mode": "accurate",
+          "device": "cpu"
+        },
+        "fields_first": {
+          "status": 202,
+          "mode": "accurate",
+          "device": "cpu"
+        }
+      },
+      "elapsed_s": 2.31
+    },
+    {
+      "id": "PR00-10",
+      "name": "key rotation keeps the owner; forged headers ignored",
+      "status": "PASS",
+      "detail": {
+        "rotated_read": 200,
+        "rotated_ack": 202,
+        "bad_token": 401,
+        "forged_owner": 404,
+        "internal_via_api": 404
+      },
+      "elapsed_s": 1.54
+    },
+    {
+      "id": "PR00-14",
+      "name": "gpu_required without a GPU worker is rejected",
+      "status": "PASS",
+      "detail": {
+        "http": 409,
+        "code": "gpu_unavailable",
+        "gpu_jobs_persisted": 0
+      },
+      "elapsed_s": 0.22
+    }
+  ]
+}

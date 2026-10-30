@@ -180,6 +180,14 @@ class Engine:
         raise NotImplementedError
 
 
+def _sniff_delimiter(text: str) -> str:
+    """Mirror the Go native engine: most frequent of , ; \t | on the first line."""
+    first = text.splitlines()[0] if text.splitlines() else ""
+    counts = {d: first.count(d) for d in (",", ";", "\t", "|")}
+    best = max(counts, key=counts.get)
+    return best if counts[best] else ","
+
+
 def dir_bytes_size(p: Path) -> int:
     return sum(f.stat().st_size for f in p.rglob("*") if f.is_file())
 
@@ -199,7 +207,7 @@ class NativeEngine(Engine):
             text = raw.decode("gb18030", "replace")
         md = text
         if path.suffix in (".csv", ".tsv"):
-            sep = "\t" if path.suffix == ".tsv" else ","
+            sep = "\t" if path.suffix == ".tsv" else _sniff_delimiter(text)
             rows = [l.split(sep) for l in text.strip().splitlines()]
             md = "\n".join("| " + " | ".join(r) + " |" for r in rows)
         elapsed = (time.perf_counter() - t0) * 1000
@@ -279,6 +287,9 @@ class XbergEngine(Engine):
         return EngineResult(
             text=text or "", markdown=md or "",
             ir={"pages": len(pages), "tables": res.get("tables") or [],
+                # xberg exposes sheet *index* only; it must not be reported as a
+                # sheet name (that would fabricate provenance).
+                "sheets": [],
                 "quality_score": res.get("quality_score"),
                 "extraction_method": res.get("extraction_method"),
                 "counts": res.get("counts")},
@@ -343,7 +354,10 @@ class DoclingRS(Engine):
         return EngineResult(
             text=text, markdown="\n\n".join(md_parts),
             ir={"pages": len(ir.get("pages") or {}), "tables": tables,
-                "texts": len(texts)},
+                "texts": len(texts),
+                "sheets": [g.get("name") for g in ir.get("groups") or []
+                           if g.get("label") == "sheet" and g.get("name")],
+                "texts_detail": texts},
             elapsed_ms=wall, peak_rss_mb=rss, peak_vram_mb=None,
             version=self.version, device=self.device, config_hash=self.config_hash(),
         )
@@ -419,7 +433,10 @@ class DoclingServe(Engine):
         return EngineResult(
             text=text or "", markdown=md or "", ir={
                 "pages": len(js.get("pages") or {}), "tables": js.get("tables") or [],
-                "texts": len(texts)},
+                "texts": len(texts),
+                "sheets": [g.get("name") for g in js.get("groups") or []
+                           if g.get("label") == "sheet" and g.get("name")],
+                "texts_detail": texts},
             elapsed_ms=wall, peak_rss_mb=None, peak_vram_mb=None, version=self.version,
             device=self.device, config_hash=self.config_hash(),
         )
@@ -564,64 +581,115 @@ def golden_table() -> list[list[str]]:
     ]
 
 
+#: Expected table per fixture. Each fixture has *its own* header, so comparing a
+#: CSV to the PDF table would be an apples-to-oranges 0.9 that looks like an
+#: engine defect. `None` means "this fixture has no table to score".
+GOLDEN_TABLES: dict[str, list[list[str]]] = {
+    "pdf_text_en_3p.pdf": golden_table(),
+    "pdf_text_zh_2p.pdf": golden_table(),
+    "docx_report.docx": golden_table(),
+    "xlsx_workbook.xlsx": golden_table(),
+    "csv_utf8.csv": [
+        ["region", "pallets", "on_time_pct", "cost_per_pallet"],
+        ["North", "48120", "97.4", "3.85"],
+        ["Central", "41600", "95.1", "4.02"],
+        ["South", "38680", "93.8", "4.31"],
+        ["Total", "128400", "95.7", "4.03"],
+    ],
+    "csv_gb18030.csv": [
+        ["区域", "pallets", "on_time_pct", "cost_per_pallet"],
+        ["North", "48120", "97.4", "3.85"],
+        ["Central", "41600", "95.1", "4.02"],
+        ["South", "38680", "93.8", "4.31"],
+        ["Total", "128400", "95.7", "4.03"],
+    ],
+    "csv_semicolon_eu.csv": [
+        ["region", "pallets", "cost"],
+        ["North", "48120", "3,85"],
+        ["Central", "41600", "4,02"],
+    ],
+    "tsv_data.tsv": [
+        ["region", "pallets", "on_time"],
+        ["North", "48120", "97.4"],
+        ["Central", "41600", "95.1"],
+    ],
+}
+
+
+def expected_table(item: dict) -> list[list[str]] | None:
+    return GOLDEN_TABLES.get(Path(item["path"]).name)
+
+
 def _norm_cell(s: str) -> str:
     return re.sub(r"[\s,]", "", norm_text(s)).lower()
 
 
-def _grid_from_docling(ir: dict) -> list[list[str]] | None:
-    best = None
+def _grid_from_docling(ir: dict, want_rows: int, want_cols: int) -> list[list[str]] | None:
     for t in ir.get("tables") or []:
         data = t.get("data") or {}
         rows, cols = data.get("num_rows") or 0, data.get("num_cols") or 0
-        if rows < 5 or cols < 4:
+        if rows < want_rows or cols < want_cols:
             continue
         grid = [["" for _ in range(cols)] for _ in range(rows)]
         for c in data.get("table_cells") or []:
             r, cc = c.get("start_row_offset_idx", 0), c.get("start_col_offset_idx", 0)
             if r < rows and cc < cols:
                 grid[r][cc] = c.get("text") or ""
-        best = grid
-        break
-    return best
+        return grid
+    return None
 
 
-def _grid_from_xberg(ir: dict) -> list[list[str]] | None:
+def _grid_from_xberg(ir: dict, want_rows: int, want_cols: int) -> list[list[str]] | None:
     for t in ir.get("tables") or []:
         cells = t.get("cells") or []
-        if len(cells) >= 5 and cells and max(len(r) for r in cells) >= 4:
+        if len(cells) >= want_rows and cells and max(len(r) for r in cells) >= want_cols:
             return [list(r) for r in cells]
     return None
 
 
-def _grid_from_markdown(md: str) -> list[list[str]] | None:
-    block = []
-    for line in md.splitlines():
+def _grid_from_markdown(md: str, want_rows: int, want_cols: int,
+                        expected: list[list[str]]) -> list[list[str]] | None:
+    """Find the fixture's table among pipe tables in the output.
+
+    The header must match the fixture, so an unrelated pipe table cannot inflate
+    the score (Tika emits markdown for OOXML, plain text for PDF).
+    """
+    want_head = [_norm_cell(c) for c in expected[0][:want_cols]]
+    block: list[list[str]] = []
+    for line in md.splitlines() + [""]:
         line = line.strip()
         if line.startswith("|") and line.endswith("|"):
-            inner = line.strip("|")
-            cells = [c.strip() for c in inner.split("|")]
+            cells = [c.strip() for c in line.strip("|").split("|")]
             if all(re.fullmatch(r":?-{2,}:?", c.replace(" ", "")) or c == "" for c in cells):
                 continue  # separator row
             block.append(cells)
-        elif block:
-            break
-    if len(block) >= 5 and max(len(r) for r in block) >= 4:
-        return block[:5]
+            continue
+        if block:
+            if len(block) >= want_rows and max(len(r) for r in block) >= want_cols:
+                head = [_norm_cell(c) for c in block[0][:want_cols]]
+                if head == want_head:
+                    return block[:want_rows]
+            block = []
     return None
 
 
-def table_accuracy(engine: EngineResult) -> dict | None:
-    """Positional cell accuracy against the fixture's known 5x4 table.
+def table_accuracy(engine: EngineResult, item: dict) -> dict | None:
+    """Positional cell accuracy against *this fixture's* known table.
 
     Compared cell-by-cell after removing whitespace/commas and lowercasing, so
     it measures structure + content, not Markdown prettiness.
     """
-    expected = [[_norm_cell(c) for c in row] for row in golden_table()]
+    gold = expected_table(item)
+    if not gold:
+        return None
+    want_rows, want_cols = len(gold), max(len(r) for r in gold)
+    expected = [[_norm_cell(c) for c in row] for row in gold]
     grid = None
     if engine.ir:
-        grid = _grid_from_docling(engine.ir) or _grid_from_xberg(engine.ir)
+        grid = _grid_from_docling(engine.ir, want_rows, want_cols) \
+            or _grid_from_xberg(engine.ir, want_rows, want_cols)
     if grid is None:
-        grid = _grid_from_markdown(engine.markdown)
+        grid = _grid_from_markdown(engine.markdown, want_rows, want_cols, gold)
     if grid is None:
         return None
     rows = min(len(grid), len(expected))
@@ -644,19 +712,43 @@ def table_accuracy(engine: EngineResult) -> dict | None:
     }
 
 
-def structure_score(engine: EngineResult, item: dict) -> dict:
-    ir = engine.ir or {}
-    text = engine.text
-    out = {
-        "has_page_numbers": bool(ir.get("pages")),
+def provenance_for(engine: "Engine", res: EngineResult, item: dict) -> dict:
+    """What provenance does this engine actually provide for this document?
+
+    Explicit per-engine extraction: a JSON substring search is not evidence.
+    """
+    ir = res.ir or {}
+    name = engine.name.split("-textlayer")[0]
+    prov = {"page": False, "bbox": False, "sheet": False}
+    if name in ("docling-rs", "docling-serve"):
+        prov["page"] = bool(ir.get("pages"))
+        prov["bbox"] = any(((t.get("prov") or [{}])[0] or {}).get("bbox")
+                           for t in ir.get("texts_detail") or [])
+        prov["sheet"] = bool(ir.get("sheets"))
+    elif name == "xberg":
+        prov["page"] = bool(ir.get("pages"))
+        prov["bbox"] = any(t.get("bounding_box") for t in ir.get("tables") or [])
+        prov["sheet"] = bool(ir.get("sheets"))
+    elif name == "mineru":
+        prov["page"] = bool(ir.get("pages"))
+    elif name == "tika":
+        prov["page"] = item["format"] == "pdf" and "\f" in res.text
+    elif name == "native":
+        prov["sheet"] = item["format"] in ("csv", "tsv")
+    return prov
+
+
+def structure_score(engine: "Engine", res: EngineResult, item: dict) -> dict:
+    ir = res.ir or {}
+    prov = provenance_for(engine, res, item)
+    return {
+        "has_page_numbers": prov["page"],
+        "has_bbox": prov["bbox"],
+        "has_sheet": prov["sheet"],
         "table_count": len(ir.get("tables") or []),
-        "has_bbox": False,
-        "heading_markers": len(re.findall(r"^#{1,6} ", engine.markdown, re.M)),
-        "chars": len(text),
+        "heading_markers": len(re.findall(r"^#{1,6} ", res.markdown, re.M)),
+        "chars": len(res.text),
     }
-    blob = json.dumps(ir)[:2000000]
-    out["has_bbox"] = '"bbox"' in blob
-    return out
 
 
 # --------------------------------------------------------------------------- runner
@@ -698,13 +790,14 @@ def run_one(engine: Engine, item: dict, workdir: Path, run_id: str) -> dict:
             rec["wer"] = round(wer(gold, res.text), 4)
             rec["token_f1"] = round(token_f1(gold, res.text), 4)
             rec["scored_chars"] = min(len(norm_text(gold)), SCORE_CHAR_CAP)
-        if item["category"].startswith("pdf_native") or item["category"] == "docx":
-            acc = table_accuracy(res)
+        if expected_table(item) is not None:
+            acc = table_accuracy(res, item)
             if acc is not None:
                 rec["table_accuracy"] = acc
                 rec["table_cell_accuracy"] = acc["cell_accuracy"]
                 rec["table_header_accuracy"] = acc["header_accuracy"]
-        rec["structure"] = structure_score(res, item)
+        rec["structure"] = structure_score(engine, res, item)
+        rec["provenance"] = provenance_for(engine, res, item)
         if res.ir and isinstance(res.ir.get("quality_score"), (int, float)):
             rec["engine_quality_score"] = res.ir["quality_score"]
         if res.ir and res.ir.get("extraction_method"):
@@ -750,7 +843,8 @@ def cmd_quality(args, engines: list[Engine]) -> list[dict]:
 def cmd_perf(args, engines: list[Engine]) -> list[dict]:
     fixtures = [i for i in load_fixtures(args.only) if i["category"] in
                 ("pdf_native_en", "pdf_native_zh", "pdf_scanned", "docx", "xlsx",
-                 "pdf_two_column", "pdf_scanned_zh", "image_png_zh")]
+                 "pdf_two_column", "pdf_scanned_zh", "image_png_zh",
+                 "csv", "csv_gb18030", "tsv", "txt", "md")]
     out = []
     for eng in engines:
         ok, why = eng.available()

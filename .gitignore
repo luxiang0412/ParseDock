@@ -17,3 +17,6 @@ deploy/.env
 
 # build output
 dist/
+
+# SBOM/licence gate output
+build/

@@ -65,14 +65,15 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
 
     # ---- quality: one row per (engine, file), newest ok record -------------
-    q = [r for r in rows if r.get("phase") == "quality" and r.get("status") == "ok" and supported(r)]
+    q = [r for r in rows if r.get("phase") == "quality" and r.get("status") == "ok"
+         and supported(r) and r.get("category") != "invalid"]
     best = latest(q, lambda r: (r["engine"], r["file"]))
     with open(OUT / "benchmarks-quality.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["engine", "version", "config_hash", "file", "file_sha256", "format", "category",
                     "pages", "status", "elapsed_ms", "chars", "cer", "wer", "token_f1",
-                    "table_cell_accuracy", "table_header_accuracy", "has_bbox", "table_count",
-                    "output_hash"])
+                    "table_cell_accuracy", "table_header_accuracy", "has_bbox", "has_sheet",
+                    "has_page_numbers", "table_count", "output_hash"])
         for (eng, file), r in sorted(best.items()):
             st = r.get("structure") or {}
             ta = r.get("table_accuracy") or {}
@@ -81,6 +82,7 @@ def main() -> int:
                         r.get("elapsed_ms"), r.get("chars"), r.get("cer", ""), r.get("wer", ""),
                         r.get("token_f1", ""), ta.get("cell_accuracy", ""),
                         ta.get("header_accuracy", ""), st.get("has_bbox", ""),
+                        st.get("has_sheet", ""), st.get("has_page_numbers", ""),
                         st.get("table_count", ""), r.get("output_hash")])
 
     # ---- perf: warm medians per (engine, file) over the newest run group --

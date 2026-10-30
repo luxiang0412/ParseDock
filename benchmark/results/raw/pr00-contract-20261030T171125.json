@@ -1,0 +1,155 @@
+{
+  "finished_at": "2026-10-30T09:11:25.203147+00:00",
+  "checks": [
+    {
+      "id": "PR00-02",
+      "name": "TXT/CSV/GB18030 decode correctly in auto|fast|accurate",
+      "status": "PASS",
+      "detail": {
+        "auto": {
+          "engine": "native",
+          "has_region": true,
+          "rows": 20
+        },
+        "fast": {
+          "engine": "native",
+          "has_region": true,
+          "rows": 20
+        },
+        "accurate": {
+          "engine": "native",
+          "has_region": true,
+          "rows": 20
+        }
+      },
+      "elapsed_s": 3.68
+    },
+    {
+      "id": "PR00-03",
+      "name": "cancel semantics: completed needs result_version; running cancels",
+      "status": "PASS",
+      "detail": {
+        "completed_cancel_no_version": 409,
+        "completed_cancel_with_version": 202,
+        "running_cancel_status": "cancelled",
+        "attempts": []
+      },
+      "elapsed_s": 2.0
+    },
+    {
+      "id": "PR00-04",
+      "name": "sync parse is one-shot; timeout converts to async",
+      "status": "PASS",
+      "detail": {
+        "sync_http": 200,
+        "sync_result_after": 410,
+        "async_http": 202,
+        "async_final": "completed"
+      },
+      "elapsed_s": 3.81
+    },
+    {
+      "id": "PR00-05",
+      "name": "ACK vs in-flight download: lease protects the stream",
+      "status": "PASS",
+      "detail": {
+        "bytes": 33554601,
+        "ack": 202,
+        "second_download": 410,
+        "final": "released"
+      },
+      "elapsed_s": 4.12
+    },
+    {
+      "id": "PR00-06",
+      "name": "per-representation ETag, shared X-Result-Version, 304",
+      "status": "PASS",
+      "detail": {
+        "etags": {
+          "markdown": "\"sha256:569ca7cc81b07c4bc2d6574011ecb131cbf54158048f656d5a0b4c6989eaad7a\"",
+          "text": "\"sha256:784ce984ef887e857b9c101b973b2ccf2186480dcbb9413093c2ce3d9c3c2be5\"",
+          "json": "\"sha256:1a88c5546f78bf018e0c6f97a40c1619494a87b22c78beb3ca4642945e4d5e09\""
+        },
+        "result_version": "sha256:8159ff2469019303e915a11df0e8082bd2971679a175d16032f257cb4e6c8007",
+        "conditional": 304
+      },
+      "elapsed_s": 1.95
+    },
+    {
+      "id": "PR00-07",
+      "name": "SSE scope, retention events, cursor reset",
+      "status": "PASS",
+      "detail": {
+        "processing_events": [
+          "snapshot",
+          "created",
+          "running",
+          "completed",
+          "stream_end"
+        ],
+        "retention_events": [
+          "snapshot",
+          "created",
+          "running",
+          "completed",
+          "release_pending",
+          "released",
+          "stream_end"
+        ],
+        "reset_events": [
+          "snapshot",
+          "cursor_reset",
+          "created",
+          "running",
+          "completed",
+          "release_pending",
+          "released",
+          "stream_end"
+        ]
+      },
+      "elapsed_s": 5.04
+    },
+    {
+      "id": "PR00-09",
+      "name": "multipart parts in any order, fields honoured",
+      "status": "PASS",
+      "detail": {
+        "file_first": {
+          "status": 202,
+          "mode": "accurate",
+          "device": "cpu"
+        },
+        "fields_first": {
+          "status": 202,
+          "mode": "accurate",
+          "device": "cpu"
+        }
+      },
+      "elapsed_s": 3.67
+    },
+    {
+      "id": "PR00-10",
+      "name": "key rotation keeps the owner; forged headers ignored",
+      "status": "PASS",
+      "detail": {
+        "rotated_read": 200,
+        "rotated_ack": 202,
+        "bad_token": 401,
+        "forged_owner": 404,
+        "internal_via_api": 404
+      },
+      "elapsed_s": 1.99
+    },
+    {
+      "id": "PR00-14",
+      "name": "gpu_required without a GPU worker is rejected",
+      "status": "PASS",
+      "detail": {
+        "http": 409,
+        "code": "gpu_unavailable",
+        "gpu_jobs_persisted": 0
+      },
+      "elapsed_s": 0.22
+    }
+  ]
+}

@@ -44,14 +44,18 @@ not from its Markdown.
 | docling-rs | **0.007** / 1.00 | **0.034** / 1.00 | 0.277 | 0.884 | **0.098** | **0.098** | 0.284 / 1.00 | 0.254 |
 | docling-serve | **0.006** / 1.00 | **0.034** / 1.00 | 0.277 | 1.000¹ | 1.000¹ | 1.000¹ | 0.284 / 1.00 | 0.254 |
 | MinerU (flash) | 0.167 / 1.00 | 0.628 / 1.00 | 0.276 | 0.664 | 0.451 | 0.451 | –² | –² |
-| Tika | 0.123 | 0.510 | 0.296 | 0.199 | 1.255³ | 0.941 | **0.045** / 1.00 | 0.314 |
+| Tika | 0.123 | 0.510 | 0.296 | 0.199 | 1.255³ | 0.941 | **0.045** / 1.00 | 0.314⁴ |
 | native | – | – | – | – | – | – | – | – |
 | native (text formats) | csv UTF-8 **0.000**, csv GB18030 **0.000**, tsv 0.000, md 0.000, txt 0.000 | | | | | | | |
 
 ¹ docling-serve ran with OCR disabled (its default): image-only inputs return no text.
 ² MinerU only accepts PDF/images.
-³ Tika splits PDF text on form feeds and returned the page twice in this fixture
-(CER > 1 means insertions dominate) — a real behaviour, not a harness bug.
+³ Tika returned the page twice in this fixture (CER > 1 means insertions
+dominate) — a real behaviour, not a harness bug. Tika 4.x also emits **markdown**
+(headings + pipe tables) for OOXML, which is why its DOCX table score is 1.00 while
+its PDF output has no page boundaries at all (verified: 0 form feeds on a 3-page
+file; the adapter now omits page numbers instead of inventing them).
+⁴ XLSX: Tika returns a flat text dump without table structure.
 
 Reading order: docling-rs/docling-serve follow the document body tree and handle
 the two-column fixture's left-then-right order; xberg, Tika and MinerU emit
@@ -64,7 +68,7 @@ Structural fidelity (`has_bbox`, sheet names):
 | docling-rs / docling-serve | ✅ | ✅ | ✅ | ✅ | ❌ |
 | xberg | table bbox only | ✅ | ❌ (warning) | ⚠️ via style annotations | document-level quality only |
 | MinerU flash | ❌ | ✅ | ❌ | ⚠️ from markdown | ❌ |
-| Tika | ❌ | ❌ | ❌ | ❌ | ❌ |
+| Tika | ❌ | ❌ | ❌ | ⚠️ markdown headings for OOXML only | ⚠️ markdown pipe tables for OOXML only |
 | native | ❌ | ✅ (csv/tsv) | pseudo-sheet | ✅ (markdown) | ❌ |
 
 ## 3. Latency (warm median / p95, 5 runs, single worker, CPU)
@@ -135,34 +139,70 @@ requests (async job execution), while its per-request latency stays ~2 s.
 No engine crashed the worker: all are subprocesses/HTTP calls with timeouts, and
 every failure produced a classified error code rather than a lost task.
 
-## 7. Scoring (rubric fixed before the numbers were known)
+## 7. Scoring (generated, not hand-computed)
 
-Weights from the task guide: **quality 40, performance 25, resources 15, format
-coverage 10, ops/licence 10**. Each dimension is 0–10, computed as:
+> PR-00 / F01: this section and `ENGINE-DECISION.md` §2 are produced by
+> `benchmark/scripts/score.py` from `benchmark/results/summary/*.csv`. Do not edit
+> the tables by hand — change the rubric or the data and re-run:
+>
+> ```
+> python benchmark/scripts/score.py --write      # also writes summary/scores.json
+> python tests/unit/test_score.py                # rubric/maths regression tests
+> ```
 
-* **Quality** — `8 × (1 − mean CER over the six core documents, scans double-weighted)
-  + 2 × table accuracy (0 if the engine emits no structure).
-* **Performance** — from p95 latency on the 3-page native PDF and the 1-page scan:
-  ≥ 100 docs/s → 10, 30 → 8, 10 → 6, 3 → 4, 1 → 2, < 1 → 1.
-* **Resources** — peak RSS: < 100 MB → 10, < 300 → 8, < 800 → 6, < 1.5 GB → 4, else 2;
-  a resident daemon (> 500 MB VRAM) costs one point.
-* **Coverage** — share of the 11 target formats handled with structure.
-* **Ops/licence** — installability, single artefact, licence clarity (open items
-  from `LICENSE-REVIEW.md`), moving tags.
+Rubric: weights **quality 0.40, performance 0.25, resources 0.15, coverage 0.10,
+ops/licence 0.10**. Quality is not one number any more (F02): it is a weighted
+composite of **text fidelity** (CER, 0.60), **structure fidelity** (table cells +
+headers on every fixture that has a table, 0.25) and **provenance fidelity**
+(page/bbox/sheet signals the sample can carry, 0.15).
 
-Result (see `docs/ENGINE-DECISION.md` for the arithmetic):
+Measurement rules that were wrong in the Phase 0 report and are now enforced by
+the script:
 
-| engine | quality | performance | resources | coverage | ops/licence | **weighted** |
-| --- | --- | --- | --- | --- | --- | --- |
-| docling-rs | 9.4 | 3.0 | 6.0 | 9.0 | 9.0 | **7.4** |
-| xberg | 6.8 | 9.5 | 10.0 | 9.5 | 6.0 | **8.1** |
-| docling-serve | 9.3 | 1.5 | 4.0 | 8.0 | 8.0 | **6.3** |
-| MinerU flash | 4.6 | 5.0 | 7.0 | 4.0 | 5.0 | **5.1** |
-| Tika | 4.9 | 7.0 | 6.0 | 10.0 | 7.0 | **6.5** |
-| native | (n/a for PDF) | 10.0 | 10.0 | 4.0 | 10.0 | specialised |
+* samples are a **fixed per-domain set** (PDF/Office vs text), so a text engine is
+  not scored against PDFs it cannot read;
+* missing samples are **excluded and reported**, never counted as 0 (and a score
+  from < 3 samples is flagged `low_confidence`);
+* **structure is scored on every fixture with a table**; emitting nothing scores 0
+  (the Phase 0 script averaged only the samples that produced a table);
+* **provenance is extracted per engine** (Xberg: table bbox; Docling: element
+  `prov.bbox`; Tika: page boundaries only when form feeds exist) instead of a
+  `"bbox" in json` substring test, and the xberg adapter no longer reports page
+  numbers as sheet names;
+* **CER is clamped to [0, 1]** (Tika's duplicated page produced CER > 1);
+* unmeasured dimensions stay `null`: the weighted total renormalises over the
+  measured ones and the row is flagged `incomplete` (Phase 0 filled RSS with 0).
 
-The scores confirm the split routing rather than a single winner: xberg wins on
-speed/weight, docling-rs on structure/accuracy, and neither is adequate alone.
+#### Quality: three separate fidelities
+
+
+| engine | domain | text fidelity | structure fidelity | provenance fidelity | **quality** | samples | flags |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| native | text | 10.00 | 10.00 | 10.00 | **10.00** | 5/5 | incomplete |
+| xberg | pdf_office | 6.99 | 9.72 | 1.43 | **6.84** | 7/7 | — |
+| tika | pdf_office | 5.91 | 2.50 | 0.00 | **4.17** | 7/7 | incomplete |
+| docling-rs | pdf_office | 6.87 | 9.72 | 4.29 | **7.19** | 7/7 | — |
+| mineru | pdf_office | 5.28 | 10.00 | 0.00 | **5.67** | 5/7 | — |
+| docling-serve | pdf_office | 4.61 | 9.72 | 2.86 | **5.62** | 7/7 | incomplete |
+
+
+#### Weighted totals (weights renormalised over measured dimensions)
+
+
+| engine | quality (40%) | performance (25%) | resources (15%) | coverage (10%) | ops/licence (10%) | **weighted** | measured |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| native | 10.00 | 10.00 | n/a | 3.64 | 10.00 | **9.25** | 4/5 |
+| xberg | 6.84 | 10.00 | 8.00 | 10.00 | 6.00 | **8.04** | 5/5 |
+| tika | 4.17 | 10.00 | n/a | 10.00 | 7.00 | **6.90** | 4/5 |
+| docling-rs | 7.19 | 5.00 | 4.00 | 8.18 | 9.00 | **6.45** | 5/5 |
+| mineru | 5.67 | 5.00 | 9.00 | 3.64 | 5.00 | **5.73** | 5/5 |
+| docling-serve | 5.62 | 2.00 | n/a | 7.27 | 8.00 | **5.03** | 4/5 |
+
+Reading the table: xberg wins on performance/resources/coverage, docling-rs wins on
+provenance and near-parity text fidelity, Tika is fast but structurally weak and
+its RSS is unmeasured, MinerU is GPU-only and PDF-only, `native` is a specialised
+text engine (it cannot read PDFs, hence coverage 3.64) — which is exactly why the
+architecture routes instead of picking one engine.
 
 ## 8. What is not measured yet
 

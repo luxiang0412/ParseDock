@@ -1,5 +1,10 @@
 # PHASE 0 — final report
 
+> **Historical snapshot (2026-10-30, pre PR-00).** The scores quoted here were
+> recomputed by PR-00 with a corrected rubric and measurement pipeline; read
+> `docs/ENGINE-DECISION.md` §2 / `docs/ENGINE-BENCHMARK.md` §7 for the authoritative
+> numbers, and `docs/PR00-ISSUE-MATRIX.md` for what changed.
+
 Deliverable of the Phase 0 task (`document-parsing-phase0-guide-2026-10-29.md`).
 Every claim below links to a reproducible artefact in this repository.
 
@@ -47,7 +52,8 @@ Details: `docs/ENGINE-CANDIDATES.md`, `docs/ENGINE-BENCHMARK.md`.
 * **Contract:** `doc-ir/0.1` is the source of truth; Markdown/Text are rendered by
   the coordinator; every result records engine, version and `routing.reason`.
 * **Weighted score** (quality 40 / perf 25 / resources 15 / coverage 10 / ops 10):
-  xberg 8.2, docling-rs 6.3, Tika 5.8, MinerU 5.4, docling-serve 4.5 — the split
+  xberg 8.2, docling-rs 6.3, Tika 5.8, MinerU 5.4, docling-serve 4.5 (superseded by
+  PR-00: xberg 8.04, docling-rs 6.45, Tika 6.90, MinerU 5.73, docling-serve 5.03) — the split
   routing, not a single winner. Arithmetic in `docs/ENGINE-DECISION.md`.
 
 ## 4. Architecture and protocol

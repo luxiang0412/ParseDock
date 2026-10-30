@@ -1,0 +1,404 @@
+{
+  "rubric": {
+    "weights": {
+      "quality": 0.4,
+      "performance": 0.25,
+      "resources": 0.15,
+      "coverage": 0.1,
+      "ops_license": 0.1
+    },
+    "quality_subweights": {
+      "text": 0.6,
+      "structure": 0.25,
+      "provenance": 0.15
+    },
+    "domains": {
+      "pdf_office": [
+        "generated/pdf_text_en_3p.pdf",
+        "generated/pdf_text_zh_2p.pdf",
+        "generated/pdf_two_column_en.pdf",
+        "generated/pdf_scanned_en.pdf",
+        "generated/pdf_scanned_zh.pdf",
+        "generated/docx_report.docx",
+        "generated/xlsx_workbook.xlsx"
+      ],
+      "text": [
+        "generated/csv_utf8.csv",
+        "generated/csv_gb18030.csv",
+        "generated/tsv_data.tsv",
+        "generated/txt_plain.txt",
+        "generated/md_notes.md"
+      ]
+    },
+    "min_samples": 3,
+    "target_formats": [
+      "pdf",
+      "docx",
+      "xlsx",
+      "pptx",
+      "csv",
+      "tsv",
+      "txt",
+      "md",
+      "png",
+      "jpeg",
+      "webp"
+    ],
+    "perf_buckets": {
+      "pdf_office": [
+        [
+          30,
+          400,
+          10.0
+        ],
+        [
+          50,
+          800,
+          9.5
+        ],
+        [
+          100,
+          1000,
+          9.0
+        ],
+        [
+          250,
+          1500,
+          8.0
+        ],
+        [
+          500,
+          2000,
+          7.0
+        ],
+        [
+          1000,
+          2500,
+          5.0
+        ],
+        [
+          2000,
+          3500,
+          3.0
+        ],
+        [
+          4000,
+          6000,
+          2.0
+        ]
+      ],
+      "text": [
+        [
+          2,
+          10.0
+        ],
+        [
+          10,
+          9.0
+        ],
+        [
+          50,
+          7.0
+        ],
+        [
+          200,
+          5.0
+        ],
+        [
+          1000,
+          3.0
+        ]
+      ]
+    },
+    "rss_buckets": [
+      [
+        100,
+        10.0
+      ],
+      [
+        300,
+        8.0
+      ],
+      [
+        800,
+        6.0
+      ],
+      [
+        1500,
+        4.0
+      ]
+    ]
+  },
+  "engines": [
+    {
+      "engine": "docling-rs",
+      "version": "2.53.3",
+      "domain": "pdf_office",
+      "quality_sub": {
+        "text": 6.867555555555556,
+        "structure": 9.725,
+        "provenance": 4.285714285714286
+      },
+      "dimensions": {
+        "quality": 7.194640476190476,
+        "performance": 5.0,
+        "resources": 4.0,
+        "coverage": 8.18,
+        "ops_license": 9.0
+      },
+      "weighted": 6.45,
+      "measured_dimensions": [
+        "coverage",
+        "ops_license",
+        "performance",
+        "quality",
+        "resources"
+      ],
+      "samples_used": [
+        "generated/pdf_text_en_3p.pdf",
+        "generated/pdf_text_zh_2p.pdf",
+        "generated/pdf_two_column_en.pdf",
+        "generated/pdf_scanned_en.pdf",
+        "generated/pdf_scanned_zh.pdf",
+        "generated/docx_report.docx",
+        "generated/xlsx_workbook.xlsx"
+      ],
+      "samples_missing": [],
+      "low_confidence": false,
+      "incomplete": false,
+      "notes": [
+        "p95 3-page PDF 815 ms, scan 682 ms",
+        "max median RSS across samples 1169 MiB",
+        "ops: single binary + pinned model bundle",
+        "ops: MIT code and models",
+        "ops: no moving tags"
+      ]
+    },
+    {
+      "engine": "docling-serve",
+      "version": "docling-serve",
+      "domain": "pdf_office",
+      "quality_sub": {
+        "text": 4.605777777777778,
+        "structure": 9.725,
+        "provenance": 2.8571428571428568
+      },
+      "dimensions": {
+        "quality": 5.623288095238095,
+        "performance": 2.0,
+        "resources": null,
+        "coverage": 7.27,
+        "ops_license": 8.0
+      },
+      "weighted": 5.03,
+      "measured_dimensions": [
+        "coverage",
+        "ops_license",
+        "performance",
+        "quality"
+      ],
+      "samples_used": [
+        "generated/pdf_text_en_3p.pdf",
+        "generated/pdf_text_zh_2p.pdf",
+        "generated/pdf_two_column_en.pdf",
+        "generated/pdf_scanned_en.pdf",
+        "generated/pdf_scanned_zh.pdf",
+        "generated/docx_report.docx",
+        "generated/xlsx_workbook.xlsx"
+      ],
+      "samples_missing": [],
+      "low_confidence": false,
+      "incomplete": true,
+      "notes": [
+        "p95 3-page PDF 2010 ms, scan 2009 ms",
+        "not measured: no per-request RSS for this server/client",
+        "ops: MIT",
+        "ops: 7.2 GB Python runtime",
+        "ops: extra service to operate"
+      ]
+    },
+    {
+      "engine": "mineru",
+      "version": "4.1.2",
+      "domain": "pdf_office",
+      "quality_sub": {
+        "text": 5.284428571428571,
+        "structure": 10.0,
+        "provenance": 0.0
+      },
+      "dimensions": {
+        "quality": 5.670657142857143,
+        "performance": 5.0,
+        "resources": 9.0,
+        "coverage": 3.64,
+        "ops_license": 5.0
+      },
+      "weighted": 5.73,
+      "measured_dimensions": [
+        "coverage",
+        "ops_license",
+        "performance",
+        "quality",
+        "resources"
+      ],
+      "samples_used": [
+        "generated/pdf_text_en_3p.pdf",
+        "generated/pdf_text_zh_2p.pdf",
+        "generated/pdf_two_column_en.pdf",
+        "generated/pdf_scanned_en.pdf",
+        "generated/pdf_scanned_zh.pdf"
+      ],
+      "samples_missing": [
+        {
+          "file": "generated/docx_report.docx",
+          "reason": "format not supported"
+        },
+        {
+          "file": "generated/xlsx_workbook.xlsx",
+          "reason": "format not supported"
+        }
+      ],
+      "low_confidence": false,
+      "incomplete": false,
+      "notes": [
+        "p95 3-page PDF 928 ms, scan 867 ms",
+        "max median RSS across samples 54 MiB",
+        "resident daemon/VM: -1",
+        "ops: Apache-2.0 + additional commercial/attribution terms",
+        "ops: local daemon + document library",
+        "ops: telemetry on by default",
+        "ops: AGPL-3.0 VLM weights used by the remote tiers"
+      ]
+    },
+    {
+      "engine": "native",
+      "version": "go-native-1",
+      "domain": "text",
+      "quality_sub": {
+        "text": 10.0,
+        "structure": 10.0,
+        "provenance": 10.0
+      },
+      "dimensions": {
+        "quality": 10.0,
+        "performance": 10.0,
+        "resources": null,
+        "coverage": 3.64,
+        "ops_license": 10.0
+      },
+      "weighted": 9.25,
+      "measured_dimensions": [
+        "coverage",
+        "ops_license",
+        "performance",
+        "quality"
+      ],
+      "samples_used": [
+        "generated/csv_utf8.csv",
+        "generated/csv_gb18030.csv",
+        "generated/tsv_data.tsv",
+        "generated/txt_plain.txt",
+        "generated/md_notes.md"
+      ],
+      "samples_missing": [],
+      "low_confidence": false,
+      "incomplete": true,
+      "notes": [
+        "p95 text sample 0.0 ms",
+        "not measured: no per-request RSS for this server/client",
+        "ops: in-process Go, no external artifact"
+      ]
+    },
+    {
+      "engine": "tika",
+      "version": "Apache Tika 4.2.0",
+      "domain": "pdf_office",
+      "quality_sub": {
+        "text": 5.905666666666667,
+        "structure": 2.5,
+        "provenance": 0.0
+      },
+      "dimensions": {
+        "quality": 4.1684,
+        "performance": 10.0,
+        "resources": null,
+        "coverage": 10.0,
+        "ops_license": 7.0
+      },
+      "weighted": 6.9,
+      "measured_dimensions": [
+        "coverage",
+        "ops_license",
+        "performance",
+        "quality"
+      ],
+      "samples_used": [
+        "generated/pdf_text_en_3p.pdf",
+        "generated/pdf_text_zh_2p.pdf",
+        "generated/pdf_two_column_en.pdf",
+        "generated/pdf_scanned_en.pdf",
+        "generated/pdf_scanned_zh.pdf",
+        "generated/docx_report.docx",
+        "generated/xlsx_workbook.xlsx"
+      ],
+      "samples_missing": [],
+      "low_confidence": false,
+      "incomplete": true,
+      "notes": [
+        "p95 3-page PDF 11 ms, scan 342 ms",
+        "not measured: no per-request RSS for this server/client",
+        "ops: Apache-2.0",
+        "ops: JVM service",
+        "ops: latest-full is a moving tag (pinned by digest manually)"
+      ]
+    },
+    {
+      "engine": "xberg",
+      "version": "1.3.10",
+      "domain": "pdf_office",
+      "quality_sub": {
+        "text": 6.993222222222222,
+        "structure": 9.725,
+        "provenance": 1.4285714285714284
+      },
+      "dimensions": {
+        "quality": 6.841469047619047,
+        "performance": 10.0,
+        "resources": 8.0,
+        "coverage": 10.0,
+        "ops_license": 6.0
+      },
+      "weighted": 8.04,
+      "measured_dimensions": [
+        "coverage",
+        "ops_license",
+        "performance",
+        "quality",
+        "resources"
+      ],
+      "samples_used": [
+        "generated/pdf_text_en_3p.pdf",
+        "generated/pdf_text_zh_2p.pdf",
+        "generated/pdf_two_column_en.pdf",
+        "generated/pdf_scanned_en.pdf",
+        "generated/pdf_scanned_zh.pdf",
+        "generated/docx_report.docx",
+        "generated/xlsx_workbook.xlsx"
+      ],
+      "samples_missing": [],
+      "low_confidence": false,
+      "incomplete": false,
+      "notes": [
+        "p95 3-page PDF 21 ms, scan 222 ms",
+        "max median RSS across samples 233 MiB",
+        "ops: MIT core",
+        "ops: release tarball bundles libx265 (GPL-2.0) \u2014 blocked on L1",
+        "ops: requires glibc >= 2.38"
+      ]
+    }
+  ],
+  "source_files": [
+    "benchmarks-quality.csv",
+    "benchmarks-perf.csv"
+  ]
+}
