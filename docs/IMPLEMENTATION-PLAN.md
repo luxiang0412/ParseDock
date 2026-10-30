@@ -80,12 +80,36 @@ attempt row terminal, no artifact published, input deleted by retention.
 
 ---
 
+## Real-corpus backlog (from `docs/REAL-CORPUS-TEST.md`, 958 files)
+
+These are requirements that only a real corpus exposed. They are distributed into
+the slices below; nothing here is a bug that is still open (the three defects found
+in that run were fixed in PR #3).
+
+| # | Requirement | Evidence | Belongs to |
+| --- | --- | --- | --- |
+| RC-1 | Legacy OLE2 Office input (`.doc`, `.xls`, `.ppt`) | 12 `.doc` (72 MB) + 2 `.xls` rejected as `unsupported_type`; both engines read `.xls`, xberg/docling list `.doc` | **PR-04** |
+| RC-2 | Parser limits must be configurable and honest | 14 XLSX (58–74 MiB, 550–770 MiB expanded) exceed xberg's 500 MiB / docling's 10 M cells; now `expanded_too_large` but not rescuable | **PR-06** |
+| RC-3 | Scan-aware routing | 332/958 files (36 %) are scans; CJK scans need the PP-OCR path, Latin scans are fine with xberg | **PR-04** |
+| RC-4 | Upload cap vs real documents | 9 files are 58–74 MiB; the default 64 MiB cap rejects them | **PR-06** |
+| RC-5 | Rate limits must account for status polling | a batch client polling at 5 rps/thread exhausted the default 20 rps (429 on 36 files) | **PR-09** |
+| RC-6 | Encrypted PDFs are 8/554 of real documents | explicit `encrypted_file` today; product decision on password support | PR-06 decision |
+
+---
+
 ## PR-04 — Engine productionisation: xberg (fast) + docling-rs (accurate)
 
 **Scope**
 * Pin artefacts by digest: xberg tarball sha256, docling-rs binary, `models-v1`
   manifest (file-level hashes) — written into an image manifest file consumed by
   `--check`.
+* **RC-1**: accept legacy OLE2 Office (`.doc`, `.xls`, `.ppt`) with a compound-file
+  magic + stream-count/size limits, route `fast → xberg`, `accurate → docling-rs`,
+  and a documented "text + tables only, no page geometry" warning. Fixtures must be
+  synthetic or permissively licensed (never customer documents).
+* **RC-3**: scan-aware escalation. When `mode=auto` and the fast engine returns an
+  OCR-quality warning on a CJK-heavy document, retry once with the accurate engine
+  and record `routing.fallback=true` + `escalation_reason` in the IR.
 * Resolve licence item **L1** (`libx265`): rebuild without the HEVC encoder or ship the
   GPL source offer. Blocked on legal, tracked in `LICENSE-REVIEW.md`.
 * Cap docling-rs RSS (`GOMEMLIMIT`-equivalent is not available: use cgroup memory
@@ -131,6 +155,9 @@ resource-ceiling test (1.5 GB cgroup) still completes the 30-page fixture.
 **Scope**
 * gzip/br for `result.md`/`result.txt`/`result.json` when the client sends
   `Accept-Encoding`; store compressed, serve transparently (measure the win first).
+* **RC-2/RC-4**: capacity work for large spreadsheets — make the expanded-size and
+  upload caps configurable per deployment, document the engine hard limits, and
+  evaluate sheet-window extraction for 550–770 MiB ledger exports before claiming it.
 * Per-owner storage accounting in SQLite (`owner_usage` materialised view updated in
   the same transaction as commit/release).
 * Disk-pressure policy: below watermark, reclaim `expired`/`released` tombstones first,
@@ -187,6 +214,8 @@ VRAM measured via `nvidia-smi` during the run; egress denied test.
   by engine, result bytes, retention states, cleanup runs/errors, disk free.
 * OpenTelemetry traces: create → claim → engine → commit spans, with engine version
   attributes; no document content.
+* **RC-5**: expose the rate-limit and quota counters so a tenant can see why it was
+  throttled, and document polling-vs-SSE costs.
 * SLO document: availability, p95 latency per mode, and a **result-loss budget for
   committed, not-yet-expired, not-yet-ACKed results** inside the supported failure
   model (single coordinator host, local disk). An ACK *is* a deletion request, so
