@@ -55,6 +55,15 @@ the coordinator process.
 | mineru | 5.67 | 5.00 | 9.00 | 3.64 | 5.00 | **5.73** | 5/5 |
 | docling-serve | 5.62 | 2.00 | n/a | 7.27 | 8.00 | **5.03** | 4/5 |
 
+### Real-corpus check
+
+The same split was measured on a real 958-file corpus (554 PDF, 294 XLSX, 71 XLSM,
+13 DOCX, …): **xberg 97.8 % PDF completion at a 268 ms median**, docling-rs
+accurate on a 40-PDF sample at **4 014 ms median (14.5× slower) with less text on
+14/39 files** and more tables on 4/39. Conclusion: `fast` is the default for text
+extraction, `accurate` is for table structure and CJK scans. Full report:
+`docs/REAL-CORPUS-TEST.md`.
+
 ### Interpreting the numbers
 
 * **`native` is not a competitor for PDFs.** It is the accurate *and* fastest

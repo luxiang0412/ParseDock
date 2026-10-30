@@ -200,6 +200,7 @@ termination, no per-tenant disk quota yet.
 | `docs/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
 | `docs/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
 | `docs/CI.md` | CI workflows, phases, pinned inputs, artifacts, licence policy |
+| `docs/REAL-CORPUS-TEST.md` | 958-file real corpus: results, defects found, engine comparison |
 | `docs/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |
 | `docs/ENVIRONMENT.md` | host, toolchain, engine versions, isolation |
 | `docs/LICENSE-REVIEW.md` | per-component licence verification + open items |

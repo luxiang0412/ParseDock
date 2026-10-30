@@ -88,7 +88,7 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | (limits) | – | 512 MiB expanded, 200:1 ratio | OOXML expansion cap; the parsers themselves cap lower (xberg 500 MiB, docling-rs 10M cells per sheet) |
 | `--min-free-gb` | `PARSEDOCK_MIN_FREE_GB` | `2` | disk watermark |
 | `--max-attempts` | `PARSEDOCK_MAX_ATTEMPTS` | `3` | retries |
-| `--rate-limit` / `--rate-burst` | `PARSEDOCK_RATE_LIMIT(_BURST)` | `20` / `40` | per-owner |
+| `--rate-limit` / `--rate-burst` | `PARSEDOCK_RATE_LIMIT(_BURST)` | `20` / `40` | per-owner, **all** requests: status polling counts against it (a batch client polling at 5 rps/thread exhausted the default 20 rps and received `429`; use SSE or raise the limit for batch tenants) |
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | engine paths | `PARSEDOCK_XBERG_BIN`, `PARSEDOCK_DOCLING_RS_BIN`, … | – | adapters |
 
@@ -146,7 +146,7 @@ limits, not bugs, and they are reported with stable codes:
 | corrupt/zero-padded PDF, empty XLSX | `unsupported_type` / `malformed_file` | 5 | rejected before an engine runs |
 
 `tests/integration/batch_parse.py` reproduces the run (redacted by default:
-hashed file ids, no document text).
+hashed file ids, no document text); full report in `docs/REAL-CORPUS-TEST.md`.
 
 ## 7. Known deployment gaps
 
