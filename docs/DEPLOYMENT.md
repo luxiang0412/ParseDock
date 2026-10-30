@@ -280,6 +280,30 @@ Notes:
   the process (a coordinator restart is already the documented recovery operation).
 * `tests/integration/pr07_tls.py` is the executable version of this section.
 
+## 6d. Observability
+
+Scrape `/internal/metrics` on the coordinator's **internal** listener with the internal
+token (mTLS when enabled):
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: parsedock-coordinator
+    metrics_path: /internal/metrics
+    static_configs: [{targets: ["10.0.0.10:8081"]}]
+    # headers: {X-Internal-Token: "..."} via the file_sd/http_headers or a proxy
+rule_files: [/etc/prometheus/parsedock-alerts.yaml]
+```
+
+* `deploy/observability/dashboard.json` — Grafana overview (queue, latency by engine,
+  workers, throttling, disk, cleanup, retention).
+* `deploy/observability/alerts.yaml` — queue stall, no workers, cleanup failing, disk low,
+  lease storm, throttle spike, coordinator down; each annotation names the runbook action.
+* Metric names, SLO targets and the result-loss budget live in `docs/SLO.md`.
+* API replicas expose no metrics endpoint of their own: they are stateless and their only
+  counters (`parsedock_throttled_total`) are aggregated into the same family, so scrape the
+  coordinator and treat replicas as disposable.
+
 ## 7. Known deployment gaps
 
 * `--internal-token` is a shared static secret; mTLS (PR-07) now provides transport

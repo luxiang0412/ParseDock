@@ -315,6 +315,38 @@ demand rather than in CPU-only CI.
 **DoD.** A dashboard JSON and alert rules for: queue stall, cleanup stalled (already in
 `/readyz`), disk watermark, lease-loss rate.
 
+**Status: DONE (PR-09)** — except OTel traces, deliberately exchanged for correlation.
+
+* `internal/metrics`: dependency-free Prometheus exposition (counters, gauges, histograms,
+  stable name ordering, label escaping) with unit tests for format, escaping, concurrency
+  and label-count safety.
+* `/internal/metrics` on the internal listener behind the internal token. Database-derived
+  gauges (jobs by state, retention, queue depth, oldest queued age, workers online, disk
+  free) are pulled at scrape time, so no write path pays for metrics and one scrape sees one
+  consistent state.
+* Instrumented paths: job creation, creation→first-claim latency (retries excluded),
+  claim→commit parse latency and result bytes per engine, lease expiry, cleanup outcomes,
+  and refusals (`rate_limited`, `quota_exceeded`, `insufficient_storage`) from **both** the
+  API replicas and the coordinator — this is **RC-5**: a tenant can now see *why* it was
+  throttled instead of guessing (`docs/SLO.md` §2, alert `ParseDockThrottleSpike`).
+* `docs/SLO.md`: SLO table with the metric behind each target, the result-loss budget
+  (0 for committed/not-expired/not-ACKed results inside "coordinator restart on the same
+  host"; disk loss and post-ACK deletion are explicitly outside it), the metric reference,
+  and measured capacity signals.
+* `deploy/observability/dashboard.json` (12 panels) and `alerts.yaml` (7 rules, each naming
+  the runbook action): queue stall, no workers, cleanup failing, disk low, lease storm,
+  throttle spike, coordinator down.
+* `tests/integration/pr09_metrics.py` (5 checks, wired into `make pr00` + lifecycle phase):
+  token required, lifecycle/queue/disk/worker series present, parse duration and result
+  bytes recorded per engine, a throttled request is counted, and the exposition contains no
+  document content, file name or owner id.
+
+**Not delivered:** OpenTelemetry SDK + OTLP export. The dependency cost (licence audit,
+collector to operate) outweighed the value given the existing correlation: validated
+`X-Request-Id` (stored on the job), audit lines with `request_id`, and the `job_events`
+timeline. The propagation point is documented in `SLO.md` §3 so an exporter can be added
+without restructuring.
+
 ---
 
 ## PR-10 — SDKs and contract tests

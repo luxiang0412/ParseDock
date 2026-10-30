@@ -298,6 +298,25 @@ paths:
                     items: { $ref: '#/components/schemas/WorkerRegistration' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /internal/metrics:
+    get:
+      tags: [operations]
+      operationId: getMetrics
+      summary: Prometheus text exposition
+      description: |
+        Counters, gauges and histograms in the Prometheus text format
+        (`text/plain; version=0.0.4`). Database-derived gauges are computed at scrape
+        time. Series names are documented in `docs/SLO.md`; no owner, job id, file name
+        or document content ever appears in a label.
+      responses:
+        '200':
+          description: Metrics exposition.
+          content:
+            text/plain:
+              schema:
+                type: string
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   securitySchemes:
     internalToken:

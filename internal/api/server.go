@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"parsedock.dev/parsedock/internal/metrics"
 	"parsedock.dev/parsedock/internal/tlsutil"
 )
 
@@ -258,10 +259,16 @@ func newRequestID() string {
 	return "req_" + hex.EncodeToString(b[:])
 }
 
+// throttled is the same counter family the coordinator exposes, so a replica's
+// refusals are visible in the same scrape (RC-5).
+var throttled = metrics.Default.Counter("parsedock_throttled_total",
+	"Requests refused by rate limiting or quota, by reason.", "reason")
+
 func (s *Server) limit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.limiter.allow(ownerFrom(r)) {
 			w.Header().Set("Retry-After", "1")
+			throttled.With("rate_limited").Inc()
 			writeJSON(w, 429, map[string]any{"error": map[string]any{
 				"code": "rate_limited", "message": "too many requests for this owner"}})
 			return

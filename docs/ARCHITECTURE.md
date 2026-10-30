@@ -58,6 +58,15 @@ sessions" trivially true. The coordinator therefore exposes the public `/v1`
 routes on its *internal* listener, guarded by mTLS (optional, PR-07), the internal
 token and an owner header injected by the gateway. The public port never reaches the coordinator.
 
+## 2a. Observability
+
+The coordinator exposes Prometheus text metrics on `/internal/metrics` (internal token,
+mTLS-aware). Database-derived series (jobs by state, queue depth, retention, workers online,
+disk free) are computed **at scrape time**, so job transitions stay single-write and one
+scrape always describes one consistent database state. API replicas are stateless and add no
+series beyond the shared `parsedock_throttled_total` family, which is why the coordinator is
+the only scrape target. See `docs/SLO.md`.
+
 ## 3. Request flow (async)
 
 ```

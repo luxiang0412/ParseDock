@@ -1,0 +1,64 @@
+# Prometheus alerting rules for ParseDock (PR-09).
+#
+#   rule_files:
+#     - /etc/prometheus/parsedock-alerts.yaml
+#
+# Every rule names the operator action in docs/RUNBOOK.md.
+groups:
+  - name: parsedock-availability
+    rules:
+      - alert: ParseDockCoordinatorDown
+        expr: up{job="parsedock-coordinator"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "Coordinator is not scrapeable"
+          action: "RUNBOOK: coordinator down. Restart the single replica; SQLite and the data volume are the only state."
+
+      - alert: ParseDockQueueStalled
+        expr: parsedock_oldest_queued_seconds > 300 and parsedock_queue_depth > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Oldest queued job is {{ $value }}s old"
+          action: "RUNBOOK: queue stall. Check parsedock_workers_online; if workers are online, check claim errors and engine probes."
+
+      - alert: ParseDockNoWorkersOnline
+        expr: sum(parsedock_workers_online) == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: "No worker has a fresh heartbeat"
+          action: "RUNBOOK: worker loss. Check worker logs for registration errors, internal token and mTLS."
+
+      - alert: ParseDockCleanupFailing
+        expr: increase(parsedock_cleanup_passes_total{outcome="error"}[15m]) > 2
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "Cleanup passes are failing"
+          action: "RUNBOOK: cleanup stalled. Retention cannot advance; expired results stay on disk (data is not lost, quota is)."
+
+      - alert: ParseDockDiskLow
+        expr: parsedock_disk_free_bytes < 5e9
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "Less than 5 GB free on the coordinator volume"
+          action: "RUNBOOK: disk full. /readyz already fails below the watermark; release results or expand the volume."
+
+      - alert: ParseDockLeaseStorm
+        expr: increase(parsedock_leases_expired_total[15m]) > 5
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "More than 5 leases expired in 15 minutes"
+          action: "RUNBOOK: lease storm. Look for worker restarts, clock skew, or a coordinator pause longer than the lease TTL."
+
+      - alert: ParseDockThrottleSpike
+        expr: sum(rate(parsedock_throttled_total[5m])) > 5
+        for: 10m
+        labels: {severity: info}
+        annotations:
+          summary: "Sustained throttling — a tenant is polling instead of using SSE"
+          action: "RC-5: status polling shares the per-owner budget. Point the client at /v1/jobs/{id}/events or raise --rate-limit."

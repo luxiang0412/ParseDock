@@ -631,6 +631,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 // InternalMux serves the worker protocol.
 func (s *Server) InternalMux() http.Handler {
 	m := http.NewServeMux()
+	m.HandleFunc("GET /internal/metrics", s.MetricsHandler())
 	m.HandleFunc("POST /internal/workers/register", s.workerGuard(s.handleRegister))
 	m.HandleFunc("POST /internal/workers/{id}/heartbeat", s.workerGuard(s.handleWorkerHeartbeat))
 	m.HandleFunc("POST /internal/tasks/claim", s.workerGuard(s.handleClaim))
@@ -643,6 +644,21 @@ func (s *Server) InternalMux() http.Handler {
 	m.HandleFunc("GET /healthz", s.handleHealthz)
 	m.HandleFunc("GET /readyz", s.handleReadyz)
 	return m
+}
+
+// internalGuard protects operator endpoints that need the internal token but no owner
+// identity (metrics, diagnostics).
+func (s *Server) internalGuard(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if s.InternalToken != "" {
+			got := r.Header.Get("X-Internal-Token")
+			if subtle.ConstantTimeCompare([]byte(got), []byte(s.InternalToken)) != 1 {
+				writeErr(w, NewError(401, jobs.ErrUnauthorized, "invalid internal token"))
+				return
+			}
+		}
+		next(w, r)
+	}
 }
 
 func (s *Server) workerGuard(next http.HandlerFunc) http.HandlerFunc {
@@ -901,6 +917,11 @@ func writeErr(w http.ResponseWriter, err error) {
 	}
 	if ce.RetryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(ce.RetryAfter))
+	}
+	// RC-5: make throttling observable so an operator can answer "why was this
+	// tenant refused" without reading its logs.
+	if reason := throttleReason(ce.Code); reason != "" {
+		defaultInstruments.throttled.With(reason).Inc()
 	}
 	writeJSON(w, ce.Status, map[string]any{
 		"error": map[string]any{

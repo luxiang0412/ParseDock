@@ -53,6 +53,7 @@ pr00: contract ## runtime contract checks (PR-00/PR-02/PR-07 scenarios)
 	python3 tests/integration/backup_restore.py
 	python3 tests/integration/pr02_contract.py
 	python3 tests/integration/pr07_tls.py
+	python3 tests/integration/pr09_metrics.py
 
 load: ## cluster-lite load check (mock engine): make load JOBS=200 CONC=32
 	bash scripts/cluster-lite-load.sh $(or $(JOBS),120) $(or $(CONC),12)
