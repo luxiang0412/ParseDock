@@ -71,6 +71,11 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
   re-executes itself as uid 10001 via `setpriv` before any parser runs.
 * `HOME`, `HF_HOME` and `XDG_CACHE_HOME` point inside the volume; otherwise MinerU tries
   to write `/root/.cache/huggingface/token` and fails.
+* Scratch is always a **subdirectory** (`/work/scratch`), never the volume root: the
+  worker's scrubber deletes attempt directories older than an hour, and pointing
+  `--work-dir` at `/work` would delete the multi-GB model cache with them. The entrypoint
+  appends `--work-dir /work/scratch` when the flag is absent, and
+  `deploy/compose.gpu.yaml` sets it explicitly.
 * Telemetry is disabled at build time and again at start-up. Only the `flash` tier is
   reachable; block egress to `mineru.net` by policy and run parsers with
   `--sandbox=unshare-net` where namespaces are available.

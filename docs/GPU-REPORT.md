@@ -95,6 +95,11 @@ GPU image that registers but cannot parse:
 3. **`HOME=/root`.** MinerU/HuggingFace tried to write `/root/.cache/huggingface/token`.
    `HOME`, `HF_HOME` and `XDG_CACHE_HOME` now point inside the work volume, which also
    makes the model cache survive container restarts.
+4. **Scratch covering the cache.** Once the cache lives in the volume, `--work-dir=/work`
+   would make the worker's scrubber (removes attempt dirs older than 1 h) delete the
+   multi-GB model cache. Scratch is now always `/work/scratch`: the entrypoint appends the
+   flag when absent and the compose profile sets it explicitly; the old tmpfs at `/work`
+   (which also threw the cache away on every restart) is gone.
 
 **MinerU telemetry** is disabled at build time (`mineru telemetry disable`) and again by
 the entrypoint. Engine egress can additionally be blocked with `--sandbox=unshare-net`,

@@ -28,4 +28,12 @@ while [ "$i" -lt 120 ]; do
   if mineru server status >/dev/null 2>&1; then break; fi
   i=$((i + 1)); sleep 1
 done
+
+# Scratch must never be the volume root: the worker's scrubber removes attempt
+# directories older than an hour and would delete the model cache with them.
+case " $* " in
+  *" --work-dir "*|*" --work-dir="*) ;;
+  *) set -- "$@" --work-dir "$WORK_ROOT/scratch" ;;
+esac
+
 exec /usr/local/bin/docparse "$@"
