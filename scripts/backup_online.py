@@ -24,6 +24,7 @@ import json
 import shutil
 import sqlite3
 import sys
+import threading
 import time
 import uuid
 from pathlib import Path
@@ -75,9 +76,20 @@ class Leases:
         self.db_path = db_path
         self.seconds = seconds
         self.ids: list[str] = []
-        self.conn = sqlite3.connect(db_path)
+        # A background thread renews the leases, so a single large directory cannot outlive
+        # them: renewal must not depend on finishing a copytree() call.
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.lock = threading.Lock()
+        self.stop_event = threading.Event()
+        self.thread = threading.Thread(target=self._loop, daemon=True)
+        self.thread.start()
         self.last = time.time()
         self.renew_errors: list[str] = []
+
+    def _loop(self) -> None:
+        interval = max(1, self.seconds // 3)
+        while not self.stop_event.wait(interval):
+            self.renew()
 
     def pin(self, jobs: set[str]) -> list[str]:
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -99,38 +111,46 @@ class Leases:
         return unpinnable
 
     def progress(self) -> None:
-        if time.time() - self.last < max(1, self.seconds // 3):
-            return
         self.renew()
 
     def renew(self) -> None:
-        if not self.ids:
-            return
         now = datetime.datetime.now(datetime.timezone.utc)
         exp = now + datetime.timedelta(seconds=self.seconds)
         stamp = lambda d: d.isoformat(timespec="microseconds").replace("+00:00", "Z")
-        try:
-            with self.conn:
-                self.conn.executemany(
-                    "UPDATE download_leases SET expires_at = ?, last_renewed_at = ? WHERE lease_id = ?",
-                    [(stamp(exp), stamp(now), lease) for lease in self.ids])
-        except sqlite3.Error as exc:  # pragma: no cover - defensive
-            self.renew_errors.append(str(exc))
+        with self.lock:
+            ids = list(self.ids)
+            if not ids:
+                return
+            try:
+                with self.conn:
+                    self.conn.executemany(
+                        "UPDATE download_leases SET expires_at = ?, last_renewed_at = ? WHERE lease_id = ?",
+                        [(stamp(exp), stamp(now), lease) for lease in ids])
+            except sqlite3.Error as exc:
+                self.renew_errors.append(str(exc))
         self.last = time.time()
 
     def release(self) -> None:
-        if self.ids:
-            with self.conn:
-                self.conn.executemany("DELETE FROM download_leases WHERE lease_id = ?",
-                                      [(l,) for l in self.ids])
-        self.conn.close()
+        self.stop_event.set()
+        self.thread.join(timeout=5)
+        with self.lock:
+            if self.ids:
+                try:
+                    with self.conn:
+                        self.conn.executemany("DELETE FROM download_leases WHERE lease_id = ?",
+                                              [(l,) for l in self.ids])
+                except sqlite3.Error as exc:
+                    self.renew_errors.append(str(exc))
+            self.conn.close()
 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--data-dir", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--verify", dest="verify", action="store_true", default=True,
+                    help="verify the copy (default)")
+    ap.add_argument("--no-verify", dest="verify", action="store_false")
     ap.add_argument("--skip-files", action="store_true",
                     help="metadata only (for a quick RPO test on a large tree)")
     ap.add_argument("--lease-seconds", type=int, default=900,
@@ -180,15 +200,23 @@ def main() -> int:
         leases = Leases(src_db, args.lease_seconds)
         unpinnable = leases.pin(jobs)
         db_seconds_lock = time.time() - t_lock
+        # A pin can succeed while the files are already gone: the cleaner may have released
+        # and deleted them between the snapshot and the INSERT (only the tombstone row
+        # remains). Detect that directly instead of trusting the pin.
+        jobs_with_artifacts = {a[0] for a in artifacts}
+        vanished = [j for j in sorted(jobs)
+                    if j in jobs_with_artifacts and not (data / "results" / j).exists()]
         if unpinnable:
-            missing = [j for j in unpinnable
-                       if not (data / "results" / j).exists() and not (data / "inputs" / j).exists()]
+            vanished.extend(j for j in unpinnable
+                            if not (data / "results" / j).exists()
+                            and not (data / "inputs" / j).exists())
             jobs = jobs - set(unpinnable)
-            if missing:
-                leases.release()
-                print(json.dumps({"error": "incomplete backup: jobs vanished before pinning",
-                                  "jobs": missing}, indent=2), file=sys.stderr)
-                return 1
+        if vanished:
+            leases.release()
+            print(json.dumps({"error": "incomplete backup: snapshot results were deleted "
+                                       "before they could be pinned", "jobs": sorted(set(vanished))},
+                             indent=2), file=sys.stderr)
+            return 1
 
     files = bytes_copied = 0
     try:
