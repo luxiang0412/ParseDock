@@ -74,16 +74,16 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 		AND updated_at <= ?`, "failed_retention", ts(nowUTC()), ts(nowUTC().Add(-s.Cfg.FailedRetention)))
 
 	// 3. Delete files for pending jobs that have no live download lease.
-	rows, err := s.DB.QueryContext(ctx, `SELECT id, retention_status FROM jobs
-		WHERE retention_status IN ('release_pending','expiry_pending')`)
+	rows, err := s.DB.QueryContext(ctx, `SELECT id, retention_status, retention_target FROM jobs
+		WHERE retention_status IN ('release_pending','expiry_pending','deleting')`)
 	if err != nil {
 		rep.Errors = append(rep.Errors, "query pending: "+err.Error())
 	} else {
-		type pending struct{ id, status string }
+		type pending struct{ id, status, target string }
 		var list []pending
 		for rows.Next() {
 			var p pending
-			if err := rows.Scan(&p.id, &p.status); err == nil {
+			if err := rows.Scan(&p.id, &p.status, &p.target); err == nil {
 				list = append(list, p)
 			}
 		}
@@ -96,19 +96,25 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				rep.SkippedBusy++
 				continue
 			}
+			// The intended final state is persisted when the job enters 'deleting',
+			// so a retry after a crash cannot confuse released and expired.
 			final := jobs.RetentionReleased
-			if jobs.RetentionStatus(p.status) == jobs.RetentionExpiryPending {
+			switch {
+			case jobs.RetentionStatus(p.status) == jobs.RetentionExpiryPending:
 				final = jobs.RetentionExpired
+			case jobs.RetentionStatus(p.status) == jobs.RetentionDeleting && p.target != "":
+				final = jobs.RetentionStatus(p.target)
 			}
 			// Mark deleting first: a crash here is recovered because the
 			// cleaner re-scans 'deleting' rows on the next pass. The lease check
 			// is inside the UPDATE so a download that starts concurrently cannot
 			// be deleted underneath (F03).
-			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting', updated_at = ?
+			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting',
+				retention_target = ?, updated_at = ?
 				WHERE id = ? AND retention_status IN ('release_pending','expiry_pending','deleting')
 				  AND NOT EXISTS (SELECT 1 FROM download_leases
 				                  WHERE job_id = ? AND expires_at > ?)`,
-				ts(nowUTC()), p.id, p.id, ts(nowUTC()))
+				string(final), ts(nowUTC()), p.id, p.id, ts(nowUTC()))
 			if err != nil {
 				rep.Errors = append(rep.Errors, "mark deleting: "+err.Error())
 				continue
@@ -121,14 +127,40 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				rep.Errors = append(rep.Errors, "delete files: "+err.Error())
 				continue // stay in 'deleting' and retry next pass
 			}
+			// Final status, storage release and artifact rows move together: if this
+			// transaction fails the job stays in 'deleting' and the next pass retries,
+			// so the owner's balance can never be charged for deleted files.
 			tomb := ts(nowUTC().Add(s.Cfg.TombstoneTTL))
-			if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = ?, tombstone_expires_at = ?,
+			tx, terr := s.DB.BeginTx(ctx, nil)
+			if terr != nil {
+				rep.Errors = append(rep.Errors, "finalize: "+terr.Error())
+				continue
+			}
+			var ownerID string
+			var stored int64
+			_ = tx.QueryRowContext(ctx, `SELECT owner_id FROM jobs WHERE id = ?`, p.id).Scan(&ownerID)
+			_ = tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(size),0) FROM artifacts WHERE job_id = ?`, p.id).Scan(&stored)
+			if _, err := tx.ExecContext(ctx, `UPDATE jobs SET retention_status = ?, tombstone_expires_at = ?,
 				result_version = COALESCE(result_version, ''), updated_at = ? WHERE id = ?`,
 				string(final), tomb, ts(nowUTC()), p.id); err != nil {
+				_ = tx.Rollback()
 				rep.Errors = append(rep.Errors, "finalize: "+err.Error())
 				continue
 			}
-			_, _ = s.DB.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id)
+			if err := adjustStorage(ctx, tx, ownerID, -stored); err != nil {
+				_ = tx.Rollback()
+				rep.Errors = append(rep.Errors, "finalize accounting: "+err.Error())
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `DELETE FROM artifacts WHERE job_id = ?`, p.id); err != nil {
+				_ = tx.Rollback()
+				rep.Errors = append(rep.Errors, "finalize artifacts: "+err.Error())
+				continue
+			}
+			if err := tx.Commit(); err != nil {
+				rep.Errors = append(rep.Errors, "finalize commit: "+err.Error())
+				continue
+			}
 			_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE job_id = ?`, p.id)
 			s.appendEvent(ctx, p.id, string(final), map[string]any{"at": nowUTC()})
 			if job, jerr := s.GetJob(ctx, p.id, ""); jerr == nil {

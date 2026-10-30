@@ -19,7 +19,17 @@ import (
 func Open(path string) (*sql.DB, error) {
 	q := url.Values{}
 	q.Set("_pragma", "")
-	dsn := "file:" + path + "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(FULL)&_pragma=foreign_keys(ON)&_pragma=temp_store(MEMORY)"
+	// _txlock=immediate takes the write lock when a transaction begins. Without it
+	// a deferred transaction that reads before writing can fail with
+	// SQLITE_BUSY_SNAPSHOT under concurrent writers (WAL cannot upgrade a read
+	// snapshot), which would abort a completion after its files were written.
+	dsn := "file:" + path +
+		"?_txlock=immediate" +
+		"&_pragma=busy_timeout(5000)" +
+		"&_pragma=journal_mode(WAL)" +
+		"&_pragma=synchronous(FULL)" +
+		"&_pragma=foreign_keys(ON)" +
+		"&_pragma=temp_store(MEMORY)"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err

@@ -819,3 +819,206 @@ func TestCancelRecordsRequestTime(t *testing.T) {
 		t.Fatalf("repeat cancel changed the request time: %v vs %v", again.CancelRequestedAt, first)
 	}
 }
+
+// PR-06: live-result storage is accounted per owner and enforced.
+func TestStorageQuota(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 400} })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	// Artifacts are small (a few hundred bytes across md/txt/json).
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte(`{"a":1}`)}); err != nil {
+		t.Fatal(err)
+	}
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT bytes FROM owner_storage WHERE owner_id='owner-1'`).Scan(&stored)
+	if stored <= 0 {
+		t.Fatalf("storage accounting empty after completion: %d", stored)
+	}
+	// A second upload that would exceed the quota is rejected.
+	big := bytes.Repeat([]byte("x"), 500)
+	if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "b.txt",
+		Body: bytes.NewReader(big)}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("storage quota not enforced: %v", err)
+	}
+	// Releasing the first result frees the accounting (after cleanup).
+	done, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+	_ = s.DB.QueryRowContext(ctx, `SELECT bytes FROM owner_storage WHERE owner_id='owner-1'`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounting not released: %d", stored)
+	}
+}
+
+// Codex review (PR-06): admission cannot bound result bytes, so completion must
+// enforce the storage quota transactionally.
+func TestStorageQuotaEnforcedAtCompletion(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 50} })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	big := bytes.Repeat([]byte("x"), 500)
+	_, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: big, Text: big, JSON: big})
+	if AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("oversized result accepted: %v", err)
+	}
+	// No artifacts and no accounting may remain.
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM owner_storage`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounted for a rejected result: %d", stored)
+	}
+	if files := s.storedFilesForTest(job.ID); len(files) != 0 {
+		t.Fatalf("rejected result left files: %v", files)
+	}
+}
+
+// gzip quality values: gzip;q=0 means "do not gzip".
+func TestAcceptsGzip(t *testing.T) {
+	cases := map[string]bool{
+		"":                   false,
+		"gzip":               true,
+		"deflate, gzip":      true,
+		"gzip;q=0":           false,
+		"gzip; q=0.0, br":    false,
+		"br;q=1, gzip;q=0.5": true,
+		"identity":           false,
+	}
+	for header, want := range cases {
+		if got := acceptsGzip(header); got != want {
+			t.Errorf("acceptsGzip(%q) = %v, want %v", header, got, want)
+		}
+	}
+}
+
+// storedFilesForTest lists artifact paths for a job (test helper).
+func (s *Service) storedFilesForTest(jobID string) []string {
+	var out []string
+	for _, dir := range []string{s.Store.InputDir(jobID), s.Store.ResultDir(jobID)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, e := range entries {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
+}
+
+// Completions rejected by the storage quota must be terminal: the job must not
+// stay running (its input is gone) and the attempt must be closed.
+func TestStorageQuotaRejectionIsTerminal(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 50} })
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	big := bytes.Repeat([]byte("x"), 500)
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: big, Text: big, JSON: big}); AsError(err).Code != jobs.ErrQuotaExceeded {
+		t.Fatalf("want quota rejection, got %v", err)
+	}
+	got, err := s.GetJob(ctx, job.ID, "owner-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ProcessingStatus != jobs.StatusFailed || got.ErrorCode != jobs.ErrQuotaExceeded {
+		t.Fatalf("job not failed terminally: %s/%s", got.ProcessingStatus, got.ErrorCode)
+	}
+	if got.RetentionStatus != jobs.RetentionReleasePending {
+		t.Fatalf("rejected job not scheduled for cleanup: %s", got.RetentionStatus)
+	}
+	// The attempt is closed, so the reaper will not requeue it.
+	var state string
+	_ = s.DB.QueryRowContext(ctx, `SELECT state FROM attempts WHERE job_id = ?`, job.ID).Scan(&state)
+	if state != jobs.AttemptFailed {
+		t.Fatalf("attempt state = %s", state)
+	}
+	// Cleanup releases it without leaving storage charged.
+	if rep := s.RunCleanup(ctx); rep.Released == 0 {
+		t.Fatalf("rejected job not released: %+v", rep)
+	}
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM owner_storage`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounting leaked: %d", stored)
+	}
+}
+
+// Codex review (PR-06): a crash after the files are gone but before finalization
+// must be retried; 'deleting' jobs are therefore picked up again.
+func TestCleanupRetriesDeletingJobs(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, _ := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate a crash after the files were deleted and the row entered 'deleting'.
+	if err := s.Store.DeleteJob(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status='deleting', retention_target='released' WHERE id=?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.RetentionStatus != jobs.RetentionReleased {
+		t.Fatalf("deleting job not retried: %s", got.RetentionStatus)
+	}
+	var stored int64
+	_ = s.DB.QueryRowContext(ctx, `SELECT COALESCE(SUM(bytes),0) FROM owner_storage`).Scan(&stored)
+	if stored != 0 {
+		t.Fatalf("storage accounting leaked: %d", stored)
+	}
+}
+
+// Codex review (PR-06): concurrent completions/creates must not fail with
+// SQLITE_BUSY_SNAPSHOT (deferred read-then-write upgrade). _txlock=immediate makes
+// every transaction take the write lock up front.
+func TestConcurrentWritesDoNotBusySnapshot(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	const n = 8
+	var wg sync.WaitGroup
+	errs := make(chan error, n*2)
+	for i := 0; i < n; i++ {
+		wg.Add(2)
+		go func(i int) {
+			defer wg.Done()
+			if _, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1",
+				InputName: "a.txt", Body: bytes.NewReader([]byte("hello"))}); err != nil {
+				errs <- err
+			}
+		}(i)
+		go func() {
+			defer wg.Done()
+			task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+			if err != nil || task == nil {
+				return
+			}
+			if _, err := s.Complete(ctx, CompleteParams{JobID: task.JobID, Token: task.LeaseToken,
+				Engine: "native", Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")}); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil && AsError(err).Code != jobs.ErrLeaseLost {
+			t.Fatalf("concurrent write failed: %v", err)
+		}
+	}
+}
