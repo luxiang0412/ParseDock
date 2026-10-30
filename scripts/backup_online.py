@@ -200,6 +200,9 @@ def main() -> int:
         "SELECT job_id, kind, path, size, sha256 FROM artifacts").fetchall()
     conn_inputs = conn.execute(
         "SELECT id, input_size, input_sha256 FROM jobs WHERE retention_status = 'active'").fetchall()
+    completed = conn.execute(
+        "SELECT id, result_version, result_manifest_path FROM jobs"
+        " WHERE retention_status = 'active' AND processing_status = 'completed'").fetchall()
     input_sha = {row[0]: row[2] for row in conn_inputs}
     conn_inputs = [(row[0], row[1]) for row in conn_inputs]
     conn.close()
@@ -276,6 +279,27 @@ def main() -> int:
                 problems.append(f"input size mismatch {job_id}: {p.stat().st_size} != {input_size}")
             if sha256(p) != input_sha[job_id]:
                 problems.append(f"input hash mismatch {job_id}")
+        # A completed result is served through its manifest; a missing or malformed
+        # manifest makes the restored job undownloadable even when every artifact file
+        # matches SQLite.
+        for job_id, version, _manifest_path in completed:
+            mp = out / "files" / "results" / job_id / "manifest.json"
+            if not mp.exists():
+                if job_id in jobs:
+                    problems.append(f"missing manifest {job_id}")
+                continue
+            try:
+                man = json.loads(mp.read_text())
+            except (OSError, json.JSONDecodeError) as exc:
+                problems.append(f"unreadable manifest {job_id}: {exc}")
+                continue
+            # The manifest stores the version as result_version (storage.Manifest).
+            if version and man.get("result_version") != version:
+                problems.append(f"manifest version mismatch {job_id}: "
+                                f"{man.get('result_version')} != {version}")
+            if not man.get("files"):
+                problems.append(f"manifest lists no files {job_id}")
+
         for job_id, kind, rel, size, want in artifacts:
             # The JSON manifest records paths under the source data dir; resolve the copy.
             p = out / "files" / "results" / job_id / Path(rel).name
