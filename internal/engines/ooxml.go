@@ -57,11 +57,23 @@ type xlsxWorksheet struct {
 	} `xml:"sheetData"`
 }
 
+type xlsxSharedStrings struct {
+	Items []struct {
+		Text string `xml:",chardata"`
+		Runs []struct {
+			Text string `xml:"t"`
+		} `xml:"r"`
+		T struct {
+			Text string `xml:",chardata"`
+		} `xml:"t"`
+	} `xml:"si"`
+}
+
 type formulaCell struct {
-	formula string
-	cached  string
-	isStr   bool
-	shared  bool
+	formula  string
+	cached   string
+	dataType string
+	shared   bool
 }
 
 // EnrichXLSXFormulas adds formula text and cached values to the IR tables of an
@@ -101,9 +113,22 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 		sheets = append(sheets, xlsxSheetRef{name: s.Name, part: target})
 	}
 
+	// Shared-string table: a cached formula result of type "s" is an index into it.
+	var sharedStrings []string
+	if sst, err := readZipXML[xlsxSharedStrings](zr, "xl/sharedStrings.xml"); err == nil {
+		for _, si := range sst.Items {
+			text := si.T.Text
+			if text == "" {
+				for _, r := range si.Runs {
+					text += r.Text
+				}
+			}
+			sharedStrings = append(sharedStrings, text)
+		}
+	}
+
 	formulas := map[string]map[[2]int]formulaCell{}
 	var warnings []documentir.Warning
-	sharedMasters := map[string]string{}
 	for _, sh := range sheets {
 		ws, err := readZipXML[xlsxWorksheet](zr, sh.part)
 		if err != nil {
@@ -116,13 +141,27 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 				if !ok {
 					continue
 				}
-				fc := formulaCell{cached: c.V, isStr: c.T == "s" || c.T == "inlineStr"}
+				hasFormula := strings.TrimSpace(c.F.Text) != "" || c.F.Type == "shared"
+				if !hasFormula {
+					// Ordinary cells are already populated by the engine; touching
+					// them would replace real text with a shared-string index or
+					// overwrite a date/boolean type.
+					continue
+				}
+				fc := formulaCell{cached: cachedText(c.T, c.V, sharedStrings)}
+				switch c.T {
+				case "s", "str", "inlineStr":
+					fc.dataType = "string"
+				case "b":
+					fc.dataType = "bool"
+				case "d":
+					fc.dataType = "date"
+				default:
+					fc.dataType = "number"
+				}
 				if text := strings.TrimSpace(c.F.Text); text != "" {
-					if c.F.Type == "shared" {
-						sharedMasters[c.F.SI] = text
-					}
 					fc.formula = text
-				} else if c.F.Type == "shared" {
+				} else {
 					// A shared-formula slave carries no text of its own. Copying the
 					// master verbatim would be wrong (relative references), so only
 					// the cached value is used and the gap is reported once.
@@ -178,7 +217,9 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 			}
 			if fc.cached != "" && cell.CachedValue == "" {
 				cell.CachedValue = fc.cached
-				cell.DataType = cachedType(fc)
+				if fc.dataType != "" {
+					cell.DataType = fc.dataType
+				}
 			}
 		}
 	}
@@ -190,14 +231,19 @@ func EnrichXLSXFormulas(inputPath string, doc *documentir.Document) (int, []docu
 	return applied, warnings
 }
 
-func cachedType(fc formulaCell) string {
-	if fc.isStr {
-		return "string"
+// cachedText converts a cached OOXML value to text, resolving shared strings.
+func cachedText(cellType, raw string, sharedStrings []string) string {
+	switch cellType {
+	case "s":
+		if idx, err := strconv.Atoi(strings.TrimSpace(raw)); err == nil && idx >= 0 && idx < len(sharedStrings) {
+			return sharedStrings[idx]
+		}
+		return ""
+	case "b":
+		return raw // "0"/"1": the caller receives the raw boolean marker as text
+	default:
+		return raw
 	}
-	if _, err := strconv.ParseFloat(fc.cached, 64); err == nil {
-		return "number"
-	}
-	return ""
 }
 
 // ShouldEnrichFormulas reports whether formula extraction applies to a format.

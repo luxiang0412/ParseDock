@@ -107,19 +107,71 @@ func TestEnrichmentDoesNotTouchOtherFormats(t *testing.T) {
 func TestEnrichXLSXFormulasCachedValue(t *testing.T) {
 	path := writeMinimalXLSX(t)
 	doc := documentir.New()
-	doc.Tables = []documentir.Table{{ID: "tbl_1", Rows: 2, Cols: 2,
-		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "Sheet1"},
-		Cells: []documentir.Cell{{Row: 1, Col: 1, Text: "42"}}}}
+	doc.Tables = []documentir.Table{{ID: "tbl_1", Rows: 2, Cols: 4,
+		Loc: &documentir.SourceLocation{Kind: "sheet", Sheet: "Sheet1"},
+		Cells: []documentir.Cell{
+			{Row: 0, Col: 3, Text: "Shared label", DataType: "string"}, // ordinary cell
+			{Row: 1, Col: 1, Text: "42"},
+			{Row: 1, Col: 2, Text: "ab"},
+			{Row: 1, Col: 3, Text: "1"},
+		}}}
 	applied, _ := EnrichXLSXFormulas(path, doc)
-	if applied != 1 {
-		t.Fatalf("applied = %d", applied)
+	if applied != 3 {
+		t.Fatalf("applied = %d, want 3 formulas", applied)
 	}
-	cell := doc.Tables[0].Cells[0]
-	if cell.Formula != "=SUM(A1:A2)" {
-		t.Fatalf("formula = %q", cell.Formula)
+	cells := doc.Tables[0].Cells
+	if cells[1].Formula != "=SUM(A1:A2)" || cells[1].CachedValue != "42" || cells[1].DataType != "number" {
+		t.Fatalf("numeric formula: %+v", cells[1])
 	}
-	if cell.CachedValue != "42" || cell.DataType != "number" {
-		t.Fatalf("cached = %q type = %q", cell.CachedValue, cell.DataType)
+	if cells[2].Formula != `=CONCAT("a","b")` || cells[2].CachedValue != "ab" || cells[2].DataType != "string" {
+		t.Fatalf("string formula must keep string type: %+v", cells[2])
+	}
+	if cells[3].Formula != "=1=1" || cells[3].DataType != "bool" {
+		t.Fatalf("boolean formula must keep bool type: %+v", cells[3])
+	}
+	// An ordinary shared-string cell keeps the engine's text and gains nothing.
+	if cells[0].Formula != "" || cells[0].CachedValue != "" || cells[0].DataType != "string" {
+		t.Fatalf("ordinary cell modified: %+v", cells[0])
+	}
+}
+
+// Shared-string formula results are indexes into sharedStrings.xml.
+func TestEnrichXLSXSharedStringResult(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sst.xlsx")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	add := func(name, body string) {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	add("xl/workbook.xml", `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="S" sheetId="1" r:id="rId1"/></sheets></workbook>`)
+	add("xl/_rels/workbook.xml.rels", `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>`)
+	add("xl/sharedStrings.xml", `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>first</t></si><si><r><t>ri</t></r><r><t>ch</t></r></si></sst>`)
+	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><f>IF(1,"first","x")</f><v>0</v></c><c r="B1" t="s"><f>IF(1,"rich","x")</f><v>1</v></c></row></sheetData></worksheet>`)
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	doc := documentir.New()
+	doc.Tables = []documentir.Table{{ID: "t", Rows: 1, Cols: 2,
+		Loc:   &documentir.SourceLocation{Kind: "sheet", Sheet: "S"},
+		Cells: []documentir.Cell{{Row: 0, Col: 0}, {Row: 0, Col: 1}}}}
+	EnrichXLSXFormulas(path, doc)
+	if got := doc.Tables[0].Cells[0].CachedValue; got != "first" {
+		t.Fatalf("shared-string index not resolved: %q", got)
+	}
+	if got := doc.Tables[0].Cells[1].CachedValue; got != "rich" {
+		t.Fatalf("rich shared string not concatenated: %q", got)
 	}
 }
 
@@ -150,11 +202,22 @@ func writeMinimalXLSX(t *testing.T) string {
 <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
   <Relationship Id="rId1" Type="worksheet" Target="worksheets/sheet1.xml"/>
 </Relationships>`)
+	add("xl/sharedStrings.xml", `<?xml version="1.0"?>
+<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+  <si><t>Shared label</t></si>
+</sst>`)
 	add("xl/worksheets/sheet1.xml", `<?xml version="1.0"?>
 <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
   <sheetData>
-    <row r="1"><c r="A1"><v>1</v></c></row>
-    <row r="2"><c r="B2"><f>SUM(A1:A2)</f><v>42</v></c></row>
+    <row r="1">
+      <c r="A1"><v>1</v></c>
+      <c r="D1" t="s"><v>0</v></c>
+    </row>
+    <row r="2">
+      <c r="B2"><f>SUM(A1:A2)</f><v>42</v></c>
+      <c r="C2" t="str"><f>CONCAT("a","b")</f><v>ab</v></c>
+      <c r="D2" t="b"><f>1=1</f><v>1</v></c>
+    </row>
   </sheetData>
 </worksheet>`)
 	if err := zw.Close(); err != nil {
