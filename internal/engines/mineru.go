@@ -125,11 +125,12 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 		if errors.Is(err, ErrSandboxUnavailable) {
 			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
 		}
-		msg := "mineru failed"
+		code, msg := jobs.ErrMalformed, "mineru failed"
 		if res != nil {
-			msg = fmt.Sprintf("mineru exit %d: %s", res.ExitCode, tail(string(res.Stderr), 400))
+			code, msg = ClassifyCLIError(string(res.Stderr))
+			msg = fmt.Sprintf("mineru exit %d: %s", res.ExitCode, msg)
 		}
-		return nil, Errf(false, jobs.ErrMalformed, "%s", msg)
+		return nil, &Error{Code: code, Message: msg}
 	}
 	raw, rerr := os.ReadFile(outFile)
 	if rerr != nil {

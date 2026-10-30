@@ -70,6 +70,8 @@ public class ErrorError {
     
     SUSPICIOUS_COMPRESSION("suspicious_compression"),
     
+    EXPANDED_TOO_LARGE("expanded_too_large"),
+    
     QUOTA_EXCEEDED("quota_exceeded"),
     
     INSUFFICIENT_STORAGE("insufficient_storage"),

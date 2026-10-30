@@ -30,7 +30,16 @@ func hasPrefix(p string) func([]byte) bool {
 	return func(b []byte) bool { return bytes.HasPrefix(b, []byte(p)) }
 }
 
-var pdfMagic = hasPrefix("%PDF-")
+// pdfMagic accepts the header within the first 1024 bytes: the PDF specification
+// requires it at offset 0, but real-world files (and Adobe Reader) tolerate a
+// short prefix. Verified on the test corpus: 2 files carry a wrapper preamble.
+var pdfMagic = func(b []byte) bool {
+	window := b
+	if len(window) > 1024 {
+		window = window[:1024]
+	}
+	return bytes.Contains(window, []byte("%PDF-"))
+}
 var pngMagic = func(b []byte) bool {
 	return len(b) >= 8 && bytes.Equal(b[:8], []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})
 }
@@ -162,7 +171,9 @@ func SniffFormat(fileName string, head []byte, lim Limits) (Format, error) {
 		if byExt.Magic != nil {
 			return Format{}, &ValidationError{
 				Code: "unsupported_type",
-				Msg:  fmt.Sprintf("content does not match the %s signature for extension %q", byExt.Name, filepath.Ext(fileName)),
+				Msg: fmt.Sprintf("content does not match the %s signature for extension %q "+
+					"(no %s header in the first 1024 bytes; the file may be corrupt or zero-filled)",
+					byExt.Name, filepath.Ext(fileName), byExt.Name),
 			}
 		}
 		if !looksLikeText(head) {
@@ -192,10 +203,26 @@ func VerifyZipContainer(path string, format Format, lim Limits) error {
 	for _, f := range zr.File {
 		total += int64(f.UncompressedSize64)
 		if total > lim.MaxZipUncompressed {
-			return &ValidationError{Code: "suspicious_compression", Msg: "uncompressed size exceeds limit"}
+			// Not a bomb signal but a real limit: the configured engines cannot
+			// expand documents this large (xberg caps at 500 MiB, docling-rs at
+			// 10M cells). Report it as a size problem so callers can act on it.
+			return &ValidationError{
+				Code: "expanded_too_large",
+				Msg: fmt.Sprintf("expanded archive needs %d MiB (limit %d MiB); the parsers cannot process documents this large",
+					total>>20, lim.MaxZipUncompressed>>20),
+			}
 		}
-		if f.CompressedSize64 > 0 && float64(f.UncompressedSize64)/float64(f.CompressedSize64) > lim.MaxZipRatio && f.UncompressedSize64 > 1<<20 {
-			return &ValidationError{Code: "suspicious_compression", Msg: "compression ratio exceeds limit"}
+		// Bomb signal: an extreme ratio (>200:1 by default) on a part that is not
+		// trivially small. Legitimate Excel XML compresses ~10-40x, so a real
+		// deflate bomb is an order of magnitude away from the legit distribution.
+		if f.CompressedSize64 > 0 && f.UncompressedSize64 > 1<<20 {
+			ratio := float64(f.UncompressedSize64) / float64(f.CompressedSize64)
+			if ratio > lim.MaxZipRatio {
+				return &ValidationError{
+					Code: "suspicious_compression",
+					Msg:  fmt.Sprintf("compression ratio %.0f:1 on a %d MiB part exceeds the bomb threshold", ratio, f.UncompressedSize64>>20),
+				}
+			}
 		}
 		switch format.Name {
 		case "docx":
@@ -234,28 +261,36 @@ func CheckPDF(path string, lim Limits) (pages int, encrypted bool, err error) {
 	if err != nil {
 		return 0, false, err
 	}
-	// Scan at most 32 MiB of the tail and head for structural markers.
+	// Read head and tail before judging: a PDF's trailer/`startxref` lives at the
+	// end of the file, so checking only the first MiB rejected 30 % of a real
+	// corpus as "markers missing" (found by the test_data run, PR-01 follow-up).
 	buf := make([]byte, 1<<20)
 	if _, err := io.ReadFull(f, buf); err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return 0, false, err
 	}
-	// Structural pre-flight: a real PDF must show at least one object/trailer
-	// marker. This rejects renamed binaries and truncated garbage before an
-	// engine is invoked, without attempting a full parse.
-	if !bytes.Contains(buf, []byte("%%EOF")) && !bytes.Contains(buf, []byte("startxref")) &&
-		!bytes.Contains(buf, []byte("/Root")) {
-		return 0, false, &ValidationError{Code: "malformed_file", Msg: "PDF structure markers are missing"}
-	}
-	pages = countPageObjects(buf)
-	encrypted = bytes.Contains(buf, []byte("/Encrypt"))
+	var tail []byte
 	if st.Size() > int64(len(buf)) {
-		if _, err := f.Seek(max64(0, st.Size()-8<<20), io.SeekStart); err == nil {
-			tail := make([]byte, 8<<20)
-			n, _ := io.ReadFull(f, tail)
-			pages += countPageObjects(tail[:n])
-			encrypted = encrypted || bytes.Contains(tail[:n], []byte("/Encrypt"))
+		if _, err := f.Seek(max64(0, st.Size()-(8<<20)), io.SeekStart); err == nil {
+			tail = make([]byte, 8<<20)
+			n, rerr := io.ReadFull(f, tail)
+			tail = tail[:n]
+			if rerr != nil && !errors.Is(rerr, io.ErrUnexpectedEOF) && !errors.Is(rerr, io.EOF) {
+				return 0, false, rerr
+			}
 		}
 	}
+
+	// Structural pre-flight: a real PDF must show at least one object/trailer
+	// marker in the head or the tail. This rejects renamed binaries and
+	// truncated garbage before an engine is invoked, without a full parse.
+	has := func(marker []byte) bool {
+		return bytes.Contains(buf, marker) || bytes.Contains(tail, marker)
+	}
+	if !has([]byte("%%EOF")) && !has([]byte("startxref")) && !has([]byte("/Root")) {
+		return 0, false, &ValidationError{Code: "malformed_file", Msg: "PDF structure markers are missing"}
+	}
+	pages = countPageObjects(buf) + countPageObjects(tail)
+	encrypted = has([]byte("/Encrypt"))
 	if lim.MaxPages > 0 && pages > lim.MaxPages {
 		return pages, encrypted, &ValidationError{Code: "page_limit_exceeded", Msg: fmt.Sprintf("document has ~%d pages (limit %d)", pages, lim.MaxPages)}
 	}

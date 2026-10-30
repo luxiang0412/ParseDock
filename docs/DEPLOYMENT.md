@@ -85,6 +85,7 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--tombstone-ttl` | `PARSEDOCK_TOMBSTONE_TTL` | `10m` | 410 window |
 | `--max-upload-mb` | `PARSEDOCK_MAX_UPLOAD_MB` | `64` | upload cap |
 | `--max-pages` | `PARSEDOCK_MAX_PAGES` | `500` | PDF page cap |
+| (limits) | – | 512 MiB expanded, 200:1 ratio | OOXML expansion cap; the parsers themselves cap lower (xberg 500 MiB, docling-rs 10M cells per sheet) |
 | `--min-free-gb` | `PARSEDOCK_MIN_FREE_GB` | `2` | disk watermark |
 | `--max-attempts` | `PARSEDOCK_MAX_ATTEMPTS` | `3` | retries |
 | `--rate-limit` / `--rate-burst` | `PARSEDOCK_RATE_LIMIT(_BURST)` | `20` / `40` | per-owner |
@@ -130,6 +131,22 @@ after a restore while an active job still downloads.
   (404) on purpose.
 * Volume growth is bounded by `result_ttl` x ingress rate; monitor `data/` usage and
   `readyz.checks.free_bytes`.
+
+## 6b. Measured limits on a real corpus
+
+A 958-file real corpus (554 PDF, 294 XLSX, 71 XLSM, …) parsed end-to-end with
+`xberg` + `docling-rs` at a 96.9 % completion rate. The remaining failures are
+limits, not bugs, and they are reported with stable codes:
+
+| Cause | Code | Corpus count | Action |
+| --- | --- | --- | --- |
+| expanded OOXML > parser limit (xberg 500 MiB, docling-rs 10M cells) | `expanded_too_large` (413) | 14 (58–74 MiB SAP ledgers) | raise/prune at the source, or add per-sheet window extraction (PR-06) |
+| encrypted PDF | `encrypted_file` | 8 | out of scope (no password support) |
+| > 500 pages | `page_limit_exceeded` | 1 | raise `--max-pages` if the tenant needs it |
+| corrupt/zero-padded PDF, empty XLSX | `unsupported_type` / `malformed_file` | 5 | rejected before an engine runs |
+
+`tests/integration/batch_parse.py` reproduces the run (redacted by default:
+hashed file ids, no document text).
 
 ## 7. Known deployment gaps
 

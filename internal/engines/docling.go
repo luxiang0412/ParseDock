@@ -104,6 +104,9 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 	}
 	spec := CLISpec{Bin: d.Bin, Env: d.ExtraEnv, Sandbox: d.Sandbox, MaxOutput: 512 << 20}
 	res, err := RunCLI(ctx, spec, d.ModelRoot, args...)
+	if err != nil && res != nil && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
+		err = nil
+	}
 	if err != nil {
 		if res != nil && res.TimedOut {
 			return nil, Errf(true, jobs.ErrTimeout, "docling-rs timed out after %s", timeout)
@@ -111,11 +114,12 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 		if errors.Is(err, ErrSandboxUnavailable) {
 			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
 		}
-		msg := "docling-rs failed"
+		code, msg := jobs.ErrMalformed, "docling-rs failed"
 		if res != nil {
-			msg = fmt.Sprintf("docling-rs exit %d: %s", res.ExitCode, tail(string(res.Stderr), 400))
+			code, msg = ClassifyCLIError(string(res.Stderr))
+			msg = fmt.Sprintf("docling-rs exit %d: %s", res.ExitCode, msg)
 		}
-		return nil, Errf(false, jobs.ErrMalformed, "%s", msg)
+		return nil, &Error{Code: code, Message: msg}
 	}
 	if req.Progress != nil {
 		req.Progress(80, "engine_done")
@@ -137,6 +141,16 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 	}
 	if err := mapDocling(doc, res.Stdout, pageKind(req.Format)); err != nil {
 		return nil, Errf(false, jobs.ErrMalformed, "%v", err)
+	}
+	if len(doc.Elements) == 0 && len(doc.Tables) == 0 {
+		// docling-rs succeeds but skips oversized sheets (cell cap) and pages it
+		// cannot handle; surface that instead of a misleading "no text".
+		code, msg := ClassifyCLIError(string(res.Stderr))
+		if code == jobs.ErrExpandedTooLarge {
+			return nil, &Error{Code: code, Message: msg}
+		}
+		return nil, Errf(false, jobs.ErrMalformed,
+			"docling-rs produced no content (size/cell limits or unsupported layout): %s", msg)
 	}
 	if d.TextLayerOnly {
 		doc.AddWarning(documentir.WarnLayoutHeuristic,

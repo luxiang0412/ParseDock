@@ -261,7 +261,7 @@ func validationErr(err error) error {
 	if errors.As(err, &ve) {
 		status := 422
 		switch ve.Code {
-		case jobs.ErrTooLarge:
+		case jobs.ErrTooLarge, jobs.ErrExpandedTooLarge:
 			status = 413
 		case jobs.ErrUnsupportedType:
 			status = 415

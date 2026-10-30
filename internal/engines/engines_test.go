@@ -183,3 +183,63 @@ func TestSandboxUnavailableIsExplicit(t *testing.T) {
 		}
 	}
 }
+
+// Real-corpus failure messages: the classifier must surface the cause, not the
+// last 400 bytes of log noise (which hid "Archive too large" behind a WARN line).
+func TestClassifyCLIError(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		code string
+		want string
+	}{
+		{
+			name: "xberg archive too large, behind a warn line",
+			in: "2026-10-30T10:04:03Z  WARN xberg::concurrency: detected 24 CPU cores but no max_threads set; capping at 8\n" +
+				"Error: Failed to extract input 'x.xlsx'\n\nCaused by:\n    0: Security violation: Archive too large: 743948692 bytes (max: 524288000 bytes)\n    1: Archive too large: 743948692 bytes (max: 524288000 bytes)\n",
+			code: jobs.ErrExpandedTooLarge,
+			want: "Archive too large",
+		},
+		{
+			name: "docling-rs skipped every sheet",
+			in:   "docling: sheet \"Planilha1\": used area 709570×19 cells (13481830) exceeds DOCLING_RS_SHEET_MAX_CELLS (10000000); sheet skipped\n",
+			code: jobs.ErrExpandedTooLarge,
+			want: "DOCLING_RS_SHEET_MAX_CELLS",
+		},
+		{
+			name: "timeout",
+			in:   "Error: timed out after 900s",
+			code: jobs.ErrTimeout,
+			want: "timed out",
+		},
+		{
+			name: "encrypted",
+			in:   "Error: document is password protected",
+			code: jobs.ErrEncrypted,
+			want: "password",
+		},
+		{
+			name: "generic failure keeps the error text",
+			in:   "Traceback (most recent call last):\n  ...\nValueError: unexpected end of data",
+			code: jobs.ErrMalformed,
+			want: "unexpected end of data",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			code, msg := ClassifyCLIError(c.in)
+			if code != c.code {
+				t.Fatalf("code = %s, want %s", code, c.code)
+			}
+			if !strings.Contains(msg, c.want) {
+				t.Fatalf("message %q does not contain %q", msg, c.want)
+			}
+			if strings.Contains(msg, "capping at 8") {
+				t.Fatalf("log noise leaked into the error: %q", msg)
+			}
+			if len(msg) > 700 {
+				t.Fatalf("message not truncated: %d bytes", len(msg))
+			}
+		})
+	}
+}

@@ -1353,6 +1353,7 @@ components:
           - encrypted_file
           - page_limit_exceeded
           - suspicious_compression
+          - expanded_too_large
           - quota_exceeded
           - insufficient_storage
           - engine_unavailable
