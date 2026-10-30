@@ -280,7 +280,20 @@ Notes:
   the process (a coordinator restart is already the documented recovery operation).
 * `tests/integration/pr07_tls.py` is the executable version of this section.
 
-## 6d. Observability
+## 6d. Backups and drill
+
+```bash
+# Online, from a running coordinator: consistent snapshot + verified file copy.
+scripts/backup_online.py --data-dir /data --out /backups/$(date +%F) --verify
+# Restore into an empty directory (the script refuses a non-empty target).
+scripts/restore.sh /backups/2026-11-01 /data
+make drill            # the same round trip, measured, on this host
+```
+
+Only jobs with `retention_status=active` are copied: a released result must never come back
+from a backup. See `docs/RUNBOOK.md` §1 for the drill output and RTO/RPO definitions.
+
+## 6e. Observability
 
 Scrape `/internal/metrics` on the coordinator's **internal** listener with the internal
 token (mTLS when enabled):

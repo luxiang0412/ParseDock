@@ -113,6 +113,9 @@ metrics: ## observability contract: metrics exist, throttling counted, no conten
 sdk-check: ## Python + CLI + Java SDK build and one version across all artefacts
 	bash scripts/sdk-check.sh
 
+drill: ## online backup + restore drill with RTO (PR-12)
+	python3 tests/integration/pr12_drill.py
+
 gate: ## engine quality gate vs benchmark/results/baseline.json
 	python3 benchmark/scripts/gate.py
 

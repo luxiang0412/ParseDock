@@ -450,6 +450,30 @@ takes minutes.
 
 **DoD.** `docs/RUNBOOK.md` with commands and expected outputs.
 
+**Status: DONE (PR-12).** Delivered and verified:
+
+* **Online backup** `scripts/backup_online.py`: SQLite backup API on a live WAL database
+  (no coordinator stop), file tree copied afterwards and driven by that snapshot, only
+  servable (`active`) artifacts copied, `--verify` runs `PRAGMA integrity_check` plus
+  per-artifact SHA-256/size, and a JSON report with timings. The offline
+  `scripts/backup.sh`/`restore.sh` from PR-00 remain for planned maintenance.
+* **Restore drill** `tests/integration/pr12_drill.py` (`make drill`, wired into the CI
+  lifecycle phase): online backup of a running stack verifies (5/5), the released job's
+  artifacts are absent from the backup, the active result is downloadable with the **same
+  `result_version`** after a restore, the released job comes back `released` with `410`, and
+  **RTO is measured** (restore + start until `/readyz`: 0.1 s on the PoC host with the mock
+  engine; RPO = backup interval, the snapshot itself is consistent).
+* **`docs/RUNBOOK.md`**: facts/where-state-lives table, backup/restore with the drill output,
+  a zero-result-loss coordinator upgrade (drain → backup → restart → verify), and incident
+  playbooks for coordinator down, queue stall, no workers, cleanup failing, disk low, lease
+  storm, engine OOM loop, certificate expiry and tenant throttling — each with the metric
+  that fires, the commands, and the condition that proves recovery.
+
+**Not delivered:** automated coordinator failover/leader election (out of scope by design:
+one stateful coordinator, restart is the documented recovery) and a timed drill on a data
+volume large enough to make RTO minutes rather than sub-second — the drill *measures* RTO on
+whatever data it is given, so it will report the real number on production-sized data.
+
 ---
 
 ## Sequencing

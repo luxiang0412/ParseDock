@@ -1,0 +1,315 @@
+{
+  "profile": "lifecycle",
+  "engines": "native,xberg,docling-rs",
+  "started_at": "2026-10-30T20:27:52.303528+00:00",
+  "finished_at": "2026-10-30T20:29:51.653750+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "7f2e4187e0daae4736f100d9a39cc615f9ff626b9e81d0cd6db8e5dc80c7dfb3",
+  "cases": [
+    {
+      "id": "T03",
+      "name": "ACK releases the result and later downloads return 410",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRWZTQ7WJ0RMW29QFFEQ9MGG",
+        "result_version": "sha256:085279fca675fd864e03c7ea17087199059b4ae66773fe8e11a09dcbdd62a2c4",
+        "files_before": {
+          "inputs/job_06GRWZTQ7WJ0RMW29QFFEQ9MGG/meta.json": 106,
+          "inputs/job_06GRWZTQ7WJ0RMW29QFFEQ9MGG/input.bin": 134,
+          "results/job_06GRWZTQ7WJ0RMW29QFFEQ9MGG/result.txt": 104,
+          "results/job_06GRWZTQ7WJ0RMW29QFFEQ9MGG/result.md": 107,
+          "results/job_06GRWZTQ7WJ0RMW29QFFEQ9MGG/result.json": 797,
+          "results/job_06GRWZTQ7WJ0RMW29QFFEQ9MGG/manifest.json": 691
+        },
+        "files_after": {},
+        "ack_http": 202,
+        "post_ack_download": 410,
+        "final_retention": "released",
+        "elapsed_s": 2.05
+      },
+      "error": ""
+    },
+    {
+      "id": "T04",
+      "name": "no ACK: TTL expires the result, 410 inside tombstone, metadata purged later",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRWZTYETH7VDC1FJS0203TM0",
+        "result_expires_at": "2026-10-30T20:27:57.203757Z",
+        "first_download": 200,
+        "after_ttl": 410,
+        "retention": "expired",
+        "tombstone_purged_404": true,
+        "files_left": {},
+        "elapsed_s": 24.16
+      },
+      "error": ""
+    },
+    {
+      "id": "T05",
+      "name": "ACK during an active download waits for the download lease",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRWZXXNACW6P2D6QCT3C67EM",
+        "lease_id": "dl_06GRWZY484CG5SQ51HABT941P0",
+        "first_download_bytes": 33554601,
+        "ack_http": 202,
+        "second_download_http": 410,
+        "files_during_ack": {
+          "inputs/job_06GRWZXXNACW6P2D6QCT3C67EM/meta.json": 107,
+          "inputs/job_06GRWZXXNACW6P2D6QCT3C67EM/input.bin": 746,
+          "results/job_06GRWZXXNACW6P2D6QCT3C67EM/result.txt": 33554597,
+          "results/job_06GRWZXXNACW6P2D6QCT3C67EM/result.md": 33554601,
+          "results/job_06GRWZXXNACW6P2D6QCT3C67EM/result.json": 34087970,
+          "results/job_06GRWZXXNACW6P2D6QCT3C67EM/manifest.json": 705
+        },
+        "final_retention": "released",
+        "elapsed_s": 5.09
+      },
+      "error": ""
+    },
+    {
+      "id": "T06",
+      "name": "repeated ACK is idempotent and does not touch other jobs",
+      "status": "PASS",
+      "detail": {
+        "job_a": "job_06GRWZYGR3K11588APJR5XDDCW",
+        "job_b": "job_06GRWZYGRTZT70B07PPKQ5NFGG",
+        "ack1": 202,
+        "ack2": 202,
+        "ack_stale_version": 202,
+        "other_job_download": 200,
+        "elapsed_s": 1.85
+      },
+      "error": ""
+    },
+    {
+      "id": "T07",
+      "name": "ACK racing TTL yields exactly one final state and no orphan files",
+      "status": "PASS",
+      "detail": {
+        "races": [
+          {
+            "job_id": "job_06GRWZYQZNP5Y2HZASZKHYJCT4",
+            "final": "released",
+            "files": {}
+          },
+          {
+            "job_id": "job_06GRWZZ3M84TXGCSD14BXDMYYM",
+            "final": "released",
+            "files": {}
+          },
+          {
+            "job_id": "job_06GRWZZF825JYFNCW4PXG5DED4",
+            "final": "released",
+            "files": {}
+          },
+          {
+            "job_id": "job_06GRWZZZ1ZBM08YXDNAQB1XQW4",
+            "final": "released",
+            "files": {}
+          }
+        ],
+        "elapsed_s": 12.98
+      },
+      "error": ""
+    },
+    {
+      "id": "T08",
+      "name": "SIGKILL during cleanup: restart finishes the job with no orphan data",
+      "status": "PASS",
+      "detail": {
+        "jobs": [
+          "job_06GRX00APEM5B206ESGR40MCEG",
+          "job_06GRX00FFTQDTAVNX1K9YYXS8G",
+          "job_06GRX00MVX43ZY2CDCC70GB154"
+        ],
+        "files_after_sigkill": {
+          "job_06GRX00APEM5B206ESGR40MCEG": {},
+          "job_06GRX00FFTQDTAVNX1K9YYXS8G": {},
+          "job_06GRX00MVX43ZY2CDCC70GB154": {
+            "inputs/job_06GRX00MVX43ZY2CDCC70GB154/meta.json": 106,
+            "inputs/job_06GRX00MVX43ZY2CDCC70GB154/input.bin": 134,
+            "results/job_06GRX00MVX43ZY2CDCC70GB154/result.txt": 104,
+            "results/job_06GRX00MVX43ZY2CDCC70GB154/result.md": 107,
+            "results/job_06GRX00MVX43ZY2CDCC70GB154/result.json": 797,
+            "results/job_06GRX00MVX43ZY2CDCC70GB154/manifest.json": 691
+          }
+        },
+        "files_after_restart": {
+          "job_06GRX00APEM5B206ESGR40MCEG": {},
+          "job_06GRX00FFTQDTAVNX1K9YYXS8G": {},
+          "job_06GRX00MVX43ZY2CDCC70GB154": {}
+        },
+        "retention_after_restart": {
+          "job_06GRX00APEM5B206ESGR40MCEG": "released",
+          "job_06GRX00FFTQDTAVNX1K9YYXS8G": "released",
+          "job_06GRX00MVX43ZY2CDCC70GB154": "released"
+        },
+        "elapsed_s": 7.84
+      },
+      "error": ""
+    },
+    {
+      "id": "T09",
+      "name": "worker SIGKILL: lease expires, job retries, stale token cannot submit",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRX01A4HKQ2J8Z8J65WDBBJ4",
+        "attempts": [
+          {
+            "attempt_no": 1,
+            "state": "expired"
+          },
+          {
+            "attempt_no": 2,
+            "state": "succeeded"
+          }
+        ],
+        "stale_result_http": 409,
+        "stale_heartbeat_http": 409,
+        "final_status": "completed",
+        "result_version": "sha256:eacb3ae344e2a976f5054c36b19ab9b73efed91092642f2fe48d06110e9b525f",
+        "elapsed_s": 49.74
+      },
+      "error": ""
+    },
+    {
+      "id": "T10",
+      "name": "two API replicas: any replica can query, download and ACK the same job",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRX07BKG4P6BYCEPA06XYVXW",
+        "create_port": 46271,
+        "query_port": 45561,
+        "sse_content_type": "text/event-stream",
+        "sse_events": [
+          "event: snapshot"
+        ],
+        "ack_port": 45561,
+        "ack_http": 202,
+        "elapsed_s": 0.64
+      },
+      "error": ""
+    },
+    {
+      "id": "T12",
+      "name": "device=gpu_required without a GPU worker is an explicit failure, never silent CPU",
+      "status": "PASS",
+      "detail": {
+        "create_status": 409,
+        "error_code": "gpu_unavailable",
+        "gpu_jobs_persisted": 0,
+        "elapsed_s": 0.01
+      },
+      "error": ""
+    },
+    {
+      "id": "T13",
+      "name": "invalid and adversarial uploads are rejected without crashing",
+      "status": "PASS",
+      "detail": {
+        "empty": {
+          "http": 400,
+          "code": "malformed_file"
+        },
+        "corrupt": {
+          "http": 422,
+          "code": "malformed_file"
+        },
+        "wrong_ext": {
+          "http": 415,
+          "code": "unsupported_type"
+        },
+        "password": {
+          "http": 422,
+          "code": "encrypted_file"
+        },
+        "zipbomb": {
+          "http": 422,
+          "code": "suspicious_compression"
+        },
+        "fake_zip": {
+          "http": 422,
+          "code": "malformed_file"
+        },
+        "still_alive": true,
+        "elapsed_s": 1.39
+      },
+      "error": ""
+    },
+    {
+      "id": "T14",
+      "name": "disk watermark blocks new uploads but keeps live results readable",
+      "status": "PASS",
+      "detail": {
+        "existing_job": "job_06GRX07KHWSC5JDQ45V1Q73BMM",
+        "result_version": "sha256:dcf5d10d07d8614fea8be1907285dce9619816f020ec2360fd681f825698353b",
+        "upload_after_restore_http": 202,
+        "upload_http": 507,
+        "upload_code": "insufficient_storage",
+        "existing_download_http": 200,
+        "existing_bytes": 107,
+        "elapsed_s": 2.86
+      },
+      "error": ""
+    },
+    {
+      "id": "T15",
+      "name": "stale attempt writes are rejected by lease fencing",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRX07YQB8JJ29DD88CE1MRS8",
+        "late_result_http": 409,
+        "late_fail_http": 409,
+        "result_version_unchanged": "sha256:07165b8c0ef204a7ae57b12deafb0c6cd4211fcd6800a95d1f7c1597c2da9b19",
+        "page_count_unchanged": 1,
+        "elapsed_s": 1.28
+      },
+      "error": ""
+    },
+    {
+      "id": "T16",
+      "name": "released/expired jobs return 410 during the tombstone window",
+      "status": "PASS",
+      "detail": {
+        "released": {
+          "download_http": 410,
+          "job_http": 200,
+          "retention": "released"
+        },
+        "expired": {
+          "download_http": 410,
+          "retention": "expired"
+        },
+        "cross_owner": {
+          "http": 401,
+          "code": "unauthorized"
+        },
+        "elapsed_s": 4.59
+      },
+      "error": ""
+    },
+    {
+      "id": "T17",
+      "name": "cancel during a parse stops the worker within the heartbeat budget",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GRX08NMF9Q0WQ9YJ4GNFHM8W",
+        "cancel_observed_s": 0.01,
+        "cancel_requested_at": "2026-10-30T20:29:47.602982Z",
+        "worker_stopped": true,
+        "attempt_states": [
+          "cancelled"
+        ],
+        "retention": "released",
+        "elapsed_s": 4.83
+      },
+      "error": ""
+    }
+  ]
+}

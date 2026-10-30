@@ -97,6 +97,7 @@ phase_lifecycle() {
   step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
   step "PR-07 mutual TLS" python3 "$ROOT/tests/integration/pr07_tls.py" || return 1
   step "PR-09 metrics contract" python3 "$ROOT/tests/integration/pr09_metrics.py" || return 1
+  step "PR-12 backup/restore drill" python3 "$ROOT/tests/integration/pr12_drill.py" || return 1
 }
 
 phase_image() {

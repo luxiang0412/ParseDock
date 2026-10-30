@@ -768,7 +768,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -789,7 +789,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	var startedRaw sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
 		Scan(&ownerID, &startedRaw); err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	var attemptStart sql.NullString
@@ -847,8 +847,9 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 				_ = s.Store.DeleteResults(p.JobID)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
 			}
-			// The job is terminal now; its input and the rejected result go away.
-			_ = s.Store.DeleteJob(p.JobID)
+			// The job is terminal now; its input and the rejected result go away unless a
+			// download lease (client or online backup) still protects them.
+			s.deleteJobUnlessLeased(ctx, p.JobID)
 			s.appendEvent(ctx, p.JobID, "failed", map[string]any{
 				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false})
 			return nil, NewError(429, jobs.ErrQuotaExceeded, msg)
@@ -866,17 +867,19 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		ts(now), ts(expires), manifest.Version, filepath.Join(s.Store.ResultDir(p.JobID), "manifest.json"),
 		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 	if err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "complete: "+err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		_ = tx.Rollback()
-		_ = s.Store.DeleteJob(p.JobID) // late result from a superseded attempt
+		// Late result from a superseded attempt: drop only what this attempt wrote. The
+		// input belongs to the job, which another attempt may still be parsing.
+		_ = s.Store.DeleteResults(p.JobID)
 		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'succeeded', engine = ?, device_type = ?
 		WHERE job_id = ? AND lease_token = ?`, p.Engine, p.Device, p.JobID, p.Token); err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
 	}
 	for _, a := range manifest.Files {
@@ -884,16 +887,16 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			VALUES(?,?,?,?,?,1,?) ON CONFLICT(job_id, kind) DO UPDATE SET path=excluded.path, size=excluded.size,
 			sha256=excluded.sha256, generation=artifacts.generation+1, ready_at=excluded.ready_at`,
 			p.JobID, a.Name, s.Store.ResultPath(p.JobID, a.Name), a.Size, a.SHA256, ts(now)); err != nil {
-			_ = s.Store.DeleteJob(p.JobID)
+			_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
 		}
 	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	if err := tx.Commit(); err != nil {
-		_ = s.Store.DeleteJob(p.JobID)
+		_ = s.Store.DeleteResults(p.JobID) // only this attempt's result; input and state are untouched
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
@@ -959,9 +962,13 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		return s.GetJob(ctx, jobID, "")
 	}
 
+	// Failed jobs are metadata-only, so the files become cleanup's responsibility in the
+	// same transaction that records the failure. Moving to release_pending here (rather than
+	// after a separate lease check) is what makes the decision atomic: a concurrent backup
+	// pin only accepts 'active' rows, so it either wins (and Fail sees the lease) or loses
+	// (and the backup retries with a fresh snapshot).
 	if _, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
-		error_code = ?, error_message = ?, retention_status = CASE WHEN retention_status = 'active'
-		THEN 'active' ELSE retention_status END, updated_at = ?
+		error_code = ?, error_message = ?, retention_status = 'release_pending', updated_at = ?
 		WHERE id = ? AND processing_status = 'running'`,
 		ts(now), code, truncate(msg, 500), ts(now), jobID); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
@@ -974,8 +981,43 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	s.appendEvent(ctx, jobID, "failed", map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable})
-	_ = s.Store.DeleteJob(jobID) // failed jobs keep metadata only; no input retained
+	// A client (or an online backup) may hold a live download lease on the input; deleting
+	// under it would pull the bytes out from under a reader. In that case the cleaner removes
+	// the files once the lease expires (it already honours download_leases).
+	if le, lerr := s.hasActiveDownloadLease(ctx, jobID); lerr != nil || le {
+		// Unknown is treated as leased: the cleaner will remove the files later.
+		return s.GetJob(ctx, jobID, "")
+	}
+	_ = s.Store.DeleteJob(jobID)
 	return s.GetJob(ctx, jobID, "")
+}
+
+// deleteJobUnlessLeased removes a job's files unless a live download lease protects them.
+// Every terminal path that discards files goes through here: an online backup pins jobs with
+// exactly these leases, and deleting under one would break a copy that already snapshotted
+// the job. The cleaner removes the files once the lease expires.
+func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
+	// Move the job out of 'active' before deciding. Pinning only accepts active rows, so the
+	// database arbitrates the race: either the pin commits first (we then see the lease) or
+	// this update wins and the pin fails, making the backup retry with a fresh snapshot.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
+		WHERE id = ? AND retention_status = 'active'`, ts(nowUTC()), jobID); err != nil {
+		return // cannot authorise deletion; leave the files to the cleaner
+	}
+	le, err := s.hasActiveDownloadLease(ctx, jobID)
+	if err != nil || le {
+		// A failed lookup is not permission to delete: the lease may exist.
+		return
+	}
+	_ = s.Store.DeleteJob(jobID)
+}
+
+// hasActiveDownloadLease reports whether a live download lease exists for the job.
+func (s *Service) hasActiveDownloadLease(ctx context.Context, jobID string) (bool, error) {
+	var n int
+	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM download_leases
+		WHERE job_id = ? AND expires_at > ?`, jobID, ts(nowUTC())).Scan(&n)
+	return n > 0, err
 }
 
 func (s *Service) checkLease(ctx context.Context, jobID, token string) error {
