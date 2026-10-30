@@ -133,16 +133,29 @@ def main() -> int:
             ver = stack.get_job(jid).json()["result_version"]
             assert stack.ack(jid, ver).status == 202
             stack.wait_retention(jid, {"released"}, timeout=40)
-            log = stack.logs["coordinator"].read_text(errors="replace")
-            lines = []
-            for line in log.splitlines():
-                try:
-                    obj = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if obj.get("audit") is True:
-                    lines.append(obj)
-            events = [o["event"] for o in lines]
+
+            def audit_lines():
+                out = []
+                for line in stack.logs["coordinator"].read_text(errors="replace").splitlines():
+                    try:
+                        obj = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if obj.get("audit") is True:
+                        out.append(obj)
+                return out
+
+            # The retention status is committed before the audit line is appended (the
+            # audit describes the durable outcome), so poll instead of assuming both
+            # are visible at the same instant.
+            deadline = time.time() + 30
+            lines, events = audit_lines(), []
+            while time.time() < deadline:
+                lines = audit_lines()
+                events = [o["event"] for o in lines]
+                if {"job_created", "job_acked", "job_released"} <= set(events):
+                    break
+                time.sleep(0.25)
             assert "job_created" in events and "job_acked" in events and "job_released" in events, events
             created = [o for o in lines if o["event"] == "job_created" and o["job_id"] == jid][0]
             assert created["owner_id"] == OWNER
