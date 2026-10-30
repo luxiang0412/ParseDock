@@ -55,8 +55,8 @@
 An earlier design had the API call coordinator RPCs per operation. A reverse
 proxy is smaller, streams results/SSE without buffering, and makes "no sticky
 sessions" trivially true. The coordinator therefore exposes the public `/v1`
-routes on its *internal* listener, guarded by the internal token plus an owner
-header injected by the gateway. The public port never reaches the coordinator.
+routes on its *internal* listener, guarded by mTLS (optional, PR-07), the internal
+token and an owner header injected by the gateway. The public port never reaches the coordinator.
 
 ## 3. Request flow (async)
 
@@ -113,7 +113,7 @@ cleaner (every 60 s):
 | --- | --- |
 | public → api | bearer token → owner; keys stored as SHA-256 with scopes (`jobs:write`/`read`/`ack`); per-owner token bucket; `MaxBytesReader`; `X-Content-Type-Options: nosniff`; validated `X-Request-Id` |
 | api → coordinator | internal shared token; owner header stripped from client input |
-| worker → coordinator | internal token + per-task lease token; input/result authorised by token |
+| worker → coordinator | mTLS (PR-07) + internal token + per-task lease token; input/result authorised by token |
 | upload | extension + magic bytes + OOXML structure + zip-bomb ratio + PDF markers + page limit; multipart parts may arrive in any order without buffering the document |
 | representations | `ETag` validates one representation; `X-Result-Version` (manifest hash) is the only ACK token |
 | filenames | server-generated job ids; original name kept as metadata only (`filepath.Base`, control chars stripped) |

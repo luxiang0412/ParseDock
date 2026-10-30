@@ -226,6 +226,33 @@ by the wrong CA; load test produces a report under `benchmark/results/`.
 
 **DoD.** `docs/CLUSTER-LITE.md` numbers are measured, not predicted.
 
+**Status: PARTIAL (PR-07).** Delivered and verified:
+
+* **mTLS** — `internal/tlsutil` plus `--tls-cert/--tls-key/--tls-client-ca` on the
+  coordinator and `--tls-ca/--tls-cert/--tls-key/--tls-server-name` on api replicas and
+  workers. The shared token stays as an application-level authorisation layer.
+  `tests/integration/pr07_tls.py` (8 checks, wired into `make pr00` and the lifecycle
+  phase of `scripts/ci-local.sh`) proves against real processes: no client certificate
+  → rejected; certificate from a foreign CA → rejected; plaintext HTTP on the TLS port
+  → rejected; authorised api replica proxies a job end to end; worker completes a job
+  over mTLS; api replica without a client certificate cannot reach the coordinator
+  (502); coordinator log contains neither content nor secrets.
+* **Load** — `tests/load/loadgen.py` + `scripts/cluster-lite-load.sh` (`make load`)
+  start one coordinator, 2 api replicas and 2 workers and measure create→terminal
+  latency: **8.84 jobs/s at c=12** (p50 1.23 s, p95 1.53 s) and **8.75 jobs/s at c=64**
+  (p50 6.68 s) with zero failures. Two 200 ms mock parsers cap the stack at 10 jobs/s,
+  so the API/coordinator path reaches 88 % of the theoretical ceiling and is not the
+  bottleneck. Numbers and the reasoning are in `docs/CLUSTER-LITE.md` §7.
+* Worker registration persistence and `GET /internal/diagnostics/workers` already
+  existed (PR-00); unchanged here.
+
+Not delivered (blocked on hardware, not on design): **two-host** measurement
+(A: coordinator + 2 api, B: 4 workers) and a 30 s *network* partition. The partition
+path itself is covered by T09 (kill the stack mid-parse → lease expiry → recovery) and
+by `TestLease*`; only cross-host latency and MTU behaviour are unmeasured. The
+one-command procedure is documented in `docs/CLUSTER-LITE.md` §8 so it can be run on
+two hosts without further code changes.
+
 ---
 
 ## PR-08 — GPU worker image and routing

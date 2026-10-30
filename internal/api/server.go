@@ -9,6 +9,7 @@ package api
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"log/slog"
@@ -31,7 +32,10 @@ type Config struct {
 	RateLimitRPS   float64
 	RateBurst      int
 	MaxUploadBytes int64
-	Log            *slog.Logger
+	// TLS is the client configuration used towards the coordinator (mTLS when it
+	// carries a client certificate).
+	TLS *tls.Config
+	Log *slog.Logger
 }
 
 // Server is the HTTP gateway.
@@ -58,6 +62,14 @@ func New(cfg Config) (*Server, error) {
 		cfg.RateBurst = 40
 	}
 	s := &Server{cfg: cfg, log: cfg.Log, limiter: newLimiter(cfg.RateLimitRPS, cfg.RateBurst)}
+	transport := &http.Transport{
+		MaxIdleConns:        128,
+		MaxIdleConnsPerHost: 32,
+		IdleConnTimeout:     90 * time.Second,
+	}
+	if cfg.TLS != nil {
+		transport.TLSClientConfig = cfg.TLS
+	}
 
 	s.proxy = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
@@ -80,6 +92,7 @@ func New(cfg Config) (*Server, error) {
 			}
 			return nil
 		},
+		Transport: transport,
 		// Stream responses immediately: results and SSE must not be buffered.
 		FlushInterval: -1,
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

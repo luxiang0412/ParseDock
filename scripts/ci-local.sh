@@ -8,7 +8,7 @@
 #   static      pinned-input verification, gofmt, go vet, build
 #   unit        go test ./... + scoring unit tests
 #   contract    OpenAPI validation, spec/SDK/router drift, SDK regeneration drift
-#   lifecycle   mock acceptance (T03-T16), PR-00 runtime contract, backup/restore
+#   lifecycle   mock acceptance (T03-T16), PR-00/PR-02/PR-07 runtime contracts, backup/restore
 #   image       control-plane image build, smoke, digest, licence audit (report)
 #   engines     install real engines, real-engine acceptance, bench + score
 #   container   worker image build, container smoke with real engines, SBOM
@@ -92,6 +92,7 @@ phase_lifecycle() {
   step "PR-00 runtime contract" python3 "$ROOT/tests/integration/pr00_contract.py" || return 1
   step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
   step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
+  step "PR-07 mutual TLS" python3 "$ROOT/tests/integration/pr07_tls.py" || return 1
 }
 
 phase_image() {

@@ -48,10 +48,14 @@ ci-phase: ## run one CI phase (PHASE=static|unit|contract|lifecycle|image|engine
 container-smoke: ## end-to-end container smoke with real engines
 	bash scripts/container-smoke.sh
 
-pr00: contract ## runtime contract checks (PR-00 + PR-02 scenarios)
+pr00: contract ## runtime contract checks (PR-00/PR-02/PR-07 scenarios)
 	python3 tests/integration/pr00_contract.py
 	python3 tests/integration/backup_restore.py
 	python3 tests/integration/pr02_contract.py
+	python3 tests/integration/pr07_tls.py
+
+load: ## cluster-lite load check (mock engine): make load JOBS=200 CONC=32
+	bash scripts/cluster-lite-load.sh $(or $(JOBS),120) $(or $(CONC),12)
 
 score: ## regenerate benchmark scores + docs tables
 	$(PY_FIX) benchmark/scripts/score.py --write

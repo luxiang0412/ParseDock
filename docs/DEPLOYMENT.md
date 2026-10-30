@@ -197,12 +197,68 @@ limits, not bugs, and they are reported with stable codes:
 `tests/integration/batch_parse.py` reproduces the run (redacted by default:
 hashed file ids, no document text); full report in `docs/REAL-CORPUS-TEST.md`.
 
+## 6c. Mutual TLS (cluster-lite)
+
+The internal token stays, but mTLS is what proves *which host* is calling. Generate one
+CA per deployment; the coordinator is the server, api replicas and workers are clients.
+
+```bash
+# CA (keep the key offline after issuing certificates)
+openssl req -x509 -newkey rsa:4096 -nodes -days 1825 -keyout ca.key -out ca.crt \
+  -subj "/CN=parsedock-internal-ca"
+
+# coordinator (server): SAN must cover the address the clients dial
+openssl req -newkey rsa:2048 -nodes -keyout coordinator.key -out coordinator.csr \
+  -subj "/CN=coordinator"
+printf "subjectAltName=DNS:coordinator.internal,IP:10.0.0.10\n" > server.ext
+openssl x509 -req -in coordinator.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+  -days 730 -out coordinator.crt -extfile server.ext
+
+# client certificate (repeat per api replica / worker)
+for name in api-1 worker-1 worker-2; do
+  openssl req -newkey rsa:2048 -nodes -keyout $name.key -out $name.csr -subj "/CN=$name"
+  printf "" > client.ext
+  openssl x509 -req -in $name.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
+    -days 730 -out $name.crt -extfile client.ext
+done
+```
+
+```bash
+# coordinator
+docparse --role coordinator --internal-listen 0.0.0.0:8081 \
+  --tls-cert coordinator.crt --tls-key coordinator.key --tls-client-ca ca.crt
+
+# each api replica
+docparse --role api --listen 0.0.0.0:8080 \
+  --coordinator-url https://coordinator.internal:8081 --tls-ca ca.crt \
+  --tls-cert api-1.crt --tls-key api-1.key --tls-server-name coordinator.internal
+
+# each worker
+docparse --role worker --coordinator-url https://coordinator.internal:8081 \
+  --tls-ca ca.crt --tls-cert worker-1.crt --tls-key worker-1.key \
+  --tls-server-name coordinator.internal
+```
+
+Notes:
+
+* `--tls-client-ca` is what makes it mutual. Without it the coordinator accepts any
+  client, which is only appropriate on a single development host.
+* `--tls-server-name` is required when dialling an IP literal, because Go verifies the
+  certificate against the dialled name.
+* `--tls-insecure` skips verification and exists only for throwaway certificates; the
+  release checklist refuses it in a shipped configuration.
+* Certificates are loaded at start-up; rotation means replacing the file and restarting
+  the process (a coordinator restart is already the documented recovery operation).
+* `tests/integration/pr07_tls.py` is the executable version of this section.
+
 ## 7. Known deployment gaps
 
-* `--internal-token` is a shared static secret (mTLS is P1). The coordinator refuses
-  to bind a non-loopback internal address without it.
+* `--internal-token` is a shared static secret; mTLS (PR-07) now provides transport
+  identity on top of it (see §6c). The coordinator refuses to bind a non-loopback
+  internal address without the token, and certificate rotation still needs a restart.
 * No automatic Coordinator failover; the orchestrator must restart the single replica.
-* No TLS termination inside ParseDock; put it behind the ingress/load balancer.
+* Public TLS termination is still the ingress/load balancer's job; ParseDock's own TLS
+  covers the **internal** hop only.
 * No GPU image built in Phase 0 (recipe and acceptance steps in `GPU-REPORT.md` §4).
 * `apache/tika:latest-full` is a moving tag in the PoC; pin the digest in production.
 * **Distribution gate.** `make license-audit` writes `build/sbom/<image>.json` and

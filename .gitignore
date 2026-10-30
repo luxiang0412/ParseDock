@@ -20,3 +20,6 @@ dist/
 
 # SBOM/licence gate output
 build/
+
+# local build output
+bin/

@@ -31,6 +31,7 @@ import (
 	"parsedock.dev/parsedock/internal/jobs"
 	"parsedock.dev/parsedock/internal/storage"
 	"parsedock.dev/parsedock/internal/sysinfo"
+	"parsedock.dev/parsedock/internal/tlsutil"
 	"parsedock.dev/parsedock/internal/worker"
 )
 
@@ -87,6 +88,12 @@ type flags struct {
 	mineruTimeout    time.Duration
 	engineMaxRSSMB   int64
 	escalateScans    bool
+	tlsCert          string
+	tlsKey           string
+	tlsClientCA      string
+	tlsCA            string
+	tlsServerName    string
+	tlsInsecure      bool
 	doclingRSBin     string
 	doclingRSModel   string
 	doclingRSText    bool
@@ -161,6 +168,12 @@ func parseFlags() *flags {
 	fs.DurationVar(&f.xbergTimeout, "xberg-timeout", durEnv("PARSEDOCK_XBERG_TIMEOUT", 10*time.Minute), "per-document xberg ceiling (capped by --max-parse-minutes)")
 	fs.DurationVar(&f.doclingRSTimeout, "docling-rs-timeout", durEnv("PARSEDOCK_DOCLING_RS_TIMEOUT", 15*time.Minute), "per-document docling-rs ceiling (capped by --max-parse-minutes)")
 	fs.DurationVar(&f.mineruTimeout, "mineru-timeout", durEnv("PARSEDOCK_MINERU_TIMEOUT", 30*time.Minute), "per-document MinerU ceiling (capped by --max-parse-minutes)")
+	fs.StringVar(&f.tlsCert, "tls-cert", env("PARSEDOCK_TLS_CERT", ""), "server certificate (PEM) for the coordinator listener")
+	fs.StringVar(&f.tlsKey, "tls-key", env("PARSEDOCK_TLS_KEY", ""), "server private key (PEM)")
+	fs.StringVar(&f.tlsClientCA, "tls-client-ca", env("PARSEDOCK_TLS_CLIENT_CA", ""), "CA that must sign client certificates (enables mTLS)")
+	fs.StringVar(&f.tlsCA, "tls-ca", env("PARSEDOCK_TLS_CA", ""), "CA to verify the coordinator certificate (api/worker)")
+	fs.StringVar(&f.tlsServerName, "tls-server-name", env("PARSEDOCK_TLS_SERVER_NAME", ""), "expected server name in the certificate")
+	fs.BoolVar(&f.tlsInsecure, "tls-insecure", env("PARSEDOCK_TLS_INSECURE", "") == "1", "skip server certificate verification (development only)")
 	fs.BoolVar(&f.escalateScans, "escalate-scans", env("PARSEDOCK_ESCALATE_SCANS", "1") == "1", "retry a CJK scan once with the accurate engine when the fast engine warns about OCR quality")
 	fs.Int64Var(&f.engineMaxRSSMB, "engine-max-rss-mb", int64Env("PARSEDOCK_ENGINE_MAX_RSS_MB", 0), "kill an engine process above this RSS (0 = unlimited; cgroups are the deployment-level limit)")
 	fs.StringVar(&f.doclingRSBin, "docling-rs-bin", env("PARSEDOCK_DOCLING_RS_BIN", ""), "path to docling-rs CLI")
@@ -284,6 +297,13 @@ func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *
 		IdleTimeout:       120 * time.Second,
 		// No WriteTimeout: result downloads and SSE are long-lived.
 	}
+	if f.tlsCert != "" || f.tlsKey != "" {
+		serverTLS, terr := tlsutil.ServerConfig(f.tlsCert, f.tlsKey, f.tlsClientCA)
+		if terr != nil {
+			return terr
+		}
+		httpSrv.TLSConfig = serverTLS
+	}
 	log.Info("coordinator listening", "addr", f.internalListen, "db", dbPath, "config", cfg.String())
 	if ready != nil {
 		close(ready)
@@ -296,6 +316,10 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	clientTLS, err := tlsutil.ClientConfig(f.tlsCA, f.tlsCert, f.tlsKey, f.tlsServerName, f.tlsInsecure)
+	if err != nil {
+		return err
+	}
 	gw, err := api.New(api.Config{
 		CoordinatorURL: f.coordinatorURL,
 		InternalToken:  f.internalToken,
@@ -304,6 +328,7 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 		RateLimitRPS:   f.rateLimit,
 		RateBurst:      f.rateBurst,
 		MaxUploadBytes: f.maxUploadMB << 20,
+		TLS:            clientTLS,
 		Log:            log,
 	})
 	if err != nil {
@@ -360,6 +385,11 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 		return err
 	}
 	w := worker.New(cfg, reg, log)
+	workerTLS, terr := tlsutil.ClientConfig(f.tlsCA, f.tlsCert, f.tlsKey, f.tlsServerName, f.tlsInsecure)
+	if terr != nil {
+		return terr
+	}
+	w.HTTP.Transport = &http.Transport{TLSClientConfig: workerTLS}
 	return w.Run(ctx)
 }
 
@@ -386,14 +416,20 @@ func runStandalone(ctx context.Context, f *flags, cfg coordinator.Config, log *s
 			apiErr <- kerr
 			return
 		}
+		clientTLS, terr := tlsutil.ClientConfig(f.tlsCA, f.tlsCert, f.tlsKey, f.tlsServerName, f.tlsInsecure)
+		if terr != nil {
+			apiErr <- terr
+			return
+		}
 		gw, err := api.New(api.Config{
-			CoordinatorURL: "http://" + f.internalListen,
+			CoordinatorURL: "https://" + f.internalListen,
 			InternalToken:  f.internalToken,
 			Keys:           keys,
 			DevInsecure:    f.devInsecure,
 			RateLimitRPS:   f.rateLimit,
 			RateBurst:      f.rateBurst,
 			MaxUploadBytes: f.maxUploadMB << 20,
+			TLS:            clientTLS,
 			Log:            log,
 		})
 		if err != nil {
@@ -527,7 +563,14 @@ func printCheck(f *flags, cfg coordinator.Config) error {
 func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {
 	errCh := make(chan error, 1)
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		var err error
+		if srv.TLSConfig != nil {
+			// Certificates are already in TLSConfig; empty file names are valid.
+			err = srv.ListenAndServeTLS("", "")
+		} else {
+			err = srv.ListenAndServe()
+		}
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 		}
 		close(errCh)

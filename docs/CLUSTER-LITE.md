@@ -131,8 +131,26 @@ path with the coordinator storing only manifests, (c) object storage + pre-signe
 ## 6. Deployment notes
 
 * Coordinator internal API must listen on a private interface; never publish `8081`.
-* `PARSEDOCK_INTERNAL_TOKEN` is a shared secret today. mTLS is the P1 replacement;
-  the worker protocol is already isolated on its own mux and network.
+* **mTLS between replicas, coordinator and workers (PR-07).** `PARSEDOCK_INTERNAL_TOKEN`
+  remains the application-level authorisation layer, but transport identity is now
+  cryptographic:
+
+  | role | flags |
+  | --- | --- |
+  | coordinator | `--tls-cert`, `--tls-key`, `--tls-client-ca` (enables `RequireAndVerifyClientCert`) |
+  | api replica | `--tls-ca`, `--tls-cert`, `--tls-key`, `--tls-server-name` |
+  | worker | same as the api replica |
+
+  Without `--tls-cert/--tls-key` the listener stays plaintext (single-host development
+  only). `--tls-insecure` exists for throwaway certificates and is refused by the
+  release-gate checklist. TLS 1.2 is the floor; certificates are reloaded only on
+  restart, because a coordinator restart is already a documented operation.
+  `tests/integration/pr07_tls.py` proves, against real processes: a client without a
+  certificate is rejected, a certificate from a foreign CA is rejected, plaintext
+  HTTP on the TLS port is rejected, an authorised api replica proxies a job end to
+  end, a worker completes a job over mTLS, an api replica *without* a client
+  certificate cannot reach the coordinator (502), and the coordinator log contains
+  neither document bytes nor secrets.
 * SQLite must stay on local disk. WAL over NFS/SMB is unsupported by SQLite and by us.
 * Workers need only outbound access to the coordinator; engine egress can be blocked
   (see `--sandbox=unshare-net`, which fails closed when namespaces are unavailable).
@@ -149,10 +167,30 @@ path with the coordinator storing only manifests, (c) object storage + pre-signe
   (`ValidateInternalBinding`). Key rotation is two keys mapped to the same stable
   `owner_id`; jobs stay reachable across the rotation (PR00-10).
 
-## 7. What the evidence does *not* cover
+## 7. Measured load (single host, cluster-lite topology)
 
-* Multi-host testing was limited to one machine (two API processes, one worker,
-  loopback). Cross-host latency/partition behaviour is designed for but not measured.
+`scripts/cluster-lite-load.sh` starts one coordinator, **two** api replicas and **two**
+workers with the deterministic mock engine (fixed 200 ms parse), then drives jobs
+through *one* replica with `tests/load/loadgen.py` (create + poll to terminal).
+
+| jobs | concurrency | workers | throughput | p50 | p95 | p99 | failures |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 120 | 12 | 2 | 8.84 jobs/s | 1.23 s | 1.53 s | 2.15 s | 0 |
+| 200 | 64 | 2 | 8.75 jobs/s | 6.68 s | 7.39 s | 8.23 s | 0 |
+
+Reading: two workers parsing 200 ms each cap the stack at 10 jobs/s; the measured
+8.8 jobs/s is 88 % of that ceiling, so **the coordinator/API path is not the
+bottleneck at 14 concurrent pollers/submitters per replica** (≈2.5 k requests/s
+including status polling). Latency at 64 concurrent submissions is queueing time, not
+scheduler overhead. Scaling therefore means adding workers, not replicas — consistent
+with §5. `runtime/cluster-lite-load/` keeps the raw reports (git-ignored).
+
+## 8. What the evidence does *not* cover
+
+* Multi-host testing was limited to one machine (two API processes, two workers,
+  loopback). Cross-host latency, MTU and partition behaviour are designed for but not
+  measured; mTLS is verified, but certificate distribution/rotation for a fleet is
+  operational work outside this PR.
 * No soak test beyond the acceptance runs (~15 min) and the benchmark (~30 min).
 * No Coordinator failover automation: the orchestrator must restart the single
   Coordinator; state recovery is verified, automatic leader election is out of scope.
