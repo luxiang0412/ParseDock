@@ -99,11 +99,11 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 	}
 	defer zr.Close()
 
-	workbook, err := readZipXML[xlsxWorkbook](zr, "xl/workbook.xml")
+	workbook, err := readZipXML[xlsxWorkbook](ctx, zr, "xl/workbook.xml")
 	if err != nil {
 		return 0, nil, nil // not an xlsx workbook: nothing to add
 	}
-	rels, _ := readZipXML[xlsxRels](zr, "xl/_rels/workbook.xml.rels")
+	rels, _ := readZipXML[xlsxRels](ctx, zr, "xl/_rels/workbook.xml.rels")
 	targets := map[string]string{}
 	for _, r := range rels.Relationships {
 		targets[r.ID] = r.Target
@@ -124,7 +124,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 
 	// Shared-string table: a cached formula result of type "s" is an index into it.
 	var sharedStrings []string
-	if sst, err := readZipXML[xlsxSharedStrings](zr, "xl/sharedStrings.xml"); err == nil {
+	if sst, err := readZipXML[xlsxSharedStrings](ctx, zr, "xl/sharedStrings.xml"); err == nil {
 		for _, si := range sst.Items {
 			text := si.T.Text
 			if text == "" {
@@ -142,7 +142,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		if err := ctx.Err(); err != nil {
 			return 0, nil, err
 		}
-		ws, err := readZipXML[xlsxWorksheet](zr, sh.part)
+		ws, err := readZipXML[xlsxWorksheet](ctx, zr, sh.part)
 		if err != nil {
 			continue
 		}
@@ -201,6 +201,9 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		ordered = append(ordered, sh.name)
 	}
 	for ti := range doc.Tables {
+		if err := ctx.Err(); err != nil {
+			return applied, warnings, err
+		}
 		table := &doc.Tables[ti]
 		sheet := ""
 		if table.Loc != nil && table.Loc.Sheet != "" {
@@ -219,6 +222,11 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 			continue
 		}
 		for ci := range table.Cells {
+			if ci%512 == 0 {
+				if err := ctx.Err(); err != nil {
+					return applied, warnings, err
+				}
+			}
 			cell := &table.Cells[ci]
 			fc, ok := cells[[2]int{cell.Row, cell.Col}]
 			if !ok {
@@ -292,15 +300,35 @@ func parseA1(ref string) (col, row int, ok bool) {
 	return col - 1, r - 1, true
 }
 
-func readZipXML[T any](zr *zip.ReadCloser, name string) (T, error) {
+// ctxReader aborts a zip-part read as soon as the parse context is done, so a
+// timed-out job cannot keep a worker busy decompressing a large worksheet.
+type ctxReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (c *ctxReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return c.r.Read(p)
+}
+
+func readZipXML[T any](ctx context.Context, zr *zip.ReadCloser, name string) (T, error) {
 	var out T
+	if err := ctx.Err(); err != nil {
+		return out, err
+	}
 	f, err := zr.Open(name)
 	if err != nil {
 		return out, err
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(f, 128<<20))
+	b, err := io.ReadAll(io.LimitReader(&ctxReader{ctx: ctx, r: f}, 128<<20))
 	if err != nil {
+		return out, err
+	}
+	if err := ctx.Err(); err != nil {
 		return out, err
 	}
 	if err := xml.Unmarshal(b, &out); err != nil {

@@ -374,3 +374,21 @@ func TestEnrichRespectsCancellation(t *testing.T) {
 		t.Fatal("cancelled context ignored")
 	}
 }
+
+// Decoding itself must observe cancellation (not just the per-sheet loop).
+func TestReadZipXMLRespectsCancellation(t *testing.T) {
+	path := writeMinimalXLSX(t)
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := readZipXML[xlsxWorksheet](ctx, zr, "xl/worksheets/sheet1.xml"); err == nil {
+		t.Fatal("cancelled context ignored during decoding")
+	}
+	if _, err := readZipXML[xlsxWorksheet](context.Background(), zr, "xl/worksheets/sheet1.xml"); err != nil {
+		t.Fatalf("live context failed to decode: %v", err)
+	}
+}
