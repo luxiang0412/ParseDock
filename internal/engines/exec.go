@@ -94,8 +94,12 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	}
 	stopMonitor := make(chan struct{})
 	oom := make(chan struct{})
+	monitorDone := make(chan struct{})
 	if spec.MaxRSSMB > 0 {
 		go func(pid int) {
+			// monitorDone is closed after the outcome channel has been published,
+			// so Wait() returning first cannot make us miss an OOM kill.
+			defer close(monitorDone)
 			t := time.NewTicker(500 * time.Millisecond)
 			defer t.Stop()
 			for {
@@ -116,6 +120,9 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	}
 	err := cmd.Wait()
 	close(stopMonitor)
+	if spec.MaxRSSMB > 0 {
+		<-monitorDone // join the monitor before classifying the result
+	}
 	elapsed := time.Since(start)
 	res := &ExecResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), Elapsed: elapsed}
 	// Fill the measured status *before* any early return: callers inspect
