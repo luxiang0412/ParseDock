@@ -33,7 +33,8 @@ echo "== version consistency =="
 python3 scripts/check_versions.py --bin "$BIN"
 
 echo "== python sdk =="
-"$VENV/bin/python" sdk/python/test_sdk.py
+# Test exactly the binary whose version was just checked, not a hard-coded default.
+DOCPARSE_BIN="$(cd "$(dirname "$BIN")" && pwd)/$(basename "$BIN")" "$VENV/bin/python" sdk/python/test_sdk.py
 
 echo "== python cli =="
 "$VENV/bin/parsedock" --version
