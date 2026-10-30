@@ -205,6 +205,12 @@ Status polling shares the per-owner budget (RC-5). Point the client at
 
 ## 4. Verification commands
 
+Note: a job that failed permanently keeps `retention_status=active` while its files are
+already gone (the coordinator deletes them on failure). Backups record such rows as
+metadata-only and verification does not demand their inputs/artifacts; only `queued`,
+`running` and `completed` jobs must have files.
+
+
 ```bash
 make drill            # online backup + restore drill, RTO printed
 make gate             # engine quality/latency gate

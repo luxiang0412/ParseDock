@@ -198,11 +198,17 @@ def main() -> int:
         SERVABLE)}
     artifacts = conn.execute(
         "SELECT job_id, kind, path, size, sha256 FROM artifacts").fetchall()
+    # Only states that actually keep their input need it to exist: a permanently failed
+    # (or cancelled) job has its files deleted by the coordinator but stays 'active' until
+    # the failed-retention period elapses, so demanding an input would reject a valid state.
     conn_inputs = conn.execute(
-        "SELECT id, input_size, input_sha256 FROM jobs WHERE retention_status = 'active'").fetchall()
+        "SELECT id, input_size, input_sha256 FROM jobs WHERE retention_status = 'active'"
+        " AND processing_status IN ('queued','running','completed')").fetchall()
     completed = conn.execute(
         "SELECT id, result_version, result_manifest_path FROM jobs"
         " WHERE retention_status = 'active' AND processing_status = 'completed'").fetchall()
+    conn_state = conn.execute(
+        "SELECT id, processing_status FROM jobs WHERE retention_status = 'active'").fetchall()
     input_sha = {row[0]: row[2] for row in conn_inputs}
     conn_inputs = [(row[0], row[1]) for row in conn_inputs]
     conn.close()
@@ -223,9 +229,13 @@ def main() -> int:
         # be protected: cleanup may delete its files without re-checking leases. Rather than
         # producing an incomplete backup that looks fine, abort and let the operator retry —
         # the window is milliseconds and the next attempt takes a fresh snapshot.
+        # Only jobs that must still have files can "vanish": a failed/cancelled job keeps
+        # artifact metadata but the coordinator deleted its files on purpose.
         jobs_with_artifacts = {a[0] for a in artifacts}
+        needs_files = {row[0] for row in conn_state if row[1] in ("queued", "running", "completed")}
         vanished = [j for j in sorted(jobs)
-                    if j in jobs_with_artifacts and not (data / "results" / j).exists()]
+                    if j in jobs_with_artifacts and j in needs_files
+                    and not (data / "results" / j).exists()]
         if unpinnable or vanished:
             leases.release()
             shutil.rmtree(out, ignore_errors=True)
@@ -269,6 +279,7 @@ def main() -> int:
             problems.append(f"integrity_check: {ok}")
         # Inputs are what a queued/running job needs to resume; artifacts exist only for
         # completed jobs, so checking just artifacts would bless an unrestorable backup.
+        needs_files = {row[0] for row in conn_state if row[1] in ("queued", "running", "completed")}
         for job_id, input_size in conn_inputs:
             p = out / "files" / "inputs" / job_id / "input.bin"
             if not p.exists():
@@ -306,7 +317,8 @@ def main() -> int:
             if kind in ("markdown", "text", "json") and not p.exists():
                 p = out / "files" / "results" / job_id / kind
             if not p.exists():
-                if job_id in jobs:
+                # Artifact rows survive a permanent failure; the files do not.
+                if job_id in jobs and job_id in needs_files:
                     problems.append(f"missing artifact {job_id}/{kind}")
                 continue
             got = sha256(p)

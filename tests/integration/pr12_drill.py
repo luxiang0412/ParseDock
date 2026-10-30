@@ -13,6 +13,7 @@ engine, which keeps it fast enough for CI.
 import json
 import os
 import shutil
+import sqlite3
 import socket
 import subprocess
 import sys
@@ -127,6 +128,17 @@ def main():
         kept, kept_version = create_job(port, "kept.txt", b"kept\n", keep=True)
         released, _ = create_job(port, "released.txt", b"acked\n", keep=False)
 
+        # A permanently failed job keeps retention_status=active but the coordinator deletes
+        # its files immediately; the backup must accept that state (metadata-only row).
+        failed, _ = create_job(port, "failed.txt", b"fails\n", keep=True)
+        conn = sqlite3.connect(os.path.join(live, "coordinator.db"))
+        with conn:
+            conn.execute("UPDATE jobs SET processing_status='failed', error_code='engine_unavailable',"
+                         " error_message='drill', retention_status='active' WHERE id=?", (failed,))
+        conn.close()
+        for sub in ("results", "inputs"):
+            shutil.rmtree(os.path.join(live, sub, failed), ignore_errors=True)
+
         backup = os.path.join(tmp, "backup")
         t0 = time.time()
         r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "backup_online.py"),
@@ -134,12 +146,18 @@ def main():
                            capture_output=True, text=True)
         backup_seconds = time.time() - t0
         report = json.loads(r.stdout) if r.stdout.strip().startswith("{") else {}
+        if r.returncode != 0:
+            print("backup stderr:", r.stderr[-600:], file=sys.stderr)
         results.append(("PR12-01", r.returncode == 0 and report.get("verify", {}).get("ok") is True,
                         f"online backup verified in {backup_seconds:.1f}s "
                         f"({report.get('jobs_servable')} servable jobs, {report.get('files')} files, "
                         f"problems={report.get('verify', {}).get('problems')})"))
         results.append(("PR12-03", not os.path.isdir(os.path.join(backup, "files", "results", released)),
                         "released job's artifacts are absent from the backup"))
+        # A failed-but-active job has no files: verification must not demand them.
+        failed_row = os.path.join(backup, "files", "inputs", failed)
+        results.append(("PR12-07", report.get("verify", {}).get("ok") is True and not os.path.isdir(failed_row),
+                        "failed job with active retention: metadata-only backup verifies"))
 
         # A reused destination would overlay the new set on top of the old tree and keep
         # artifacts of jobs that are no longer servable.
