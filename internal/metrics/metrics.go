@@ -67,6 +67,7 @@ type HistogramVec struct {
 }
 
 type histSeries struct {
+	mu     sync.Mutex // guards counts/sum/count and is shared by every handle
 	counts []uint64
 	sum    float64
 	count  uint64
@@ -206,17 +207,17 @@ func (g *Gauge) Add(delta float64) {
 	}
 }
 
-// Histogram is a handle to one histogram series.
+// Histogram is a handle to one histogram series. Several handles can point at the same
+// series, so the lock lives on the series, not on the handle.
 type Histogram struct {
 	bounds []float64
-	mu     sync.Mutex
 	s      *histSeries
 }
 
 // Observe records one value.
 func (h *Histogram) Observe(v float64) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
+	h.s.mu.Lock()
+	defer h.s.mu.Unlock()
 	for i, b := range h.bounds {
 		if v <= b {
 			h.s.counts[i]++
@@ -318,22 +319,28 @@ func (h *HistogramVec) write(w io.Writer) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	for _, k := range sortedKeys(h.labelVals) {
-		s := h.series[k]
 		base := h.labelVals[k]
-		for i, b := range h.bounds {
+		if err := func() error {
+			s := h.series[k]
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			for i, b := range h.bounds {
+				if _, err := fmt.Fprintf(w, "%s_bucket%s %d\n", h.name,
+					fmtLabels(h.labels, base, "le", formatFloat(b)), s.counts[i]); err != nil {
+					return err
+				}
+			}
 			if _, err := fmt.Fprintf(w, "%s_bucket%s %d\n", h.name,
-				fmtLabels(h.labels, base, "le", formatFloat(b)), s.counts[i]); err != nil {
+				fmtLabels(h.labels, base, "le", "+Inf"), s.count); err != nil {
 				return err
 			}
-		}
-		if _, err := fmt.Fprintf(w, "%s_bucket%s %d\n", h.name,
-			fmtLabels(h.labels, base, "le", "+Inf"), s.count); err != nil {
+			if _, err := fmt.Fprintf(w, "%s_sum%s %s\n", h.name, fmtLabels(h.labels, base),
+				formatFloat(s.sum)); err != nil {
+				return err
+			}
+			_, err := fmt.Fprintf(w, "%s_count%s %d\n", h.name, fmtLabels(h.labels, base), s.count)
 			return err
-		}
-		if _, err := fmt.Fprintf(w, "%s_sum%s %s\n", h.name, fmtLabels(h.labels, base), formatFloat(s.sum)); err != nil {
-			return err
-		}
-		if _, err := fmt.Fprintf(w, "%s_count%s %d\n", h.name, fmtLabels(h.labels, base), s.count); err != nil {
+		}(); err != nil {
 			return err
 		}
 	}

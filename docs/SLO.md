@@ -55,6 +55,11 @@ appears.
 | `parsedock_throttled_total` | counter | `reason`=`rate_limited|quota_exceeded|insufficient_storage` | refusals (RC-5) |
 | `parsedock_disk_free_bytes` | gauge | – | free bytes on the data volume |
 
+API replicas are stateless and have no scrape endpoint. They batch their refusals and post
+them to `POST /internal/throttle` every 5 s (best effort: a failed post is merged back, so a
+coordinator restart loses no count), which is why `parsedock_throttled_total` is aggregated
+centrally instead of per replica.
+
 `deploy/observability/dashboard.json` (Grafana) and `deploy/observability/alerts.yaml`
 (Prometheus) use exactly these names; `tests/integration/pr09_metrics.py` asserts the
 series exist, that a rate-limited request is counted, and that no content, file name or

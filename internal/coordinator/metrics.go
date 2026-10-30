@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"parsedock.dev/parsedock/internal/jobs"
 	"parsedock.dev/parsedock/internal/metrics"
 )
 
@@ -83,6 +84,17 @@ func (s *Server) MetricsHandler() http.HandlerFunc {
 // rather than pushed on every transition, so a single scrape always describes one
 // consistent database state and no write path pays for metrics.
 func (i *Instruments) refresh(ctx context.Context, svc *Service) {
+	// Zero the known states first: a state whose last job left the table produces no
+	// GROUP BY row, and without this the gauge would freeze at its previous value.
+	for _, st := range []string{string(jobs.StatusQueued), string(jobs.StatusRunning),
+		string(jobs.StatusCompleted), string(jobs.StatusFailed), string(jobs.StatusCancelled)} {
+		i.state.With(st).Set(0)
+	}
+	for _, st := range []string{string(jobs.RetentionActive), string(jobs.RetentionReleasePending),
+		string(jobs.RetentionExpiryPending), string(jobs.RetentionDeleting),
+		string(jobs.RetentionReleased), string(jobs.RetentionExpired)} {
+		i.retention.With(st).Set(0)
+	}
 	rows, err := svc.DB.QueryContext(ctx, `SELECT processing_status, COUNT(*) FROM jobs GROUP BY 1`)
 	if err == nil {
 		defer rows.Close()

@@ -95,3 +95,33 @@ func TestWrongLabelCountPanics(t *testing.T) {
 	}()
 	c.With("only-one")
 }
+
+// Codex review (PR-09): concurrent With() calls must share the series lock, otherwise
+// observations and the exposition race.
+func TestConcurrentHistogramHandles(t *testing.T) {
+	r := New()
+	h := r.Histogram("h", "help", "k")
+	var wg sync.WaitGroup
+	for i := 0; i < 64; i++ {
+		wg.Add(2)
+		go func() { defer wg.Done(); h.With("x").Observe(0.3) }()
+		go func() { defer wg.Done(); h.With("x").Observe(2) }()
+	}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < 20; i++ {
+			var buf bytes.Buffer
+			_ = r.WriteText(&buf)
+		}
+		close(done)
+	}()
+	wg.Wait()
+	<-done
+	var buf bytes.Buffer
+	if err := r.WriteText(&buf); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(buf.String(), `h_count{k="x"} 128`) {
+		t.Fatalf("lost observations:\n%s", buf.String())
+	}
+}

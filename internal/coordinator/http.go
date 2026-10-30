@@ -632,6 +632,7 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 func (s *Server) InternalMux() http.Handler {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /internal/metrics", s.MetricsHandler())
+	m.HandleFunc("POST /internal/throttle", s.internalGuard(s.handleThrottle))
 	m.HandleFunc("POST /internal/workers/register", s.workerGuard(s.handleRegister))
 	m.HandleFunc("POST /internal/workers/{id}/heartbeat", s.workerGuard(s.handleWorkerHeartbeat))
 	m.HandleFunc("POST /internal/tasks/claim", s.workerGuard(s.handleClaim))
@@ -672,6 +673,26 @@ func (s *Server) workerGuard(next http.HandlerFunc) http.HandlerFunc {
 		}
 		next(w, r)
 	}
+}
+
+// handleThrottle aggregates refusals reported by stateless API replicas, which have no
+// scrape endpoint of their own. Only known reasons are accepted so a replica cannot
+// create unbounded label values.
+func (s *Server) handleThrottle(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Counts map[string]int64 `json:"counts"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil {
+		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid throttle payload"))
+		return
+	}
+	for reason, n := range body.Counts {
+		if n <= 0 || throttleReason(reason) == "" || throttleReason(reason) != reason {
+			continue
+		}
+		defaultInstruments.throttled.With(reason).Add(uint64(n))
+	}
+	writeJSON(w, 202, map[string]any{"ok": true})
 }
 
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {

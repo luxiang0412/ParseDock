@@ -317,6 +317,30 @@ paths:
                 type: string
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /internal/throttle:
+    post:
+      tags: [operations]
+      operationId: reportThrottling
+      summary: Aggregate rate-limit/quota refusals reported by API replicas
+      description: |
+        API replicas are stateless and have no scrape endpoint, so they batch their
+        refusals here. Only the documented reasons are accepted; anything else is
+        ignored, which keeps `parsedock_throttled_total` label values bounded.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [counts]
+              properties:
+                counts:
+                  type: object
+                  additionalProperties: { type: integer, format: int64, minimum: 0 }
+      responses:
+        '202': { description: Accepted for aggregation. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   securitySchemes:
     internalToken:

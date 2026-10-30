@@ -119,7 +119,15 @@ def main():
             c, _ = http(port, f"/v1/jobs/{jid}", headers=hdr)
             if c == 429:
                 throttled += 1
-        _, text = http(cport, "/internal/metrics", headers={"X-Internal-Token": TOKEN})
+        # Replicas batch refusals and flush every 5 s; poll instead of assuming the
+        # aggregation is visible immediately.
+        deadline = time.time() + 20
+        text = ""
+        while time.time() < deadline:
+            _, text = http(cport, "/internal/metrics", headers={"X-Internal-Token": TOKEN})
+            if 'parsedock_throttled_total{reason="rate_limited"}' in text:
+                break
+            time.sleep(0.5)
         results.append(("PR09-04", 'parsedock_throttled_total{reason="rate_limited"}' in text,
                         f"429s observed={throttled}, throttled series present"))
 

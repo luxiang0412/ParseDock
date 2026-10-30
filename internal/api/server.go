@@ -7,11 +7,13 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httputil"
@@ -20,7 +22,6 @@ import (
 	"sync"
 	"time"
 
-	"parsedock.dev/parsedock/internal/metrics"
 	"parsedock.dev/parsedock/internal/tlsutil"
 )
 
@@ -43,10 +44,11 @@ type Config struct {
 
 // Server is the HTTP gateway.
 type Server struct {
-	cfg     Config
-	proxy   *httputil.ReverseProxy
-	limiter *limiter
-	log     *slog.Logger
+	cfg      Config
+	proxy    *httputil.ReverseProxy
+	limiter  *limiter
+	log      *slog.Logger
+	throttle throttleForward
 }
 
 // New builds the gateway.
@@ -259,16 +261,47 @@ func newRequestID() string {
 	return "req_" + hex.EncodeToString(b[:])
 }
 
-// throttled is the same counter family the coordinator exposes, so a replica's
-// refusals are visible in the same scrape (RC-5).
-var throttled = metrics.Default.Counter("parsedock_throttled_total",
-	"Requests refused by rate limiting or quota, by reason.", "reason")
+// throttleForward batches a replica's refusals and ships them to the coordinator: a
+// replica is stateless and has no scrape endpoint of its own, so the documented
+// parsedock_throttled_total series must be aggregated centrally (RC-5).
+type throttleForward struct {
+	mu      sync.Mutex
+	pending map[string]int64
+}
+
+func (t *throttleForward) add(reason string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pending == nil {
+		t.pending = map[string]int64{}
+	}
+	t.pending[reason]++
+}
+
+func (t *throttleForward) drain() map[string]int64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	out := t.pending
+	t.pending = map[string]int64{}
+	return out
+}
+
+func (t *throttleForward) restore(m map[string]int64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.pending == nil {
+		t.pending = map[string]int64{}
+	}
+	for k, v := range m {
+		t.pending[k] += v
+	}
+}
 
 func (s *Server) limit(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.limiter.allow(ownerFrom(r)) {
 			w.Header().Set("Retry-After", "1")
-			throttled.With("rate_limited").Inc()
+			s.throttle.add("rate_limited")
 			writeJSON(w, 429, map[string]any{"error": map[string]any{
 				"code": "rate_limited", "message": "too many requests for this owner"}})
 			return
@@ -369,4 +402,48 @@ func (l *limiter) allow(key string) bool {
 
 func contextWithOwner(ctx context.Context, owner string) context.Context {
 	return context.WithValue(ctx, ownerCtxKey{}, owner)
+}
+
+// FlushThrottle ships batched refusals to the coordinator until ctx is cancelled. The
+// flush is best-effort: a failed post is merged back into the pending map, so a
+// coordinator restart loses no count.
+func (s *Server) FlushThrottle(ctx context.Context) {
+	t := time.NewTicker(5 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		pending := s.throttle.drain()
+		if len(pending) == 0 {
+			continue
+		}
+		body, err := json.Marshal(map[string]any{"counts": pending})
+		if err != nil {
+			s.throttle.restore(pending)
+			continue
+		}
+		req, err := http.NewRequestWithContext(ctx, "POST",
+			strings.TrimRight(s.cfg.CoordinatorURL, "/")+"/internal/throttle", bytes.NewReader(body))
+		if err != nil {
+			s.throttle.restore(pending)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if s.cfg.InternalToken != "" {
+			req.Header.Set("X-Internal-Token", s.cfg.InternalToken)
+		}
+		resp, err := s.proxy.Transport.RoundTrip(req)
+		if err != nil {
+			s.throttle.restore(pending)
+			continue
+		}
+		_, _ = io.Copy(io.Discard, resp.Body)
+		_ = resp.Body.Close()
+		if resp.StatusCode/100 != 2 {
+			s.throttle.restore(pending)
+		}
+	}
 }
