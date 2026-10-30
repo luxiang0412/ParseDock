@@ -114,6 +114,20 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.run_gate(), 1)
         self.assertEqual(self.run_gate(["--allow-missing"]), 0)
 
+    def test_zero_baseline_latency_regression_fails(self):
+        """native CSV baselines round to 0 ms; a jump to seconds must still fail."""
+        self.base_case()
+        self.write(
+            [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "0", "p95_ms": "0"}],
+            [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 0)  # baseline now records zeros
+        self.write(
+            [{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "xberg", "file": "a.pdf", "median_ms": "1000", "p95_ms": "1000"}],
+            [{"engine": "xberg", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 1)
+
     def test_missing_metric_fails(self):
         """A sample present with CER but no latency must not skip the latency check."""
         self.base_case()

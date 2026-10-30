@@ -191,6 +191,15 @@ def main() -> int:
                     failures.append(f"{eng}/{f}: CER {b['cer']:.4f} → {c['cer']:.4f} (+{d:.4f} points)")
             for key in ("p50_ms", "p95_ms"):
                 if key in b and key in c:
+                    if b[key] <= 0:
+                        # A sub-millisecond baseline rounds to 0; a relative comparison is
+                        # meaningless there, so fall back to the absolute threshold instead
+                        # of silently exempting the sample.
+                        if c[key] > args.min_abs_latency_ms:
+                            failures.append(f"{eng}/{f}: {key} 0.0 → {c[key]:.1f} ms "
+                                            f"(baseline rounded to 0; absolute threshold "
+                                            f"{args.min_abs_latency_ms:.0f} ms exceeded)")
+                        continue
                     r = rel_rise(b[key], c[key])
                     if r > args.max_latency_regress and (c[key] - b[key]) > args.min_abs_latency_ms:
                         failures.append(f"{eng}/{f}: {key} {b[key]:.1f} → {c[key]:.1f} ms "
