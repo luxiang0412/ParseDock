@@ -139,6 +139,9 @@ unprocessed group is the 16 oversized spreadsheets.
 * A 10 MB / 1.34M-cell workbook spent 1.7 s in formula enrichment (down from 2.35 s after
   streaming the sheet XML instead of unmarshalling it) and ~4 s in serialising and rendering
   the result. Large-sheet output, not parsing, is the remaining cost.
+* Rendered Markdown/text repeated a table's cells: engines emit the table both as page text and
+  as a structured `Table`. The worker now drops the redundant lines (`DropTableShadows`), so a
+  table appears once, as a Markdown table.
 * An 18-page scanned PDF costs 77 s: OCR-bound, and the `xberg` CLI exposes no page/thread
   parallelism, so per-page splitting (our side) or a serve-mode adapter would be needed.
 * 4 `.doc` files whose content is not an OLE2 compound file despite the extension.

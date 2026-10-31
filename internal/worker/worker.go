@@ -445,6 +445,13 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 			"legacy OLE2 Office document: text and tables are extracted, page numbers and coordinates are not available", "info")
 	}
 
+	// Engines usually return a table twice (its text lines and a structured Table); drop the
+	// now-redundant lines before the document is finalised, so Markdown and text do not repeat
+	// every cell.
+	if n := result.DropTableShadows(); n > 0 {
+		w.Log.Debug("dropped table shadow lines", "job", task.JobID, "elements", n)
+	}
+
 	result.Source.FileName = task.InputName
 	result.Source.SHA256 = task.InputSHA256
 	result.Source.SizeBytes = task.InputSize
