@@ -25,7 +25,12 @@ jobs:
     name: build, sign and deploy
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    environment: central
+    # The repository keeps its release secrets in the `pypi` environment (PyPI and
+    # Maven together). Pointing both workflows at it means one approval gate and
+    # no duplicated secrets; split into a dedicated `central` environment by
+    # creating it, moving the four MAVEN_*/GPG_* secrets there and changing this
+    # line.
+    environment: pypi
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
