@@ -41,7 +41,7 @@ from pathlib import Path
 # harness has to send them or it silently skips the very files under test.
 ACCEPTED_EXT = {".pdf", ".docx", ".xlsx", ".xlsm", ".pptx", ".csv", ".tsv",
                 ".txt", ".md", ".markdown", ".png", ".jpg", ".jpeg", ".webp",
-                ".doc", ".dot", ".xls", ".xlt", ".ppt", ".pot"}
+                ".doc", ".dot", ".xls", ".xlt", ".ppt", ".pot", ".html", ".htm"}
 
 
 @dataclass

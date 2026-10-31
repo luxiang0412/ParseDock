@@ -54,6 +54,13 @@ var ole2Magic = func(b []byte) bool {
 	return len(b) >= 8 && bytes.Equal(b[:8], []byte{0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1})
 }
 
+// htmlMagic recognises an HTML document after an optional UTF-8 BOM and leading whitespace.
+var htmlMagic = func(b []byte) bool {
+	b = bytes.TrimPrefix(b, []byte{0xEF, 0xBB, 0xBF})
+	s := strings.ToLower(strings.TrimLeft(string(b), " \t\r\n"))
+	return strings.HasPrefix(s, "<!doctype html") || strings.HasPrefix(s, "<html")
+}
+
 // Formats is the upload allow-list (P0).
 var Formats = []Format{
 	{Name: "pdf", Mime: "application/pdf", Exts: []string{".pdf"}, Magic: pdfMagic},
@@ -64,6 +71,9 @@ var Formats = []Format{
 	{Name: "doc", Mime: "application/msword", Exts: []string{".doc", ".dot"}, Magic: ole2Magic},
 	{Name: "xls", Mime: "application/vnd.ms-excel", Exts: []string{".xls", ".xlt"}, Magic: ole2Magic},
 	{Name: "ppt", Mime: "application/vnd.ms-powerpoint", Exts: []string{".ppt", ".pot"}, Magic: ole2Magic},
+	// HTML is accepted on its own extension, and — see SniffFormat — as the real content of a
+	// legacy Office extension, which is how "export to .doc" pipelines produce HTML files.
+	{Name: "html", Mime: "text/html", Exts: []string{".html", ".htm"}, Magic: htmlMagic},
 	{Name: "csv", Mime: "text/csv", Exts: []string{".csv"}},
 	{Name: "tsv", Mime: "text/tab-separated-values", Exts: []string{".tsv"}},
 	{Name: "txt", Mime: "text/plain", Exts: []string{".txt"}},
@@ -179,6 +189,12 @@ func SniffFormat(fileName string, head []byte, lim Limits) (Format, error) {
 	}
 	if magicMatch != nil {
 		if hasExt && byExt.Name != magicMatch.Name {
+			// Legacy Office extensions are the ones that lie in practice: "save as .doc"
+			// pipelines emit HTML, and audit exports rename spreadsheets to .xls. When the
+			// content is a format we accept, serve the content instead of rejecting the file.
+			if isOLE2Format(byExt.Name) {
+				return *magicMatch, nil
+			}
 			return Format{}, &ValidationError{
 				Code: "unsupported_type",
 				Msg:  fmt.Sprintf("extension %q does not match file content (%s)", filepath.Ext(fileName), magicMatch.Name),
