@@ -112,7 +112,12 @@ curl -sf localhost:8081/readyz || curl -s localhost:8081/readyz | jq
 ```
 Restart. If `readyz` reports `sqlite: down`, check disk space and file permissions before
 restarting; if it reports `storage`, see 3.5. Workers reconnect automatically and requeue
-jobs whose lease expired.
+jobs whose lease expired. A running worker keeps parsing through a coordinator restart
+shorter than the lease (`--worker-lease`, default 60 s): failed heartbeats are retried and
+only an explicit `409 lease_lost`/`cancelled`, or the lease running out by the worker's own
+estimate, stops the attempt (logged as `heartbeat failed; keeping the attempt…` and
+`lease lost; abandoning the attempt…`). An abandoned attempt is not reported as failed;
+the coordinator requeues it when the lease is reaped.
 
 ### 3.2 Queue stalled (`ParseDockQueueStalled`)
 

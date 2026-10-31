@@ -104,7 +104,9 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
   to write `/root/.cache/huggingface/token` and fails.
 * Scratch is always a **subdirectory** (`/work/scratch`), never the volume root: the
   worker's scrubber deletes attempt directories older than an hour, and pointing
-  `--work-dir` at `/work` would delete the multi-GB model cache with them. The entrypoint
+  `--work-dir` at `/work` would delete the multi-GB model cache with them. (The scrubber
+  now only touches directories named like its own `<job_id>/a<attempt>` scratch, which
+  protects a misconfigured root, but scratch still belongs in a subdirectory.) The entrypoint
   appends `--work-dir /work/scratch` when the flag is absent, and
   `deploy/compose.gpu.yaml` sets it explicitly.
 * Telemetry is disabled at build time and again at start-up. Only the `flash` tier is
@@ -115,7 +117,8 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
   task id: a daemon shared between workers would let one task's session lines count as
   another's.
 * The worker reports the free VRAM of the card it will use (first entry of
-  `CUDA_VISIBLE_DEVICES`, else device 0) on every heartbeat — pin `CUDA_VISIBLE_DEVICES`
+  `CUDA_VISIBLE_DEVICES`, else device 0) when it registers: after every task and, while
+  idle, at most once per `--heartbeat` interval (default 10 s) — pin `CUDA_VISIBLE_DEVICES`
   if the host has several cards. A GPU worker runs one task at a time
   (`--worker-concurrency` is capped at 1) because per-card VRAM cannot be partitioned
   between slots; scale with more workers. Set
