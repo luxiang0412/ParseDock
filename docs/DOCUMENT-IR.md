@@ -282,8 +282,13 @@ with `metadata.content_layer=furniture`, typed `header`/`footer` where the group
   empty rather than fabricated.
 * **Page rotation**: `rotation_deg` is defined but not populated (no engine reports
   it for the tested corpus).
-* **Reading order for two-column PDFs** is engine-dependent; docling-rs handles it,
-  Tika and xberg do not (plain text order).
+* **Reading order for layout-sensitive PDFs** is engine-dependent. xberg orders the
+  columns of a two-column page left then right (17/17 two-column PDFs in
+  `benchmark/fixtures/`), but where text runs are drawn on top of each other, as in
+  `pdf_two_column_en.pdf`, it merges the overlapping lines word by word; docling-rs keeps
+  them apart. Tika emits plain content-stream order. `mode=auto` routes PDFs to xberg
+  and does **not** escalate on layout (no signal tested was reliable enough, see
+  `docs/DEPLOYMENT.md` §4); use `mode=accurate` for such documents.
 
 Each gap is either a `warning` in the output or listed here; none of them is silently
 "fixed" by generating data.

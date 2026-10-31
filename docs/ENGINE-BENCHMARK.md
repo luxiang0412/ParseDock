@@ -57,9 +57,12 @@ its PDF output has no page boundaries at all (verified: 0 form feeds on a 3-page
 file; the adapter now omits page numbers instead of inventing them).
 ⁴ XLSX: Tika returns a flat text dump without table structure.
 
-Reading order: docling-rs/docling-serve follow the document body tree and handle
-the two-column fixture's left-then-right order; xberg, Tika and MinerU emit
-text order and get 0.28–0.30 CER on that fixture because the interleaving differs.
+Reading order: docling-rs/docling-serve follow the document body tree and keep the
+two-column fixture's paragraphs in order; xberg, Tika and MinerU get 0.28–0.30 CER on
+that fixture. For xberg the cause is not column order (it reads left column then right
+on all 17 two-column PDFs in the fixtures) but that the fixture draws two paragraphs of
+each column at the same origin, so the text overlaps and xberg merges the overlapping
+lines word by word.
 
 Structural fidelity (`has_bbox`, sheet names):
 
