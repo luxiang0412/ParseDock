@@ -1,21 +1,31 @@
 # ParseDock CPU-only stack: 1 coordinator + 2 stateless API replicas + 1 worker.
 #
-#   export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)
+#   export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)   # api replicas <-> coordinator
+#   export PARSEDOCK_WORKER_TOKEN=$(openssl rand -hex 24)     # workers <-> coordinator (distinct)
 #   export PARSEDOCK_API_KEYS="$(openssl rand -hex 24):acme"
 #   docker compose -f deploy/compose.cpu.yaml up -d
 #   curl -H "Authorization: Bearer $KEY" -F file=@doc.pdf http://localhost:8080/v1/jobs
 #
 # Ports: only the API replicas publish ports. The coordinator and the worker
 # protocol stay on an internal Docker network.
+#
+# Credentials: the internal token is the only one that may act for an owner on /v1.
+# Workers hold just the worker token, so a compromised worker container cannot read or
+# ACK other tenants' results.
 name: parsedock
 
 x-common: &common
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
 
+# Control-plane processes (coordinator, API replicas) need no Linux capability.
+x-control-plane: &control-plane
+  <<: *common
+  cap_drop: [ALL]
+
 services:
   coordinator:
-    <<: *common
+    <<: *control-plane
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
     command:
       - --role=coordinator
@@ -30,6 +40,7 @@ services:
       - --log-level=info
     environment:
       PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?set a long random token}
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?set a second random token for the workers}
     volumes:
       # SQLite + inputs + results. Must be local disk, never a network share.
       - parsedock-data:/data
@@ -39,7 +50,7 @@ services:
     # /readyz). A fake `test:` command would report health without checking it.
 
   api-1:
-    <<: *common
+    <<: *control-plane
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
     command:
       - --role=api
@@ -55,7 +66,7 @@ services:
     depends_on: [coordinator]
 
   api-2:
-    <<: *common
+    <<: *control-plane
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
     command:
       - --role=api
@@ -72,6 +83,8 @@ services:
     depends_on: [coordinator]
 
   worker-cpu:
+    # Deliberately not cap_drop: [ALL]: --sandbox=unshare-net needs CAP_SYS_ADMIN (or
+    # unprivileged user namespaces) to give the engine a private network namespace.
     <<: *common
     image: ${PARSEDOCK_WORKER_IMAGE:-parsedock-worker-cpu:0.1.0}
     command:
@@ -83,6 +96,9 @@ services:
       - --device-type=cpu
       - --heartbeat=10s
       - --max-parse-minutes=30
+      # Keep equal to the coordinator/api upload limit (default 64): the worker refuses
+      # inputs above its own --max-upload-mb.
+      - --max-upload-mb=64
       # OCR settings. The language must match the corpus: tesseract needs the right
       # tessdata language, and a wrong value silently degrades the text. Leaving the
       # backend empty keeps tesseract; paddle-ocr (PP-OCRv6, in-process) reads both
@@ -94,7 +110,8 @@ services:
       # worker fails closed if the sandbox cannot be created.
       # - --sandbox=unshare-net
     environment:
-      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      # The worker credential only: it opens the worker protocol, not /v1.
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?}
     # Scratch space only: nothing a worker writes must survive the task.
     tmpfs:
       - /work:mode=1777,size=4g

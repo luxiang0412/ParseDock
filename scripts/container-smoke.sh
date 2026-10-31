@@ -27,8 +27,10 @@ mkdir -p "$OUT_DIR"
 TMP="$(mktemp -d)"
 TOKEN="$(python3 -c 'import secrets;print(secrets.token_hex(24))')"
 KEY="$(python3 -c 'import secrets;print(secrets.token_hex(24))')"
+WORKER_TOKEN="$(python3 -c 'import secrets;print(secrets.token_hex(24))')"
 cat > "$TMP/env" <<ENV
 PARSEDOCK_INTERNAL_TOKEN=$TOKEN
+PARSEDOCK_WORKER_TOKEN=$WORKER_TOKEN
 PARSEDOCK_API_KEYS=$KEY:smoke
 API_PORT_1=$API1
 API_PORT_2=$API2

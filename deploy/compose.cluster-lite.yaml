@@ -3,42 +3,68 @@
 # COORDINATOR_URL at the coordinator's private address.
 #
 # On the coordinator host:
+#   COORDINATOR_BIND=10.0.0.10 \
 #   docker compose -f deploy/compose.cluster-lite.yaml up -d coordinator api-1
 # On a worker host (second machine, same private network):
-#   COORDINATOR_URL=http://10.0.0.10:8081 \
+#   COORDINATOR_URL=https://coordinator.internal:8081 \
 #   docker compose -f deploy/compose.cluster-lite.yaml --profile remote-worker up -d worker-remote
 #
 # Hard requirements:
 #   * the Coordinator's internal API is never published to the internet;
 #   * SQLite + data stay on one host (no network filesystem);
-#   * every worker presents PARSEDOCK_INTERNAL_TOKEN.
+#   * remote workers present PARSEDOCK_WORKER_TOKEN (never the internal token, which
+#     can act for any owner on /v1);
+#   * traffic that leaves the host uses mutual TLS. The tokens alone travel in
+#     cleartext on plain HTTP. Enable it with the commented TLS lines below
+#     (certificate recipe: docs/DEPLOYMENT.md §6c) and an https:// COORDINATOR_URL.
 name: parsedock
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt: ["no-new-privileges:true"]
 
 services:
   coordinator:
+    <<: *hardening
+    cap_drop: [ALL]
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
-    restart: unless-stopped
     command:
       - --role=coordinator
       - --internal-listen=0.0.0.0:8081
       - --data-dir=/data
       - --engines=native,xberg,docling-rs
+      # Mutual TLS for the cross-host hop (mount /certs read-only, see volumes):
+      # - --tls-cert=/certs/coordinator.crt
+      # - --tls-key=/certs/coordinator.key
+      # - --tls-client-ca=/certs/ca.crt
     environment:
       PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?set a second random token for the workers}
     volumes:
       - parsedock-data:/data
+      # - ./certs:/certs:ro
     ports:
       # Bind to the private interface only, never 0.0.0.0 on a public host.
       - "${COORDINATOR_BIND:-127.0.0.1}:8081:8081"
-    networks: [backend]
+    # `backend` is internal (api-1 <-> coordinator, no egress). Docker does not publish
+    # ports for a container that is only on internal networks, so the published port
+    # needs `cluster`, a regular bridge network, for remote workers to reach it.
+    networks: [backend, cluster]
 
   api-1:
+    <<: *hardening
+    cap_drop: [ALL]
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
-    restart: unless-stopped
     command:
       - --role=api
       - --listen=0.0.0.0:8080
       - --coordinator-url=${COORDINATOR_URL:-http://coordinator:8081}
+      # With --tls-client-ca on the coordinator, the replica needs a client certificate
+      # too (and an https:// URL whose name is in the coordinator certificate):
+      # - --tls-ca=/certs/ca.crt
+      # - --tls-cert=/certs/api-1.crt
+      # - --tls-key=/certs/api-1.key
+      # - --tls-server-name=coordinator.internal
     environment:
       PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
       PARSEDOCK_API_KEYS: ${PARSEDOCK_API_KEYS:?}
@@ -47,25 +73,38 @@ services:
 
   worker-remote:
     profiles: ["remote-worker"]
+    # Deliberately not cap_drop: [ALL]: --sandbox=unshare-net needs namespace
+    # capabilities. no-new-privileges still applies.
+    <<: *hardening
     image: ${PARSEDOCK_WORKER_IMAGE:-parsedock-worker-cpu:0.1.0}
-    restart: unless-stopped
     command:
       - --role=worker
-      - --coordinator-url=${COORDINATOR_URL:?set http://coordinator-host:8081}
+      - --coordinator-url=${COORDINATOR_URL:?set https://coordinator-host:8081}
       - --engines=native,xberg,docling-rs
       - --worker-concurrency=2
       - --work-dir=/work
       - --device-type=${DEVICE_TYPE:-cpu}
+      # Mutual TLS (mount /certs read-only, see volumes):
+      # - --tls-ca=/certs/ca.crt
+      # - --tls-cert=/certs/worker-1.crt
+      # - --tls-key=/certs/worker-1.key
+      # - --tls-server-name=coordinator.internal
     environment:
-      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?}
+    # volumes:
+    #   - ./certs:/certs:ro
     tmpfs:
       - /work:mode=1777,size=4g
-    networks: [backend]
+    # A worker on another host must reach the coordinator's host address, which an
+    # internal network cannot do. Engines then have egress too: prefer
+    # --sandbox=unshare-net for the parse itself.
+    networks: [cluster]
 
 networks:
   frontend: {}
   backend:
     internal: true
+  cluster: {}
 
 volumes:
   parsedock-data: {}

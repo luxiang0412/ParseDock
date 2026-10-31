@@ -6,7 +6,8 @@
 #
 # Published ports (change in .env):
 #   8080  public API        (bearer key required)
-#   8090  Playground UI     (proxies /v1 with the key injected server-side)
+#   8090  Playground UI     (proxies /v1 with the key injected server-side;
+#                            bound to 127.0.0.1 unless PLAYGROUND_BIND is set)
 #
 # The coordinator's internal listener (8081) and the worker protocol are never
 # published: they live on the `backend` network, which Docker marks internal.
@@ -16,9 +17,14 @@ x-common: &common
   restart: unless-stopped
   security_opt: ["no-new-privileges:true"]
 
+# Control-plane processes (coordinator, API) need no Linux capability.
+x-control-plane: &control-plane
+  <<: *common
+  cap_drop: [ALL]
+
 services:
   coordinator:
-    <<: *common
+    <<: *control-plane
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
     command:
       - --role=coordinator
@@ -35,13 +41,14 @@ services:
       - --log-level=info
     environment:
       PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?set it in .env}
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?set it in .env (distinct from the internal token)}
     volumes:
       # SQLite + inputs + results. Must be a local disk, never NFS/SMB.
       - parsedock-data:/data
     networks: [backend]
 
   api:
-    <<: *common
+    <<: *control-plane
     image: ${PARSEDOCK_IMAGE:-parsedock:0.1.0}
     command:
       - --role=api
@@ -58,6 +65,8 @@ services:
     depends_on: [coordinator]
 
   worker-cpu:
+    # Deliberately not cap_drop: [ALL]: --sandbox=unshare-net needs namespace
+    # capabilities. no-new-privileges still applies.
     <<: *common
     image: ${PARSEDOCK_WORKER_IMAGE:-parsedock-worker-cpu:0.1.0}
     command:
@@ -69,13 +78,17 @@ services:
       - --work-dir=/work
       - --heartbeat=10s
       - --max-parse-minutes=30
+      # Must match the coordinator/api limit: the worker refuses inputs above its own
+      # --max-upload-mb (default 64), so a 128 MiB upload would be accepted and then fail.
+      - --max-upload-mb=${PARSEDOCK_MAX_UPLOAD_MB:-128}
       # OCR language: tesseract code. "zh" for Chinese scans, "eng" for Latin.
       # A wrong value does not fail the job, it silently degrades scanned text.
       - --xberg-ocr-lang=${PARSEDOCK_XBERG_OCR_LANG:-eng}
       # Empty is the default and means "let xberg use tesseract".
       - --xberg-ocr-backend=${PARSEDOCK_XBERG_OCR_BACKEND:-}
     environment:
-      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      # The worker credential only: it opens the worker protocol, not /v1.
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?}
     # Scratch only; nothing a worker writes must survive the task.
     tmpfs:
       - /work:mode=1777,size=8g
@@ -85,6 +98,10 @@ services:
   playground:
     <<: *common
     image: ${PARSEDOCK_PLAYGROUND_IMAGE:-parsedock-playground:0.1.0}
+    # nginx's master runs as root and drops to the `nginx` user: it needs chown of the
+    # cache dirs and setuid/setgid, nothing else.
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
     read_only: true
     tmpfs:
       - /var/cache/nginx:mode=1777
@@ -95,7 +112,9 @@ services:
       # Injected as the bearer on every proxied /v1 request; never reaches the browser.
       PARSEDOCK_PROXY_TOKEN: ${PLAYGROUND_KEY:?set a dedicated token in .env}
       NGINX_PORT: "8080"
-    ports: ["${PLAYGROUND_PORT:-8090}:8080"]
+    # The injected key is full-scope for owner "playground": whoever reaches this port
+    # acts as that owner. Loopback by default; PLAYGROUND_BIND=0.0.0.0 exposes it.
+    ports: ["${PLAYGROUND_BIND:-127.0.0.1}:${PLAYGROUND_PORT:-8090}:8080"]
     # Only the public network: the UI must not reach the coordinator or workers.
     networks: [frontend]
     depends_on: [api]

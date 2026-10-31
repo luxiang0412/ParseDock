@@ -23,6 +23,8 @@ const proxy: Record<string, ProxyOptions> = {
     configure: (p) => {
       p.on('proxyReq', (req) => {
         req.removeHeader('cookie')
+        // The gateway also accepts X-Api-Key; a page must never pick its own key.
+        req.removeHeader('x-api-key')
         if (key) req.setHeader('authorization', `Bearer ${key}`)
       })
     },
