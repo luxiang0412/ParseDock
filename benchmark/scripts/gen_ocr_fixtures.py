@@ -121,8 +121,76 @@ def render_page(lines: list[str], dpi: int, width_in: float = 8.27, height_in: f
     return img
 
 
+TABLE_ROWS = [
+    ["区域", "托盘数", "准时率", "单托运费"],
+    ["华北", "48,120", "97.4%", "3.85"],
+    ["华东", "41,600", "95.1%", "4.02"],
+    ["华南", "38,680", "93.8%", "4.31"],
+    ["合计", "128,400", "95.7%", "4.03"],
+]
+
+
+def render_table_page(dpi: int, width_in: float = 8.27, height_in: float = 11.69):
+    """Draw a bordered table so xberg has real table geometry to report."""
+    w, h = int(width_in * dpi), int(height_in * dpi)
+    img = Image.new("RGB", (w, h), "white")
+    draw = ImageDraw.Draw(img)
+    font = pick_font(max(10, int(dpi * 0.13)))
+    left, top = int(dpi * 0.9), int(dpi * 1.2)
+    col_w, row_h = int(dpi * 1.6), int(dpi * 0.32)
+    rows, cols = len(TABLE_ROWS), len(TABLE_ROWS[0])
+    draw.text((left, int(dpi * 0.7)), "季度物流汇总表", fill="black", font=pick_font(max(12, int(dpi * 0.18))))
+    for r in range(rows + 1):
+        y = top + r * row_h
+        draw.line([(left, y), (left + cols * col_w, y)], fill="black", width=2)
+    for c in range(cols + 1):
+        x = left + c * col_w
+        draw.line([(x, top), (x, top + rows * row_h)], fill="black", width=2)
+    for r, row in enumerate(TABLE_ROWS):
+        for c, cell in enumerate(row):
+            draw.text((left + c * col_w + int(dpi * 0.06), top + r * row_h + int(dpi * 0.06)),
+                      cell, fill="black", font=font)
+    return img
+
+
 def normalise(text: str) -> str:
     return unicodedata.normalize("NFC", text)
+
+
+FIXED_PDF_DATE = b"D:20260101000000Z"
+
+
+def stabilise_pdf(path: Path) -> None:
+    """Rewrite the embedded timestamps so two runs produce identical bytes.
+
+    PIL stamps ``/CreationDate`` (and sometimes ``/ModDate``) with the current
+    time, which makes a "reproducible" fixture change hash on every run. The
+    replacement keeps the same length, so the cross-reference offsets stay valid.
+    """
+    data = path.read_bytes()
+    out = bytearray()
+    i = 0
+    needle = b"D:"
+    while True:
+        j = data.find(needle, i)
+        if j < 0:
+            out += data[i:]
+            break
+        out += data[i:j]
+        k = j + 2
+        # 14 digits, optionally followed by Z
+        while k < len(data) and k - (j + 2) < 14 and data[k : k + 1].isdigit():
+            k += 1
+        if k - (j + 2) == 14:
+            out += FIXED_PDF_DATE
+            if data[k : k + 1] == b"Z":
+                k += 1
+            i = k
+        else:
+            out += data[j:k]
+            i = k
+    if bytes(out) != data:
+        path.write_bytes(bytes(out))
 
 
 def write_fixture(out: Path, name: str, pages: list[list[str]], dpi: int) -> dict:
@@ -131,6 +199,7 @@ def write_fixture(out: Path, name: str, pages: list[list[str]], dpi: int) -> dic
     pdf = out / f"{name}.pdf"
     images[0].save(png, format="PNG", optimize=True)
     images[0].save(pdf, format="PDF", resolution=float(dpi), save_all=True, append_images=images[1:])
+    stabilise_pdf(pdf)
     gold = "\n".join(normalise(line) for page in pages for line in page) + "\n"
     gpath = out / f"{name}.gold.txt"
     gpath.write_text(gold, encoding="utf-8")
@@ -147,6 +216,7 @@ def write_fixture(out: Path, name: str, pages: list[list[str]], dpi: int) -> dic
         "png_bytes": png.stat().st_size,
         "pdf_bytes": pdf.stat().st_size,
         "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+        "sha256_png": hashlib.sha256(png.read_bytes()).hexdigest(),
     }
 
 
@@ -175,6 +245,29 @@ def main() -> None:
         pages = [page(base, 1), page(base, 2)]
         manifest.append(write_fixture(out, f"{lang}_dense", pages, args.dpi))
         manifest.append(write_fixture(out, f"{lang}_line", [[base[0], base[3]]], args.dpi))
+
+    # A page with an actual ruled table: the only way to see whether xberg's
+    # table bounding boxes are in PDF points or in raster pixels.
+    table_pages = [TABLE_ROWS, TABLE_ROWS]
+    images = [render_table_page(args.dpi) for _ in table_pages]
+    png, pdf = out / "zh_table.png", out / "zh_table.pdf"
+    images[0].save(png, format="PNG", optimize=True)
+    images[0].save(pdf, format="PDF", resolution=float(args.dpi), save_all=True, append_images=images[1:])
+    stabilise_pdf(pdf)
+    gold = "\n".join(" ".join(row) for row in TABLE_ROWS) + "\n"
+    (out / "zh_table.gold.txt").write_text(gold, encoding="utf-8")
+    (out / "zh_table.p1.gold.txt").write_text(gold, encoding="utf-8")
+    manifest.append({
+        "fixture": "zh_table",
+        "pages": len(table_pages),
+        "lines": len(TABLE_ROWS),
+        "chars": len(gold),
+        "dpi": args.dpi,
+        "png_bytes": png.stat().st_size,
+        "pdf_bytes": pdf.stat().st_size,
+        "sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+        "table": True,
+    })
 
     import json
 

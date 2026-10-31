@@ -49,7 +49,11 @@ checked at startup, so a typo fails before the first scan instead of per job.
   avoids the G1 trap; tesseract still needs the right `tessdata` language.
 * Test: `TestXbergArgs` gains a case asserting the flags are passed only when set.
 
-### P2 — make "quality unknown" visible so `auto` can escalate (small, uses existing vocabulary)
+### P2 — separate `ocr_used` from `ocr_low_confidence`, then escalate on evidence
+
+**Revised after the code audit** — the original sketch (escalate on
+`ocr_quality_unknown`) would have made every PP-OCRv6 job parse twice. Full
+design, thresholds and tests: **`docs/OCR-PR-B-DESIGN.md`**.
 
 When the backend reports `ocr_confidence.score == null` **and** OCR ran on a page
 with `scanned_confidence ≥ 0.7`, emit the warning ParseDock already defines —
@@ -85,7 +89,12 @@ result; the error code stays `encrypted_file` when it is absent or wrong.
 * Do **not** do this in the same PR as routing: it touches the public API, the
   worker protocol and the log-redaction rules.
 
-### P5 — GPU: do not add an EP flag yet; add a *refusal* guard instead
+### P5 — GPU: prove it or fail closed
+
+**Revised**: MinerU's own daemon log shows why our "GPU" worker runs on CPU
+(`libvulkan.so.1` missing → `providers=['CPUExecutionProvider'], gpu=None`), and
+docling-rs falls back to CPU with exit 0. Full design, staged rollout and tests:
+**`docs/OCR-PR-D-DESIGN.md`**.
 
 The measurement (see benchmark doc) is that CUDA on this GPU is 18× slower and
 changes output, while the engine hides a missing provider behind a warning. Two
@@ -117,12 +126,12 @@ contract, (b) a scanned-*table* fixture proves the coordinate space, (c) the
 
 ## 5. PR split
 
-| PR | Content | Risk | Gate |
-| --- | --- | --- | --- |
-| **A** | P1 flags + docs + unit tests | none (defaults unchanged) | unit, contract |
-| **B** | P2 `ocr_quality_unknown` + escalation test | low (more escalations, bounded) | unit, lifecycle, benchmark latency |
-| **C** | P3 docling-rs passthrough | none | unit |
-| **D** | P5 refusal guard for `gpu_required` | low | unit + T12 unchanged |
+| PR | Content | Risk | Gate | Status |
+| --- | --- | --- | --- | --- |
+| **A** | P1 backend selector + validation + docs + tests | none (defaults unchanged) | unit, contract | **merged (#32)**, `docs/OCR-PR-A-REPORT.md` |
+| **B** | P2 warning taxonomy + escalation revision + duplicate-parse guard | low (fewer, better-targeted escalations) | unit, lifecycle, benchmark latency | design: `docs/OCR-PR-B-DESIGN.md` |
+| **C** | P3 docling-rs passthrough | none | unit | proposed |
+| **D** | P5 fail-closed GPU evidence (staged warn → require) | low in `warn`, medium in `require` | unit + T12 unchanged | design: `docs/OCR-PR-D-DESIGN.md` |
 | **E** | P4 encrypted documents | medium (API + redaction) | contract, security review |
 | **F** | P6 IR OCR elements | blocked | upstream + fixture |
 

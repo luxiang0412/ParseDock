@@ -71,8 +71,10 @@ worker would see.
 1. **Chinese**: PP-OCRv6 small is the only engine at CER 0.000 (every engine in
    the xberg, RapidOCR and docling-rs families runs this model family; docling-rs
    is 0.002 because it joins lines differently). Tesseract with the right
-   `chi_sim` data is 6–7 % CER — mostly inserted spaces between characters —
-   and with `eng` it is unusable (45 %).
+   `chi_sim` data is 7.5 % CER and with `eng` it is unusable (45 %). **The 7.5 %
+   is not spacing** — see §2.2, which decomposes it: the squashed metric has
+   already removed every space, and the residual is full-width punctuation
+   (`：`→`:`, 40 of 64 substitutions) plus a handful of glyph confusions.
 2. **English**: tesseract wins on cost (387 ms, 225 MiB) and is exact. PP-OCRv6
    is also exact but 3.4× slower and 3.7× the memory.
 3. **Language independence of PP-OCRv6 `ch`**: it reads English at CER 0.000 too,
@@ -91,6 +93,48 @@ worker would see.
 8. **Startup cost dominates small documents**: docling-rs spends ~1.4 s of the
    1.65 s loading models; a warm daemon would change the ranking for
    many-small-file workloads. Our worker pays this per document today.
+
+### 2.2 What the CER numbers do and do not prove
+
+`ocr_bench.py` removes whitespace before scoring, so a claim like "the error is
+mostly inserted spaces" is testable rather than rhetorical:
+`benchmark/scripts/cer_breakdown.py` computes the same score **with** line
+structure kept, then aligns the strings and classifies every edit.
+
+| Engine (fixture) | CER, whitespace removed | CER, line structure kept | substitutions | insertions | deletions |
+| --- | --- | --- | --- | --- | --- |
+| tesseract `chi_sim` (zh_dense) | 0.075 | 0.297 | 64 | 9 | 0 |
+| paddle-ocr `ch` (zh_dense) | 0.000 | 0.021 | 0 | 0 | 0 |
+| tesseract `eng` (en_dense) | 0.000 | 0.000 | 0 | 0 | 0 |
+| tesseract `eng` on Chinese (zh_dense) | 0.453 | 0.507 | 345 | 84 | 11 |
+
+Reading it:
+
+* **Spacing is a metric artefact, not an error source.** It inflates the
+  line-preserving score (0.075 → 0.297) and disappears from the reported one.
+  The reported 0.075 is character-level: 40 × full-width `：` → ASCII `:`, 6 ×
+  `：` → `;`, 2 × `，` → `~`, 2 × `共` → `半`, 2 × `页` → `忆`, 2 × `）` → `)`,
+  and `万`/`D`/`E`/`>` insertions. Tesseract's Chinese problem is punctuation
+  width and a few glyphs, not layout.
+* **PP-OCRv6 loses line structure instead** (0.021 with lines kept, 0
+  substitutions). Downstream consumers that regenerate paragraphs from line
+  breaks will notice; the character stream is exact.
+* **The wrong-language case is dominated by substitutions** (345) with 84
+  insertions — i.e. it invents plausible-looking Latin, which is exactly why a
+  "CJK ratio" check cannot detect it (ratio 0.00 and no escalation; see the PR-B
+  design).
+* **digit CER is a weak generalisation.** It is 0.000 for tesseract even when
+  7.5 % of characters are wrong, because digits survive: it certifies *numbers*,
+  not the document. It also ignores order across the document (a sorted digit
+  stream can match while every amount is attached to the wrong label), ignores
+  full-width ↔ half-width (`１２３` vs `123` both count as digits but different
+  code points), and cannot see a lost thousands separator. Use it as a
+  "did we lose a number" tripwire, never as an accuracy score.
+* **Language-parameter conclusions are bounded by one font and one language per
+  fixture.** `eng`→`english` and `ch`→`chinese` are verified mappings, but
+  "PP-OCRv6 reads English perfectly" rests on a single Latin font at 300 dpi;
+  the six-line fixture in `benchmark/fixtures/generated/` produced
+  `Supler. Nwn Lic`, so the claim is *dense clean scans*, not *any English*.
 
 ## 3. GPU A/B
 

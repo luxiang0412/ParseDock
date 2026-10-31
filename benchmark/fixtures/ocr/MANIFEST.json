@@ -7,7 +7,8 @@
   "dpi": 300,
   "png_bytes": 341322,
   "pdf_bytes": 745407,
-  "sha256": "4d77412f4c4457aea5695f4616549e42438e908555e851c2e0540394de523a96"
+  "sha256": "989f56a7c46e57c297f1077546f07e3652a1ef25438d2547be09572000ca3a19",
+  "sha256_png": "23e5907b9fa30471269d1145cecae71432fb748d24e591acc4a194ed71183f66"
  },
  {
   "fixture": "en_line",
@@ -17,7 +18,8 @@
   "dpi": 300,
   "png_bytes": 54317,
   "pdf_bytes": 153520,
-  "sha256": "2408c87332bd9b61731943cd0126e176c3b7acd487f2c5a6eebcc48f510ade92"
+  "sha256": "cd6d1fbce87dfb39bdc55f1e3f3d14b5bdf9ccbf3ff76c13f880ade2bf7e9c4a",
+  "sha256_png": "9e07f3a7d7ae694f5a5beea0672ddc3edc84dd386f141a16c6964a96e647b173"
  },
  {
   "fixture": "zh_dense",
@@ -27,7 +29,8 @@
   "dpi": 300,
   "png_bytes": 367302,
   "pdf_bytes": 724974,
-  "sha256": "f81dcfeaac47efadce5edb61b4d4ca32b1bd3a045e83b202dc7cf3925c0e9315"
+  "sha256": "b491b0f4f0143c6fd82a5dafc790d0223867141c440d3601edf4d8fb9931da65",
+  "sha256_png": "737e02c601520aa25c384528ed640d810eae4a5bcc6ba125da7cb9e470f934cf"
  },
  {
   "fixture": "zh_line",
@@ -37,6 +40,18 @@
   "dpi": 300,
   "png_bytes": 58598,
   "pdf_bytes": 154204,
-  "sha256": "88483e378d1d8f6b261ee3c5243709f39480156397bbb7740219773d372d1782"
+  "sha256": "c32461a77d272dea339878c1e2641c507aa4f01ec638572c4d902852a0bbd2b9",
+  "sha256_png": "3241eca009c2cfb62e08c217e4fc5c099f4a0bab8186bbb2e01dba59f7b04f5b"
+ },
+ {
+  "fixture": "zh_table",
+  "pages": 2,
+  "lines": 5,
+  "chars": 101,
+  "dpi": 300,
+  "png_bytes": 94730,
+  "pdf_bytes": 407300,
+  "sha256": "834157d1881f6017b0fdfcc7bab983da9e2f9e27a68c75ffd3614d971ca19642",
+  "table": true
  }
 ]
