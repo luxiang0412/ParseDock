@@ -594,6 +594,7 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 		"from", used.Name(), "to", alt.Name(), "trigger", trigger.String())
 
 	var altEvidence engines.Execution
+	altStart := time.Now()
 	res, perr := alt.Parse(ctx, engines.Request{
 		// Always retry from the worker's own input copy, never from an engine's
 		// scratch copy (which the first engine may have already overwritten).
@@ -603,7 +604,12 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 		Progress:        func(int, string) {},
 		ReportExecution: func(e engines.Execution) { altEvidence = e },
 	})
-	if res != nil {
+	// Charge the wall time the retry actually cost. A failed engine reports no
+	// metrics of its own, so the engine-measured value alone would record 0 for
+	// exactly the case that wasted the most time.
+	wallMs := time.Since(altStart).Milliseconds()
+	decision.AccurateMs = wallMs
+	if res != nil && res.Metrics.ParseMs > wallMs {
 		decision.AccurateMs = res.Metrics.ParseMs
 	}
 	reject := func(reason string) (*documentir.Document, engines.Engine, engines.Execution) {
@@ -612,9 +618,6 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 		// charged to the result that is actually published.
 		if decision.AccurateMs > 0 {
 			doc.Metrics.ParseMs += decision.AccurateMs
-		} else if res == nil && perr != nil {
-			// The engine failed before reporting metrics; nothing measurable.
-			doc.Metrics.ParseMs += 0
 		}
 		doc.Routing.Reason = strings.TrimSuffix(doc.Routing.Reason, "; ") + "; " + engines.EscalationReason(used.Name(), decision)
 		w.Log.Info("escalation rejected; keeping the fast result", "job", task.JobID,
