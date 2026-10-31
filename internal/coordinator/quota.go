@@ -140,6 +140,11 @@ func (s *Service) audit(ctx context.Context, event string, job *jobs.Job, extra 
 		"bytes", job.InputSize,
 		"request_id", requestID(ctx),
 	}
+	// The client address as resolved by the gateway (absent for worker-driven and
+	// cleanup events, which have no client).
+	if ip := clientIP(ctx); ip != "" {
+		args = append(args, "client_ip", ip)
+	}
 	for k, v := range extra {
 		args = append(args, k, v)
 	}
