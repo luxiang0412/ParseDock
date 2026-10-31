@@ -50,7 +50,7 @@ func escapeInline(s string) string {
 			}
 		case '_':
 			// Intraword underscores are never emphasis (CommonMark 6.2).
-			if !(isWordRune(prev) && isWordRune(next)) && (!unicode.IsSpace(prev) || !unicode.IsSpace(next)) {
+			if (!isWordRune(prev) || !isWordRune(next)) && (!unicode.IsSpace(prev) || !unicode.IsSpace(next)) {
 				b.WriteByte('\\')
 			}
 		case ']':

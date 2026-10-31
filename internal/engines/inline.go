@@ -182,7 +182,7 @@ func matchDelimiters(toks []inlineTok) {
 				// Rule of three: a run that can both open and close does not pair with
 				// one whose length makes the sum a multiple of three.
 				if closer.delim != '~' && (op.canClose || closer.canOpen) &&
-					(op.orig+closer.orig)%3 == 0 && !(op.orig%3 == 0 && closer.orig%3 == 0) {
+					(op.orig+closer.orig)%3 == 0 && (op.orig%3 != 0 || closer.orig%3 != 0) {
 					continue
 				}
 				o = j
@@ -294,14 +294,15 @@ func inlineLink(rs []rune, i int) (string, int, bool) {
 			}
 			continue
 		}
-		if r == '(' {
+		switch r {
+		case '(':
 			parens++
-		} else if r == ')' {
+		case ')':
 			parens--
 			if parens == 0 {
 				return label, k + 1, true
 			}
-		} else if r == '\n' {
+		case '\n':
 			return "", 0, false
 		}
 	}
