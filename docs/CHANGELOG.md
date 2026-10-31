@@ -83,6 +83,12 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ### Added
 
+* **Document IR `rich_text`** (additive, still `doc-ir/0.1`): elements and table cells may
+  carry the same content as `text` with CommonMark inline markup (`**bold**`, `*italic*`,
+  `` `code` ``, `[text](url)`, `~~strike~~`). `text` stays plain, so the text view, search
+  and scoring are unchanged. Defined metadata keys are documented in
+  `docs/DOCUMENT-IR.md` (`content_layer`, `markdown`, `list_ordered`, `list_marker`,
+  `code_language`). Both SDKs and the playground types are regenerated.
 * `docs/ERROR-CODES.md`: every stable error code with HTTP status, retryability, meaning and
   origin; the contract test fails unless it, `internal/jobs` and the OpenAPI enum agree.
 * CI `static` phase: pinned `golangci-lint`, `govulncheck` (run on the pinned toolchain;

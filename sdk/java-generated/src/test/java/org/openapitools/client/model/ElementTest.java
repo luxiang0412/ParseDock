@@ -67,6 +67,14 @@ public class ElementTest {
     }
 
     /**
+     * Test the property 'richText'
+     */
+    @Test
+    public void richTextTest() {
+        // TODO: test richText
+    }
+
+    /**
      * Test the property 'level'
      */
     @Test

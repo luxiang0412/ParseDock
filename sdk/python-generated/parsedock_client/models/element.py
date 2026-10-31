@@ -30,15 +30,16 @@ class Element(BaseModel):
     """ # noqa: E501
     id: StrictStr = Field(json_schema_extra={"examples": ["el_2"]})
     type: StrictStr
-    text: StrictStr
+    text: StrictStr = Field(description="Plain text with inline markup stripped")
+    rich_text: Optional[StrictStr] = Field(default=None, description="Optional. The same content as `text` with CommonMark inline markup (`**bold**`, `*italic*`, `` `code` ``, `[text](url)`, `~~strike~~`). Absent when the engine reported no inline formatting; fall back to `text`. ")
     level: Optional[StrictInt] = Field(default=None, description="Heading level or list nesting; absent when 0")
     reading_order: StrictInt
     confidence: Optional[Union[StrictFloat, StrictInt]] = Field(default=None, description="Only when the engine reports it")
     source_location: Optional[SourceLocation] = None
     table_id: Optional[StrictStr] = None
     image_ref: Optional[StrictStr] = None
-    metadata: Optional[Dict[str, StrictStr]] = None
-    __properties: ClassVar[List[str]] = ["id", "type", "text", "level", "reading_order", "confidence", "source_location", "table_id", "image_ref", "metadata"]
+    metadata: Optional[Dict[str, StrictStr]] = Field(default=None, description="String hints. Defined keys: `content_layer=furniture` (page header/footer, skipped by the Markdown and text views), `markdown=blockquote`, `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`. ")
+    __properties: ClassVar[List[str]] = ["id", "type", "text", "rich_text", "level", "reading_order", "confidence", "source_location", "table_id", "image_ref", "metadata"]
 
     @field_validator('type')
     def type_validate_enum(cls, value):
@@ -109,6 +110,7 @@ class Element(BaseModel):
             "id": obj.get("id"),
             "type": obj.get("type"),
             "text": obj.get("text"),
+            "rich_text": obj.get("rich_text"),
             "level": obj.get("level"),
             "reading_order": obj.get("reading_order"),
             "confidence": obj.get("confidence"),

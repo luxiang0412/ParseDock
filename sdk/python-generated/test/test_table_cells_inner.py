@@ -40,6 +40,7 @@ class TestTableCellsInner(unittest.TestCase):
                 row_span = 56,
                 col_span = 56,
                 text = '',
+                rich_text = '',
                 formula = '',
                 cached_value = '',
                 data_type = 'string',

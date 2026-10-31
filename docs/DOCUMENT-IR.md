@@ -76,7 +76,8 @@ On GPU workers `routing.reason` ends with `; exec=<kind>(<source>)`, e.g.
 {
   "id": "el_2",
   "type": "title|section|paragraph|list|list_item|table|image|formula|caption|footnote|header|footer|code|page_break|unknown",
-  "text": "…",
+  "text": "…",                       // plain text: inline markup stripped
+  "rich_text": "… **bold** …",       // optional: same content with CommonMark inline markup
   "level": 2,                        // heading level or list nesting; 0/absent otherwise
   "reading_order": 1,
   "confidence": 0.93,                // only when the engine actually reports it
@@ -86,6 +87,31 @@ On GPU workers `routing.reason` ends with `; exec=<kind>(<source>)`, e.g.
   "metadata": { "content_layer": "furniture" }
 }
 ```
+
+**`text` vs `rich_text`.** `text` is always plain, so search, embeddings, the `text` view
+and the benchmark scoring (gold is plain text) are unaffected by formatting. `rich_text`
+(also on table cells) carries the same words with CommonMark inline markup — `**bold**`,
+`*italic*`, `` `code` ``, `[text](url)`, `~~strike~~` — and is what the Markdown view
+renders. It is **absent** when the engine reported no inline formatting (or the
+markup-free text is identical); consumers then use `text`. It is never invented: it comes
+from the engine's own Markdown (xberg, MinerU, native `.md` input) or from Docling's
+per-run `formatting`/`hyperlink` fields. Underline and sub/superscript have no CommonMark
+form and are dropped from `rich_text` (the words stay). `rich_text` counts against the same
+text budget as `text` (`Limits.MaxTextBytes`).
+
+**Element metadata keys with a defined meaning** (all values are strings; unknown keys are
+passed through):
+
+| Key | Values | Set by | Rendered as (Markdown) |
+| --- | --- | --- | --- |
+| `content_layer` | `furniture` | Docling `content_layer`; page headers/footers | skipped in Markdown **and** text; kept in JSON |
+| `markdown` | `blockquote` | Markdown `>` lines | `> ` quote (multi-line) |
+| `list_ordered` | `true` | numbered list items (Markdown `1.`, Docling `enumerated`) | numbered item |
+| `list_marker` | e.g. `3.`, `a)` | the marker the source used, when known | that marker; without one, items are numbered per run |
+| `code_language` | e.g. `go` | Markdown ```` ```lang ```` fences | fenced block with that info string |
+
+`header` / `footer` elements are furniture too: the Markdown and text views skip them, JSON
+keeps them.
 
 ### SourceLocation
 
@@ -115,8 +141,11 @@ origins. If an engine gives no geometry, `bbox` is absent — never zero-filled.
                "data_type": "string|number|date|bool", "confidence": … } ] }
 ```
 
-Merged cells appear **once, at their anchor** with `row_span`/`col_span`; the renderer expands
-them into a rectangular grid for Markdown. `formula`/`cached_value` are only present when the
+Merged cells appear **once, at their anchor** with `row_span`/`col_span`. A pipe table cannot
+express a span, so the Markdown view renders a table that has any `row_span`/`col_span > 1`
+as an HTML `<table>` with `rowspan`/`colspan` (cell text HTML-escaped, the first
+`header_rows` rows as `<th>`); every other table is a GFM pipe table whose cell line breaks
+become `<br>` and whose `|` is escaped. `formula`/`cached_value` are only present when the
 engine exposes them (XLSX via structured engines).
 
 ### Warning

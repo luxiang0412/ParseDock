@@ -929,6 +929,7 @@ components:
         - id: el_2
           type: title
           text: text
+          rich_text: rich_text
           level: 1
           reading_order: 5
           confidence: 5.637376656633329
@@ -951,6 +952,7 @@ components:
         - id: el_2
           type: title
           text: text
+          rich_text: rich_text
           level: 1
           reading_order: 5
           confidence: 5.637376656633329
@@ -995,6 +997,7 @@ components:
             row_span: 1
             col_span: 4
             text: text
+            rich_text: rich_text
             formula: formula
             cached_value: cached_value
             data_type: string
@@ -1004,6 +1007,7 @@ components:
             row_span: 1
             col_span: 4
             text: text
+            rich_text: rich_text
             formula: formula
             cached_value: cached_value
             data_type: string
@@ -1032,6 +1036,7 @@ components:
             row_span: 1
             col_span: 4
             text: text
+            rich_text: rich_text
             formula: formula
             cached_value: cached_value
             data_type: string
@@ -1041,6 +1046,7 @@ components:
             row_span: 1
             col_span: 4
             text: text
+            rich_text: rich_text
             formula: formula
             cached_value: cached_value
             data_type: string
@@ -1134,6 +1140,7 @@ components:
         id: el_2
         type: title
         text: text
+        rich_text: rich_text
         level: 1
         reading_order: 5
         confidence: 5.637376656633329
@@ -1176,6 +1183,13 @@ components:
           - unknown
           type: string
         text:
+          description: Plain text with inline markup stripped
+          type: string
+        rich_text:
+          description: |
+            Optional. The same content as `text` with CommonMark inline markup
+            (`**bold**`, `*italic*`, `` `code` ``, `[text](url)`, `~~strike~~`). Absent
+            when the engine reported no inline formatting; fall back to `text`.
           type: string
         level:
           description: Heading level or list nesting; absent when 0
@@ -1195,6 +1209,10 @@ components:
         metadata:
           additionalProperties:
             type: string
+          description: |
+            String hints. Defined keys: `content_layer=furniture` (page header/footer,
+            skipped by the Markdown and text views), `markdown=blockquote`,
+            `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`.
           type: object
       required:
       - id
@@ -1259,6 +1277,7 @@ components:
           row_span: 1
           col_span: 4
           text: text
+          rich_text: rich_text
           formula: formula
           cached_value: cached_value
           data_type: string
@@ -1268,6 +1287,7 @@ components:
           row_span: 1
           col_span: 4
           text: text
+          rich_text: rich_text
           formula: formula
           cached_value: cached_value
           data_type: string
@@ -1601,6 +1621,7 @@ components:
         row_span: 1
         col_span: 4
         text: text
+        rich_text: rich_text
         formula: formula
         cached_value: cached_value
         data_type: string
@@ -1615,6 +1636,9 @@ components:
         col_span:
           type: integer
         text:
+          type: string
+        rich_text:
+          description: Optional cell text with CommonMark inline markup
           type: string
         formula:
           type: string

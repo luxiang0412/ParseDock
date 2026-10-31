@@ -855,7 +855,13 @@ components:
             - code
             - page_break
             - unknown
-        text: { type: string }
+        text: { type: string, description: Plain text with inline markup stripped }
+        rich_text:
+          type: string
+          description: |
+            Optional. The same content as `text` with CommonMark inline markup
+            (`**bold**`, `*italic*`, `` `code` ``, `[text](url)`, `~~strike~~`). Absent
+            when the engine reported no inline formatting; fall back to `text`.
         level: { type: integer, description: Heading level or list nesting; absent when 0 }
         reading_order: { type: integer }
         confidence: { type: [number, 'null'], description: Only when the engine reports it }
@@ -864,6 +870,10 @@ components:
         image_ref: { type: string }
         metadata:
           type: object
+          description: |
+            String hints. Defined keys: `content_layer=furniture` (page header/footer,
+            skipped by the Markdown and text views), `markdown=blockquote`,
+            `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`.
           additionalProperties: { type: string }
 
     SourceLocation:
@@ -907,6 +917,7 @@ components:
               row_span: { type: integer }
               col_span: { type: integer }
               text: { type: string }
+              rich_text: { type: string, description: Optional cell text with CommonMark inline markup }
               formula: { type: string }
               cached_value: { type: string }
               data_type: { type: string, enum: [string, number, date, bool] }

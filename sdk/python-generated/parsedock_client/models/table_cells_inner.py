@@ -17,7 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, StrictFloat, StrictInt, StrictStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictFloat, StrictInt, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List, Optional, Union
 from typing import Optional, Set
 from typing_extensions import Self
@@ -32,11 +32,12 @@ class TableCellsInner(BaseModel):
     row_span: Optional[StrictInt] = None
     col_span: Optional[StrictInt] = None
     text: Optional[StrictStr] = None
+    rich_text: Optional[StrictStr] = Field(default=None, description="Optional cell text with CommonMark inline markup")
     formula: Optional[StrictStr] = None
     cached_value: Optional[StrictStr] = None
     data_type: Optional[StrictStr] = None
     confidence: Optional[Union[StrictFloat, StrictInt]] = None
-    __properties: ClassVar[List[str]] = ["row", "col", "row_span", "col_span", "text", "formula", "cached_value", "data_type", "confidence"]
+    __properties: ClassVar[List[str]] = ["row", "col", "row_span", "col_span", "text", "rich_text", "formula", "cached_value", "data_type", "confidence"]
 
     @field_validator('data_type')
     def data_type_validate_enum(cls, value):
@@ -109,6 +110,7 @@ class TableCellsInner(BaseModel):
             "row_span": obj.get("row_span"),
             "col_span": obj.get("col_span"),
             "text": obj.get("text"),
+            "rich_text": obj.get("rich_text"),
             "formula": obj.get("formula"),
             "cached_value": obj.get("cached_value"),
             "data_type": obj.get("data_type"),

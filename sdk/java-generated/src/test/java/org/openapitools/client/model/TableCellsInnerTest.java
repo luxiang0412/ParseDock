@@ -80,6 +80,14 @@ public class TableCellsInnerTest {
     }
 
     /**
+     * Test the property 'richText'
+     */
+    @Test
+    public void richTextTest() {
+        // TODO: test richText
+    }
+
+    /**
      * Test the property 'formula'
      */
     @Test
