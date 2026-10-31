@@ -530,10 +530,11 @@ plus two follow-ups on the merged branch. User/operator-visible changes are in
 **Evidence (dev host, 2026-11-01):** `bash scripts/ci-local.sh all` PASS in 191.7 s;
 `bash scripts/ci-local.sh lifecycle` PASS in 138.6 s; `python3 tests/contract/openapi_contract.py`
 47 checks, 0 failures; `make web-test` PASS; `govulncheck` on the pinned go1.27.3: 0 reachable
-vulnerabilities (the same scan on go1.24.4 reported 42 reachable standard-library ones).
+vulnerabilities (the same scan on go1.24.4 reported 42 reachable standard-library ones);
+`bash scripts/ci-local.sh engines` (real xberg/docling-rs, T01/T02/T11, bench + quality gate)
+PASS in 30.9 s.
 
-**Not verified:** the `engines` phase (real parsers + quality gate) on this batch, a real
-multi-host cluster-lite deployment, and GPU hardware. Out of scope: binding mTLS certificate
+**Not verified:** a real multi-host cluster-lite deployment, and GPU hardware. Out of scope: binding mTLS certificate
 roles to tokens; the worker learning the upload limit from the coordinator.
 
 ## Sequencing

@@ -110,7 +110,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: lifecycle phase (T03-T16, PR-00 runtime, backup/restore)
+      - name: lifecycle phase (T03-T17 except T11, PR-00 runtime, backup/restore)
         run: bash scripts/ci-local.sh lifecycle
       - name: upload evidence (acceptance + PR-00 JSON, stack logs)
         if: always()
