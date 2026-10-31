@@ -11,6 +11,15 @@ published copy drifts, and pins the Docling→IR mapping with a golden file
 Implemented in `internal/documentir/ir.go`; renderers in `export.go`.
 JSON is the IR itself; Markdown and Text are **derived views**, never the source of truth.
 
+## Redundant table text is dropped
+
+Engines commonly return a table twice: as the lines of text on the page and as a structured
+`Table`. Keeping both made every rendered Markdown/text output repeat the cells. The worker now
+calls `DropTableShadows()` after parsing: the run of paragraphs immediately preceding a table
+element is removed when, and only when, it matches the table's rows one per row in order. A
+paragraph elsewhere that happens to quote a row is untouched, and a partially matching run is
+left alone (prose is more likely than a broken table).
+
 ## 1. Why not "just Markdown"
 
 * Markdown loses page numbers, coordinates, sheet names, cell spans, reading order and confidence.

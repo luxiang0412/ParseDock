@@ -176,3 +176,48 @@ func TestLimitsRejectDuplicateTableIDs(t *testing.T) {
 		t.Fatal("duplicate table ids were accepted")
 	}
 }
+
+// Audit follow-up: engines return a table both as text lines and as a Table, so the rendered
+// output repeated every cell twice. The redundant lines are the run of paragraphs directly
+// before the table element, one per row, in row order.
+func TestDropTableShadows(t *testing.T) {
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: 2, Cols: 2, HeaderRows: 1, Cells: []Cell{
+			{Row: 0, Col: 0, Text: "Region"}, {Row: 0, Col: 1, Text: "Pallets"},
+			{Row: 1, Col: 0, Text: "North"}, {Row: 1, Col: 1, Text: "48,120"},
+		}}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "Intro paragraph"},
+			{ID: "el_2", Type: ElParagraph, Text: "Region Pallets"},
+			{ID: "el_3", Type: ElParagraph, Text: "North 48,120"},
+			{ID: "el_4", Type: ElTable, TableID: "tbl_1"},
+			{ID: "el_5", Type: ElParagraph, Text: "North 48,120 is also mentioned here, but not as the table."},
+		},
+	}
+	if n := d.DropTableShadows(); n != 2 {
+		t.Fatalf("removed %d elements, want 2", n)
+	}
+	if len(d.Elements) != 3 {
+		t.Fatalf("elements = %d, want 3", len(d.Elements))
+	}
+	if d.Elements[1].Type != ElTable {
+		t.Fatalf("table element lost: %+v", d.Elements)
+	}
+}
+
+func TestDropTableShadowsKeepsProse(t *testing.T) {
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: 1, Cols: 2, Cells: []Cell{
+			{Row: 0, Col: 0, Text: "a"}, {Row: 0, Col: 1, Text: "b"},
+		}}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "a b"},
+			{ID: "el_2", Type: ElParagraph, Text: "something else"},
+			{ID: "el_3", Type: ElTable, TableID: "tbl_1"},
+		},
+	}
+	// Not adjacent: the matching paragraph is separated from the table by another paragraph.
+	if n := d.DropTableShadows(); n != 0 {
+		t.Fatalf("removed %d elements, want 0", n)
+	}
+}
