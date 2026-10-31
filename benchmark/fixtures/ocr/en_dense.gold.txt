@@ -1,0 +1,60 @@
+Quarterly Logistics Review
+Invoice number: 2026-0042
+Supplier: Northwind Logistics Ltd
+Total amount: 18,420.50 EUR
+Row 01-03: 6,009 units, ref 8054
+Due date: 2026-11-30
+Payment terms: net 30 days
+Reference: dock-ops-q3
+Pallet count: 1,284
+Row 01-07: 4,963 units, ref 4916
+On-time delivery: 96.4 percent
+Average dock-to-stock: 4.2 hours
+Damaged units: 37 of 12,840
+Cold-chain excursions: 2
+Row 01-11: 7,154 units, ref 1516
+Warehouse B inbound lane utilisation: 94 percent
+Freight cost per pallet: 3.85 EUR
+Customs clearance: 2026-11-02
+Container: MSKU 7741923
+Row 01-15: 2,192 units, ref 6576
+Seal: CN-448192
+Incoterm: DAP Rotterdam
+Insurance: 0.35 percent of CIF
+Claim reference: CL-2026-017
+Row 01-19: 9,397 units, ref 8245
+Audit trail: batch 17, page 3 of 9
+Signature: /s/ A. Sorensen
+Checked by: quality desk, 2026-10-28
+Filing code: LOG/Q3/2026/0042
+Row 01-23: 1,669 units, ref 5007
+Quarterly Logistics Review
+Invoice number: 2026-0042
+Supplier: Northwind Logistics Ltd
+Total amount: 18,420.50 EUR
+Row 02-03: 4,419 units, ref 3284
+Due date: 2026-11-30
+Payment terms: net 30 days
+Reference: dock-ops-q3
+Pallet count: 1,284
+Row 02-07: 5,048 units, ref 5171
+On-time delivery: 96.4 percent
+Average dock-to-stock: 4.2 hours
+Damaged units: 37 of 12,840
+Cold-chain excursions: 2
+Row 02-11: 8,796 units, ref 6442
+Warehouse B inbound lane utilisation: 94 percent
+Freight cost per pallet: 3.85 EUR
+Customs clearance: 2026-11-02
+Container: MSKU 7741923
+Row 02-15: 4,623 units, ref 3896
+Seal: CN-448192
+Incoterm: DAP Rotterdam
+Insurance: 0.35 percent of CIF
+Claim reference: CL-2026-017
+Row 02-19: 3,597 units, ref 0818
+Audit trail: batch 17, page 3 of 9
+Signature: /s/ A. Sorensen
+Checked by: quality desk, 2026-10-28
+Filing code: LOG/Q3/2026/0042
+Row 02-23: 2,767 units, ref 8301

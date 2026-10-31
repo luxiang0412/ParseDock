@@ -205,3 +205,68 @@ xberg's on-disk cache disabled (otherwise sub-10 ms "parses" are cache hits).
 **Consequence worth recording:** the first measurement round was wrong because
 `/usr/bin/time -f %e` has 10 ms resolution and xberg caches results. Both were fixed
 before any number was published; the flawed run is still in `results/raw/` for audit.
+
+---
+
+## ADR-016 — OCR backend selection is opt-in; PP-OCRv6 for CJK, Tesseract for Latin
+
+**Decision (2026-10-31, spike).** Keep `tesseract` as the default OCR backend and
+make any change opt-in:
+
+* `--xberg-ocr-backend` (new, PR-A) selects `paddle-ocr`, which runs PP-OCRv6 small
+  in-process. On generated 300 dpi fixtures it reads Chinese at CER **0.000** and
+  English at **0.000**, where Tesseract is 0.075 (right `chi_sim`) or 0.453 (wrong
+  `eng`). It costs ~3x the latency (1 252 ms vs 406 ms per 2-page scan) and ~3.4x
+  the memory (765 MiB vs 224 MiB).
+* Tesseract stays the default because it is exact on English, 3x cheaper, and
+  changing a default changes every existing result.
+
+**Evidence.** `docs/OCR-GPU-BENCHMARK.md` §2, `benchmark/results/ocr-cpu.json`.
+
+**Rejected alternatives.** Making `paddle-ocr` the default (no benchmark on a real
+gold set yet); a standalone PaddleOCR worker (duplicates an engine that is already
+inside xberg); PP-OCRv6 medium (13x slower, identical CER).
+
+---
+
+## ADR-017 — No GPU execution provider in the worker until a faster GPU proves it
+
+**Decision (2026-10-31, spike).** Do not add `--docling-rs-ep`, do not ship a CUDA
+xberg build, and do not claim GPU acceleration for MinerU Flash.
+
+**Evidence.**
+* `ghcr.io/docling-project/docling-rs-cuda` (2.55.4) on the RTX 2080 Ti holds
+  4.2 GB and takes **42 s** for a 2-page scan against 2.5 s on CPU, at ≤ 8 %
+  utilisation — provider initialised, per-node CPU fallback. Its output is
+  **byte-identical** to `EP=cpu, FP32=1`, i.e. CUDA also switches int8 -> fp32 and
+  changes results.
+* xberg 1.3.10's release build is compiled without CUDA and fails loudly when
+  asked (`rebuild with the 'cuda' feature`); no CUDA asset exists upstream.
+* MinerU Flash, run through the GPU worker's own entrypoint, showed **0 % GPU
+  utilisation and no VRAM delta**, with identical latency for
+  `MINERU_LMDEPLOY_DEVICE=cpu|cuda`. The PR-08 claim (~880 MB VRAM, 876 ms) is
+  marked unverified.
+
+**Consequence.** `device=gpu_required` keeps its promise only because the scheduler
+enforces it; the engines do not. A follow-up PR adds a stderr guard that turns
+"built without that provider / using CPU" into a failed attempt. Re-take this
+decision on Ampere+ hardware with a 30-page document.
+
+---
+
+## ADR-018 — OCR geometry and confidence are not mapped into Document IR yet
+
+**Decision (2026-10-31, spike).** Add nothing to the IR. Document IR already has
+`BBox{x0,y0,x1,y1,coord}`, `PageWidthPt/PageHeightPt` and `Element.Confidence`;
+what it lacks is a backend that fills them per OCR element.
+
+**Evidence.** xberg JSON for a scanned page exposes page-level
+`ocr_confidence.score` only for Tesseract (0.85, `word_count=205`) and returns
+`null`/`0` for paddle-ocr; there are no per-word or per-line boxes, and block bboxes
+are in **raster pixels** (0..3507) while the page is reported in PDF points
+(595 x 842). `internal/engines/xberg.go` labels table bboxes
+`pdf_user_space_v1` unconditionally, which is unverified for scanned pages.
+
+**Consequence.** No fabricated confidence, no fake precision. Two prerequisites
+before revisiting: per-element output in the engine contract, and a scanned-*table*
+fixture that pins the coordinate space.
