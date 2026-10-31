@@ -6,7 +6,7 @@ export function ConfirmDialog({
   title,
   body,
   confirmLabel,
-  cancelLabel = 'Cancel',
+  cancelLabel,
   onConfirm,
   onCancel,
 }: {
@@ -41,7 +41,7 @@ export function ConfirmDialog({
       </div>
       <div className="flex justify-end gap-2 border-t border-ink-200 px-5 py-3 dark:border-ink-800">
         <Button size="sm" variant="ghost" onClick={onCancel}>
-          {cancelLabel}
+          {cancelLabel ?? 'Cancel'}
         </Button>
         <Button size="sm" variant="primary" onClick={onConfirm} autoFocus>
           {confirmLabel}

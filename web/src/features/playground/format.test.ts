@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import type { Translator } from './format'
+import { translate } from '../../i18n'
 import {
   describeExpiry,
   extensionOf,
@@ -53,14 +55,22 @@ describe('formatting', () => {
   it('formats durations', () => {
     expect(humanMs(13)).toBe('13 ms')
     expect(humanMs(1500)).toBe('1.5 s')
-    expect(humanMs(65_000)).toBe('1m 5s')
+    expect(humanMs(65_000)).toBe('1 min 5 s')
     expect(humanMs(undefined)).toBe('–')
   })
   it('describes the expiry window in both directions', () => {
     const now = Date.parse('2026-01-01T12:00:00Z')
-    expect(describeExpiry('2026-01-01T12:42:00Z', now)).toBe('in 42 min')
-    expect(describeExpiry('2026-01-01T11:57:00Z', now)).toBe('3 min ago')
-    expect(describeExpiry(null, now)).toBe('no result window')
+    expect(describeExpiry('2026-01-01T12:42:00Z', undefined, now)).toBe('in 42 min')
+    expect(describeExpiry('2026-01-01T11:57:00Z', undefined, now)).toBe('3 min ago')
+    expect(describeExpiry(null, undefined, now)).toBe('no result window')
+  })
+
+  it('localises the expiry window and units through a translator', () => {
+    const now = Date.parse('2026-01-01T12:00:00Z')
+    const zh: Translator = (key, vars) => translate('zh-CN', key, vars)
+    expect(describeExpiry('2026-01-01T12:42:00Z', zh, now)).toBe('42 分钟后')
+    expect(describeExpiry(null, zh, now)).toBe('无结果窗口')
+    expect(humanMs(1500, zh)).toBe('1.5 秒')
   })
   it('reads extensions case-insensitively', () => {
     expect(extensionOf('A.PDF')).toBe('pdf')

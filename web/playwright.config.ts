@@ -66,10 +66,11 @@ export default defineConfig({
       env: { PARSEDOCK_MOCK_DELAY_MS: '150' },
     },
     {
-      command: `npm run preview -- --port ${webPort} --strictPort`,
+      // Build first: the E2E must exercise the current sources, not a stale dist/.
+      command: `npm run build && npm run preview -- --port ${webPort} --strictPort`,
       url: `http://127.0.0.1:${webPort}`,
       reuseExistingServer: false,
-      timeout: 60_000,
+      timeout: 180_000,
       env: {
         PARSEDOCK_API_UPSTREAM: `http://127.0.0.1:${apiPort}`,
         PARSEDOCK_DEV_KEY: key,

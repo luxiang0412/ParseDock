@@ -26,7 +26,8 @@ async function showMarkdown(page: Page) {
 }
 
 async function parse(page: Page) {
-  await page.getByRole('button', { name: 'Parse', exact: true }).click()
+  // Locale-independent: the button label is translated, the test id is not.
+  await page.getByTestId('parse').click()
 }
 
 test.describe('Playground', () => {
@@ -44,7 +45,7 @@ test.describe('Playground', () => {
     await page.goto('/')
     await upload(page, txt, 'txt_plain.txt')
     // The original is previewed locally before any request is made.
-    await expect(page.locator('section[aria-label="Original document"]')).toBeVisible()
+    await expect(page.locator('section[data-testid="source-pane"]')).toBeVisible()
     await parse(page)
 
     await expect(page.getByTestId('job-status')).toContainText(/Parsing|Queued|Completed/)
@@ -72,6 +73,44 @@ test.describe('Playground', () => {
     await page.getByTestId('job-status').getByRole('button', { name: 'Release server copy' }).click()
     await expect(page.getByTestId('job-status')).toContainText(/released|deletion in progress/i, { timeout: 45_000 })
     await expect(page.getByRole('tab', { name: 'Preview' })).toBeVisible()
+  })
+
+  test('drag and drop anywhere on the page selects the file', async ({ page }) => {
+    await page.goto('/')
+    // A real DataTransfer drop, not setInputFiles: this exercises the handlers a user hits.
+    const name = 'dropped.txt'
+    const content = 'dropped through the page overlay'
+    const dataTransfer = await page.evaluateHandle(
+      ({ name, content }) => {
+        const dt = new DataTransfer()
+        dt.items.add(new File([content], name, { type: 'text/plain' }))
+        return dt
+      },
+      { name, content },
+    )
+    await page.dispatchEvent('body', 'dragenter', { dataTransfer })
+    await expect(page.getByText('Drop to parse')).toBeVisible()
+    await page.dispatchEvent('body', 'drop', { dataTransfer })
+    await expect(page.getByText(name).first()).toBeVisible()
+    await expect(page.getByTestId('parse')).toBeVisible()
+  })
+
+  test('the UI switches to Simplified Chinese', async ({ page }, info) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: '中文' }).click()
+    await expect(page.getByText(/把文档拖到这里/)).toBeVisible()
+    await expect(page.getByRole('radio', { name: '精准' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '使用说明' })).toBeVisible()
+    await upload(page, txt, 'txt_plain.txt')
+    await expect(page.getByRole('button', { name: '开始解析' })).toBeVisible()
+    await parse(page)
+    await expect(page.getByTestId('job-status')).toContainText('已完成', { timeout: 60_000 })
+    await expect(page.getByRole('button', { name: '复制', exact: true })).toBeVisible()
+    await expect(page.getByRole('button', { name: '下载 .md', exact: true })).toBeVisible()
+    await expect(page.getByRole('tab', { name: 'Markdown 源码' })).toBeVisible()
+    if (info.project.name === 'desktop') {
+      await page.screenshot({ path: `${SHOTS}/playground-zh.png` })
+    }
   })
 
   test('rejected type shows an actionable error and no job starts', async ({ page }) => {
@@ -120,8 +159,8 @@ test.describe('Playground', () => {
     await expect(page.getByTestId('job-status')).toContainText('Completed', { timeout: 120_000 })
     // Left: pdf.js renders the document to canvases (works in headless browsers too).
     await showOriginal(page)
-    await expect(page.locator('section[aria-label="Original document"] canvas').first()).toBeVisible({ timeout: 30_000 })
-    await expect(page.locator('section[aria-label="Original document"]')).toContainText('pages')
+    await expect(page.locator('section[data-testid="source-pane"] canvas').first()).toBeVisible({ timeout: 30_000 })
+    await expect(page.locator('section[data-testid="source-pane"]')).toContainText('pages')
     await showMarkdown(page)
     const body = page.locator('article.md')
     await expect(body).toContainText(/Quarterly Logistics Review/i)
@@ -165,6 +204,6 @@ test.describe('Playground', () => {
     await showOriginal(page)
     await expect(page.getByRole('button', { name: 'Summary' })).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole('button', { name: 'Detail' })).toBeVisible()
-    await expect(page.locator('section[aria-label="Original document"] table').first()).toBeVisible()
+    await expect(page.locator('section[data-testid="source-pane"] table').first()).toBeVisible()
   })
 })

@@ -1,34 +1,6 @@
-/** Stable error codes from api/openapi.yaml; mapped to a sentence the user can act on. */
-const MESSAGES: Record<string, string> = {
-  invalid_request: 'The request was rejected as invalid. Check the file and try again.',
-  unsupported_type: 'This file type is not accepted by this deployment.',
-  malformed_file: 'The file looks damaged or is not what its extension claims.',
-  file_too_large: 'The file is larger than the upload limit of this deployment.',
-  encrypted_file: 'The document is password protected, so it cannot be parsed.',
-  page_limit_exceeded: 'The document has more pages than this deployment allows.',
-  suspicious_compression: 'The archive expands suspiciously far; it was rejected for safety.',
-  expanded_too_large: 'The document expands beyond the parser limits (large spreadsheets).',
-  quota_exceeded: 'This owner has reached a quota (concurrent jobs, daily jobs or storage).',
-  insufficient_storage: 'The server is low on disk space. Try again later.',
-  engine_unavailable: 'No parser engine is available for this document right now.',
-  gpu_unavailable: 'A GPU worker was requested but none is available with enough VRAM.',
-  timeout: 'Parsing took longer than the limit for this document.',
-  cancelled: 'The job was cancelled.',
-  internal_error: 'The server hit an internal error while parsing.',
-  lease_lost: 'The worker processing this job was lost; the job was retried.',
-  not_found: 'That job does not exist for this API key.',
-  gone: 'The result was released or expired and can no longer be downloaded.',
-  conflict: 'The job is not in a state where that action is allowed.',
-  unauthorized: 'The API key is missing or invalid.',
-  insufficient_scope: 'This API key does not grant the required scope.',
-  rate_limited: 'Too many requests; wait a moment and retry.',
-  coordinator_unavailable: 'The coordinator is unavailable (the API replica cannot reach it).',
-}
-
-export function messageForCode(code: string | undefined, fallback?: string): string {
-  if (!code) return fallback ?? 'Something went wrong.'
-  return MESSAGES[code] ?? fallback ?? `Unexpected error (${code}).`
-}
+import type { MessageKey } from '../i18n/messages'
+import type { Translator } from '../features/playground/format'
+import { MESSAGES } from '../i18n/messages'
 
 /** A typed view over the `{"error":{"code","message"}}` envelope. */
 export class ApiError extends Error {
@@ -42,13 +14,28 @@ export class ApiError extends Error {
     this.name = 'ApiError'
   }
 
-  /** The sentence to show in the UI (keeps the server's detail for the small print). */
-  get friendly(): string {
-    if (this.code === 'rate_limited' && this.retryAfter) {
-      return `Too many requests; retry in about ${this.retryAfter} s.`
-    }
-    return messageForCode(this.code, this.message)
+  /** The sentence to show in the UI, in the caller's locale. */
+  friendly(t: Translator): string {
+    return friendlyForCode(this.code, t, this.message, this.retryAfter)
   }
+}
+
+/** Maps a stable API error code to a sentence; unknown codes keep the server's own message. */
+export function friendlyForCode(
+  code: string | undefined,
+  t: Translator,
+  detail?: string,
+  retryAfter?: number,
+): string {
+  if (!code) return detail || t('error.unknown')
+  if (code === 'rate_limited' && retryAfter) {
+    return t('error.rate_limited_after', { seconds: retryAfter })
+  }
+  const key = `error.${code}` as MessageKey
+  if (key in MESSAGES.en) return t(key)
+  // Unknown code: the server's own message is more useful than a generic sentence.
+  if (detail) return detail
+  return t('error.unexpected', { code })
 }
 
 export async function toApiError(res: Response): Promise<ApiError> {

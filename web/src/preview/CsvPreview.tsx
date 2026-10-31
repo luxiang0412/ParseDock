@@ -1,6 +1,7 @@
 import Papa from 'papaparse'
 import { useEffect, useMemo, useState } from 'react'
 import { decodeTextFile } from './text'
+import { useI18n } from '../i18n'
 
 const MAX_ROWS = 200
 const MAX_COLS = 30
@@ -8,6 +9,7 @@ const MAX_COLS = 30
 export function CsvPreview({ file }: { file: File }) {
   const [text, setText] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const { t } = useI18n()
 
   useEffect(() => {
     let cancelled = false
@@ -25,14 +27,15 @@ export function CsvPreview({ file }: { file: File }) {
     return out.data.map((row) => row.slice(0, MAX_COLS))
   }, [text])
 
-  if (error) return <p className="p-4 text-sm text-danger-500">Could not read the file: {error}</p>
-  if (!parsed) return <p className="p-4 text-sm text-ink-500">Reading file…</p>
+  if (error)
+    return <p className="p-4 text-sm text-danger-500">{t('preview.errorReading', { error })}</p>
+  if (!parsed) return <p className="p-4 text-sm text-ink-500">{t('preview.reading')}</p>
   const [header, ...rows] = parsed
 
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-ink-200 px-3 py-2 text-xs text-ink-500 dark:border-ink-800">
-        preview limited to the first {MAX_ROWS} rows and {MAX_COLS} columns
+        {t('preview.csvLimit', { rows: MAX_ROWS, cols: MAX_COLS })}
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-3">
         <table className="w-max border-collapse text-[0.8rem]">

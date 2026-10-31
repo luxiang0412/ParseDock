@@ -31,7 +31,7 @@ node scripts/check-dist-secrets.mjs # no secrets in dist
 
 | Suite | Result |
 | --- | --- |
-| Unit tests (Vitest + Testing Library) | **43 passed** — format classification, byte/duration/expiry formatting, reducer transitions, `holdsServerCopy`, error-code mapping, GB18030 fallback, truncation, object-URL revocation, Markdown safety |
+| Unit tests (Vitest + Testing Library) | **51 passed** — format classification, byte/duration/expiry formatting (both locales), reducer transitions, `holdsServerCopy`, error-code mapping (en + zh), GB18030 fallback, truncation, object-URL revocation, Markdown safety, **dictionary completeness (both locales have the same keys, no untranslated leftovers)** |
 | Lint (type-aware ESLint 9 + react-hooks v7) | **0 errors, 0 warnings** |
 | Typecheck (`tsc --noEmit`, strict) | **clean** |
 | Production build | **355 → 346 KiB** main chunk (113 KiB gzip), lazy chunks: pdf 405 KiB, xlsx 936 KiB, docx 174 KiB, pdf worker 1.0 MB |
@@ -45,7 +45,7 @@ node scripts/check-dist-secrets.mjs # no secrets in dist
 ```bash
 cd web && npm run build
 E2E_ENGINES=native,xberg npx playwright test
-# 17 passed, 1 skipped (mobile-only case on desktop)
+# 21 passed, 1 skipped (mobile-only case on desktop)
 ```
 
 ### 3.2 Against the Docker Compose stack (nginx + 2 API replicas + coordinator + worker)
@@ -54,7 +54,7 @@ E2E_ENGINES=native,xberg npx playwright test
 make playground-up            # CPU stack + playground on :8090
 cd web
 E2E_COMPOSE_URL=http://127.0.0.1:8090 E2E_ENGINES=native,xberg npx playwright test
-# 17 passed, 1 skipped, 16.9 s
+# 21 passed, 1 skipped, 19.7 s
 ```
 
 | Test | What it proves |
@@ -63,6 +63,8 @@ E2E_COMPOSE_URL=http://127.0.0.1:8090 E2E_ENGINES=native,xberg npx playwright te
 | text file end to end | upload → SSE → completed → Markdown source → **Copy** ("Copied") → **Download .md** (`txt_plain.md`) → **Release server copy** → status becomes released/deleting |
 | rejected type | a `.zip` is refused client-side with an actionable message and no job is created |
 | switching files | a held server copy triggers a confirm dialog before the preview is replaced |
+| drag and drop | a real `DataTransfer` `dragenter`/`drop` on the page body shows the overlay and selects the file (not `setInputFiles`) |
+| Simplified Chinese | switch in the header → drop zone, mode radio names, status ("已完成"), toolbar ("复制", "下载 .md", "Markdown 源码") and the screenshot above are Chinese |
 | mobile layout | narrow viewport: tabbed workspace, result auto-focused, usable at 412 px |
 | `/internal/metrics` | **404** through the proxy, body contains no `parsedock_` series |
 | real PDF | upload → completed; **pdf.js canvases visible in the left pane**; Markdown contains the heading and a `<table>`; screenshot |
@@ -120,6 +122,7 @@ generated SDKs and contract checks are unchanged.
 | `docs/screenshots/playground-long-markdown.png` | 1440×900 | 30-page document: long Markdown, no layout breakage |
 | `docs/screenshots/playground-docx.png` | 1440×900 | DOCX approximation preview next to the parsed text |
 | `docs/screenshots/playground-mobile.png` | 412×915 | tabbed narrow layout with the result in view |
+| `docs/screenshots/playground-zh.png` | 1440×900 | the same flow in Simplified Chinese (header, status, meta strip, toolbar, tabs) |
 
 Each was inspected by eye (not only by the Playwright assertions): hierarchy, spacing, table
 readability, the presence of the API health dot, and that no element overflows.

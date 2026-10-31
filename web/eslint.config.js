@@ -24,6 +24,11 @@ export default tseslint.config(
     },
   },
   {
+    // A context module exports its provider, a hook and a pure helper on purpose.
+    files: ['src/i18n/index.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['e2e/**/*.ts', 'scripts/**/*.mjs', '*.config.ts'],
     rules: { '@typescript-eslint/no-unsafe-*': 'off' },
   },

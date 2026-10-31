@@ -8,7 +8,8 @@
 
 One page, three states: **choose → parse → compare**.
 
-* drop or browse a document (PDF, DOCX, XLSX/XLSM, PPTX, CSV/TSV, TXT/MD, PNG/JPEG/WebP, HTML,
+* **drop a file anywhere on the page** (a page-wide overlay appears, not just the drop zone) or
+  browse for one (PDF, DOCX, XLSX/XLSM, PPTX, CSV/TSV, TXT/MD, PNG/JPEG/WebP, HTML,
   legacy `.doc/.xls/.ppt`), pick `auto | fast | accurate`;
 * watch the real job: queued → running (SSE, with polling as a fallback) → completed/failed;
 * left pane: the **original file, previewed locally** from the `File` the browser already holds;
@@ -19,6 +20,11 @@ One page, three states: **choose → parse → compare**.
 
 The page never ACKs on its own: not on HTTP 200, not on download, not on unmount, not on
 `pagehide`.
+
+The UI is **bilingual (English / 简体中文)**: the header has an explicit switch, the default
+follows `navigator.language`, the choice is remembered in `localStorage`, and `<html lang>` is
+updated. Every string — including error-code sentences, the confirm/help dialogs and the preview
+limit messages — goes through `t()`, so a missing translation is a type error.
 
 ## 2. Architecture
 
@@ -52,6 +58,7 @@ browser ──GET /              ──▶ nginx: static SPA (dist/)
 | Events | `features/playground/useJobEvents.ts` | `EventSource` on `/v1/jobs/{id}/events?scope=processing`; closes on error and hands over to polling with backoff |
 | Preview | `src/preview/*` | PDF (pdf.js), image, text (encoding-aware), CSV (PapaParse), DOCX (`docx-preview`), XLSX (`exceljs`), unsupported card |
 | UI | `src/components/*` | own design tokens (Tailwind `@theme`), Radix `Slot` for buttons, resizable panes, native `<dialog>` for help/confirm |
+| i18n | `src/i18n/` | typed dictionaries (`en`, `zh-CN`), `I18nProvider` + `t()`, browser-language default, explicit toggle in the header, choice persisted in `localStorage`, `<html lang>` updated |
 
 ## 3. Decisions and why
 
@@ -127,7 +134,8 @@ attempt (the same class of bug as the earlier relative `--work-dir`). Covered by
 * **No deep links**: the job id is not put in the URL, because the left pane cannot be restored
   after a reload (the API has no input re-download). A refresh keeps the server job (TTL) but the
   page returns to idle.
-* **One language (English) and no i18n**.
+* **Only two locales** (English, Simplified Chinese). The dictionaries are typed, so a new key
+  must be translated in both; a third language means adding one file and one entry in `LOCALES`.
 * **Rate limits**: the deployment's 20 rps/owner budget is shared with status polling; the app
   uses SSE, and backs off on `429`, but a public deployment needs its own limits.
 

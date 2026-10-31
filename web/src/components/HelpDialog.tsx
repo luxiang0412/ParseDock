@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
+import { useI18n } from '../i18n'
 import { Button } from './Button'
 
 export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { t } = useI18n()
   const ref = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
@@ -24,36 +26,38 @@ export function HelpDialog({ open, onClose }: { open: boolean; onClose: () => vo
       <div className="flex items-start justify-between gap-4 border-b border-ink-200 px-5 py-4 dark:border-ink-800">
         <div>
           <h2 id="help-title" className="text-sm font-semibold">
-            How the playground works
+            {t('help.title')}
           </h2>
-          <p className="mt-0.5 text-xs text-ink-500">A developer workbench, not a document manager</p>
+          <p className="mt-0.5 text-xs text-ink-500">{t('help.subtitle')}</p>
         </div>
-        <Button size="sm" variant="ghost" onClick={onClose} aria-label="Close help">
-          Close
+        <Button size="sm" variant="ghost" onClick={onClose}>
+          {t('help.close')}
         </Button>
       </div>
       <ol className="space-y-3 px-5 py-4 text-sm">
         <li>
-          <span className="font-medium">1. Upload.</span> The file is sent to the ParseDock server;
-          the left pane keeps a local copy in this tab, so the preview never re-downloads it.
+          <span className="font-medium">{t('help.step1.bold')}</span>
+          {t('help.step1')}
         </li>
         <li>
-          <span className="font-medium">2. Parse.</span> The mode is a hint: <em>Fast</em> prefers
-          the fastest engine, <em>Accurate</em> prefers structure, and results still vary by format.
+          <span className="font-medium">{t('help.step2.bold')}</span>
+          {t('help.step2a')}
+          <em>{t('help.step2.fast')}</em>
+          {t('help.step2.mid')}
+          <em>{t('help.step2.accurate')}</em>
+          {t('help.step2.end')}
         </li>
         <li>
-          <span className="font-medium">3. Compare.</span> The right pane shows the Markdown the API
-          returned; switch to the source view to copy or download it.
+          <span className="font-medium">{t('help.step3.bold')}</span>
+          {t('help.step3')}
         </li>
         <li>
-          <span className="font-medium">4. Release.</span> Nothing is deleted automatically by this
-          page. Use <em>Release server copy</em> when you are done; otherwise the server expires the
-          result at the time shown in the status bar.
+          <span className="font-medium">{t('help.step4.bold')}</span>
+          {t('help.step4')}
         </li>
       </ol>
       <p className="border-t border-ink-200 px-5 py-3 text-xs text-ink-500 dark:border-ink-800">
-        Closing the tab does not release anything: the API key belongs to the deployment, so the
-        result is cleaned up by its TTL.
+        {t('help.footer')}
       </p>
     </dialog>
   )
