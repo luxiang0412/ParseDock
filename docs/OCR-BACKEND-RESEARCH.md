@@ -151,6 +151,23 @@ set must be re-approved).
 | --- | --- | --- |
 | `--ocr-engine` | `ppocr` (default) \| `tesseract` | not passed → ppocr (RapidOCR/PP-OCR ONNX) |
 | `--ocr-lang` | `en` \| `ch`, BCP-47 (`en-US`, `zh`, `zh-Hans`), `iso:` prefix | passed, mapped from `--xberg-ocr-lang` (`chi_sim`/`zh` → `ch`, else `en`) |
+
+### 3.5 Language codes are normalised by xberg itself (B, corrected)
+
+An earlier note in this document assumed the two backends needed different
+spellings. They do not: xberg 1.3.10 normalises ISO 639-3 and the short codes
+into the same recognition family, so ParseDock can pass `--xberg-ocr-lang`
+through unchanged.
+
+| Passed | tesseract | paddle-ocr family |
+| --- | --- | --- |
+| `eng`, `en` | `eng` | `english` |
+| `chi_sim`, `zh`, `ch` | `chi_sim` | `chinese` |
+| `fra` | `fra` (tessdata) | `latin` |
+
+Measured with `--ocr-backend paddle-ocr --ocr-language <code>` and reading the
+`Initializing PaddleOCR engine family=…` log line. `eng` is a **valid** English
+code for paddle-ocr; it is not a silent fallback to Chinese.
 | `--ocr-mode` | `auto` \| `full_page` \| `layout_regions` | not passed (auto) |
 | `--no-ocr`, `--text-layer-only[=auto]` | – | `--no-ocr` when OCR is off; `--text-layer-only` for `--docling-rs-text` |
 | `--ocr-scale`, `--ocr-textline-orientation`, `--picture-ocr-scale` | – | not passed |

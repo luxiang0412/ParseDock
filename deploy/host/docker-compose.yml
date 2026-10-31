@@ -72,6 +72,8 @@ services:
       # OCR language: tesseract code. "zh" for Chinese scans, "eng" for Latin.
       # A wrong value does not fail the job, it silently degrades scanned text.
       - --xberg-ocr-lang=${PARSEDOCK_XBERG_OCR_LANG:-eng}
+      # Empty is the default and means "let xberg use tesseract".
+      - --xberg-ocr-backend=${PARSEDOCK_XBERG_OCR_BACKEND:-}
     environment:
       PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
     # Scratch only; nothing a worker writes must survive the task.
