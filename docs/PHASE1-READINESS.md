@@ -85,7 +85,7 @@ documented in `api/openapi.yaml`:
 
 | Change | Impact | Migration |
 | --- | --- | --- |
-| `POST /cancel` on a completed job needs `result_version` | previously released without proof | send the version (or call `/ack`); the SDK accepts it as an argument |
+| `POST /cancel` on a completed job is refused | previously released without proof | `409`, cancel never releases; use `POST /ack` (hardened further in v0.1.0, ADR-019) |
 | `ETag` value changed to the per-artifact hash | clients that cached the old ETag re-download once | expected; caches recover on the first `200` |
 | `processing_deadline_at` added, `max_lifetime_at` deprecated | additive | keep reading the old field until Phase 1 ends |
 | `mode=accurate` on text formats now returns native output | more correct, different engine | none; IR shape unchanged |
@@ -137,5 +137,5 @@ URL ingestion, and any change to the storage/queue architecture.
 3. Start **L1** in parallel with legal. Until it is signed, publish only the control
    plane image externally (it passes the gate) and treat the CPU worker image as
    internal-only.
-4. Keep the "one-shot vs ACK" distinction and the three-way quality score in the
+4. Keep the ACK-only release rule and the three-way quality score in the
    frozen contract; they are now the parts most likely to be silently broken later.

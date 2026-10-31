@@ -10,7 +10,9 @@ exist to schedule, parallelise and collect artifacts — not to hold logic.
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `ci-summary` | yes — see "Merge gate" |
 | `.github/workflows/engine-changes.yml` | every PR (path-classified inside) | `detect`, `real-engines`, `container` | recommended for engine/docker changes |
-| `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `sdks` (Python + CLI + Java + version consistency), `container-smoke` (includes SBOM + licence classification) | no (evidence) |
+| `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `sdks` (Python lifecycle + error matrix + **real engines** + Java build **and integration test** + version consistency), `container-smoke` (includes SBOM + licence classification) | no (evidence) |
+| `.github/workflows/release-python.yml` | tag `v*`, manual | build sdist/wheel, `twine check`, install the wheel, publish to PyPI over OIDC | no (publishing) |
+| `.github/workflows/release-maven.yml` | tag `v*`, manual | GPG preflight, build + sign, deploy a **pending** bundle to the Central Portal (`autoPublish=false`) | no (publishing) |
 | `.github/workflows/release-gate.yml` | tags `v*`, manual | `licence-gate` (blocking audit, no publish step) | yes, for releases |
 
 `engine-changes.yml` runs on every PR but classifies changed paths first, so it
@@ -22,7 +24,8 @@ safe to include in branch protection.
 | Phase | Steps (the script is authoritative) | Why |
 | --- | --- | --- |
 | `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, workflows valid |
-| `unit` | `scripts/sdk-check.sh --no-java` (Python SDK e2e + CLI + one version across artefacts), `go test ./...`, `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, SDK/version drift, corpus and gate correctness |
+| `unit` | `go test ./...`, `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
+| `sdk` | `scripts/sdk-check.sh --fast` — Python lifecycle + error matrix, one version across artefacts | the SDK contract: ACK rule, error codes/retry policy, SSE resume; catches an OpenAPI/IR change that would break a client
 | `contract` | OpenAPI 3.1 validation (public + internal, pinned generator), `openapi_contract.py`, SDK regeneration drift (`sdk/python-generated`, `sdk/java-generated`), Document IR schema drift | specs, router, generated SDKs and the published schema cannot drift |
 | `lifecycle` | `make acceptance` (T03–T17), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
 | `image` | control-plane image build, `--check`, image id/digest, `repro-check.sh`, licence audit (report + classification) | reproducible artefact + clean control plane |
@@ -100,7 +103,9 @@ make license-audit   # enforce mode (fails on GPL)
 * No self-hosted GPU runner: GPU workers are verified manually (`make gpu-check`,
   `docs/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
   GPU, so it is safe to run anywhere but proves nothing there.
-* The Java half of `sdk-check` (~1–2 min of Maven downloads) runs in the nightly `sdks` job,
+* The Java half of `sdk-check` (Maven downloads, the integration test and the two
+  examples) runs in the nightly `sdks` job; the PR `sdk` job only runs the Python
+  layers and `--fast`,
   not on every PR; the Python half runs in `unit`.
 * The engine quality gate is enforced in `engines` (nightly + engine-changes), not on every
   PR: installing xberg and docling-rs takes minutes.

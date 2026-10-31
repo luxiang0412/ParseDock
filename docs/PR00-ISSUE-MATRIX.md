@@ -107,7 +107,10 @@ sample is too small; that stays a PR-11 decision.
   `UPDATE … AND NOT EXISTS (active lease)`. No window between check and write.
 * API exposes `processing_deadline_at` (canonical) and keeps `max_lifetime_at` as a
   deprecated alias with identical value; docs state it does **not** bound results.
-* `/v1/parse` is documented and tested as one-shot: 200 = released, 202 = continues
+* At PR-00 time `/v1/parse` was documented and tested as one-shot: 200 = released,
+  202 = continues. **v0.1.0 (ADR-019) removed the implicit release**: the result now
+  follows the TTL and the caller ACKs with `X-Result-Version`; PR00-04 asserts the
+  new behaviour.
   asynchronously, disconnect = the job keeps running (no implicit release).
 
 **Compatibility.** Cancel on completed without a version now returns 409 instead of

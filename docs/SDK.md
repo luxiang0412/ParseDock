@@ -115,8 +115,9 @@ replay an already-released job.
 1. **ACK only after your sink succeeded.** `download_and_ack(job_id, sink=...)` writes the
    bytes first and only then releases the result. A failing sink leaves the result
    available for retry — tested by `sdk/python/test_sdk.py`.
-2. **ACK and cancel-on-completed require the `result_version`** returned by the download
-   (or from the job view). A stale version is refused with `409`.
+2. **ACK requires the `result_version`** returned by the download (or from the job view);
+   a stale version is refused with `409`. `cancel` never releases a result: on a
+   completed job it returns `409` and points at ACK.
 3. **ACK is idempotent**; repeating it never resurrects a released result.
 4. **`410 Gone` after ACK** is the expected outcome, not an error to retry.
 5. **Status polling shares the per-owner rate budget.** Use the SSE stream
