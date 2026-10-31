@@ -435,9 +435,13 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	if cfg.WorkerID == "" {
 		cfg.WorkerID = jobs.NewWorkerID()
 	}
-	if f.deviceType == "gpu" && len(gpus) > 0 {
-		cfg.GPUModel = gpus[0].Name
-		cfg.GPUMemoryBytes = gpus[0].MemoryMB << 20
+	// Describe the same card the free-VRAM measurement uses (CUDA_VISIBLE_DEVICES[0], else
+	// device 0); gpus[0] is not that card on a multi-GPU host with a pinned device.
+	if f.deviceType == "gpu" || f.deviceType == "cuda" || f.deviceType == "mps" {
+		if g, ok := sysinfo.ActiveGPU(gpus); ok {
+			cfg.GPUModel = g.Name
+			cfg.GPUMemoryBytes = g.MemoryMB << 20
+		}
 	}
 	if err := os.MkdirAll(f.workDir, 0o750); err != nil {
 		return err
