@@ -238,8 +238,14 @@ Checklist when that happens:
 2. Read the engine's own evidence:
    * MinerU: `$MINERU_HOME/logs/doclib.log`.
      * `providers=['CPUExecutionProvider'], gpu=None` plus
-       `ONNX device selection failed; using CPU … libvulkan.so.1` ⇒ the image
-       cannot use the GPU (known packaging bug, PR-D2).
+       `ONNX device selection failed; using CPU … libvulkan.so.1` ⇒ the image has
+       no Vulkan loader (fixed in `parsedock-worker-gpu:0.2.0-d2`).
+     * `vkCreateInstance: Found no drivers!` / `Could not get 'vkCreateInstance'
+       via 'vk_icdGetInstanceProcAddr'` ⇒ the ICD cannot initialise **inside the
+       container** even though it works on the host: an NVIDIA driver/toolkit
+       problem, documented in `docs/OCR-PR-D2-REPORT.md`. Do not "fix" it with a
+       software Vulkan driver (llvmpipe) — PR-D1 would then report GPU execution
+       for CPU work.
      * `providers=['CUDAExecutionProvider'], gpu=0` written **during** the task ⇒
        the job should have been accepted; cross-check the worker log line
        `msg="execution evidence"` for the same job.
