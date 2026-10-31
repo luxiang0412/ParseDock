@@ -94,6 +94,12 @@ func Migrate(db *sql.DB) error {
 // The layout is fixed width on purpose: timestamps are compared as TEXT by SQLite, and
 // RFC3339Nano trims trailing zeros, which breaks that ordering ("...:00Z" sorts after
 // "...:00.1Z"). Nine fractional digits keep every comparison chronological.
+//
+// Comparisons are not uniform yet: lease and download-lease checks use julianday(), most
+// retention/claim predicates compare the TEXT directly. Both are correct for values written by
+// ts(); julianday() also tolerates legacy variable-width rows, at millisecond precision. They
+// were left as they are on purpose: switching a predicate between the two forms changes its
+// precision and which rows an index can serve, so it needs its own change and its own tests.
 func ts(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
 
 // parseTS parses a stored timestamp.
