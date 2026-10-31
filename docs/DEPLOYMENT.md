@@ -126,6 +126,7 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--quota-storage-mb` | `PARSEDOCK_QUOTA_STORAGE_MB` | `0` (off) | live result bytes per owner; accounting is released when a result is released/expires |
 | `--max-expanded-mb` | `PARSEDOCK_MAX_EXPANDED_MB` | `512` | OOXML expanded-size cap; the parsers cap lower (xberg 500 MiB, docling-rs 10 M cells/sheet) |
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
+| `--xberg-ocr-lang` | `PARSEDOCK_XBERG_OCR_LANG` | `eng` | OCR language passed to the engine. **Match the corpus**: on the scanned Chinese fixture `eng` produced garbage while `zh` reproduced the page exactly ("采购订单 / 供应商：华北物流有限公司 / 金额：人民币128,400元"), and `zh` degrades English scans ("Supler. Nwn Lic"). A combined value (`chi_sim+eng`) is rejected by xberg 1.3.10. Run one worker per language, or point the whole deployment at the one that dominates. |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
 | `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
 | `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `auto` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time |
