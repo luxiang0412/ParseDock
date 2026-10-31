@@ -50,6 +50,20 @@ jobs:
           server-id: central
           server-username: MAVEN_CENTRAL_USERNAME
           server-password: MAVEN_CENTRAL_TOKEN
+      - name: use Maven 3.9 (not the runner's 3.10)
+        # Maven 3.10 changes the archive layout it hands to the plugin, and Central
+        # then rejects the bundle with "Bundle has content that does NOT have a
+        # .pom file" (mavenplugins/central-publishing-maven-plugin#78). The tarball
+        # is pinned by checksum rather than pulled from a third-party action.
+        run: |
+          curl -fsSL -o /tmp/maven.tgz \
+            https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz
+          echo "a555254d6b53d267965a3404ecb14e53c3827c09c3b94b5678835887ab404556bfaf78dcfe03ba76fa2508649dca8531c74bca4d5846513522404d48e8c4ac8b  /tmp/maven.tgz" \
+            | sha512sum -c -
+          sudo tar -xzf /tmp/maven.tgz -C /opt
+          echo "/opt/apache-maven-3.9.9/bin" >> "$GITHUB_PATH"
+      - name: confirm the Maven version
+        run: mvn -v
       - name: import signing key
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
