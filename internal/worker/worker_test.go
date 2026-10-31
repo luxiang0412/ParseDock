@@ -113,6 +113,7 @@ type stubEngine struct {
 	warns   []string
 	ocr     *documentir.OCRQuality
 	err     error
+	delay   time.Duration
 	calls   int
 	parseMS int64
 }
@@ -152,6 +153,9 @@ func lowOCR(score float64) *documentir.OCRQuality {
 
 func (s *stubEngine) Parse(_ context.Context, req engines.Request) (*documentir.Document, error) {
 	s.calls++
+	if s.delay > 0 {
+		time.Sleep(s.delay)
+	}
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -433,5 +437,29 @@ func TestRegistrationDoesNotClaimVerifiedGPU(t *testing.T) {
 		if state != "cpu_only" {
 			t.Fatalf("cpu worker engine %s = %q, want cpu_only", name, state)
 		}
+	}
+}
+
+// A retry that fails still costs wall time. Recording 0 there understates the
+// cost of exactly the case that wastes the most: an engine that starts, works and
+// then fails reports no metrics of its own.
+func TestFailedRetryStillChargesWallTime(t *testing.T) {
+	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"}, text: "采购订单 金额",
+		ocr: lowOCR(0.26), parseMS: 15}
+	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"},
+		err: errors.New("engine exploded"), delay: 40 * time.Millisecond}
+	w := New(Config{WorkDir: t.TempDir(), EscalateScans: true},
+		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
+
+	doc, used, _ := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	if used.Name() != "fast" {
+		t.Fatalf("fast result lost: %s", used.Name())
+	}
+	if got := doc.Metrics.ParseMs; got < 15+25 {
+		t.Fatalf("parse_ms = %d, want the fast parse plus the failed retry's wall time", got)
+	}
+	if !strings.Contains(doc.Routing.Reason, "accurate_ms=") {
+		t.Fatalf("reason does not record the retry cost: %q", doc.Routing.Reason)
 	}
 }
