@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"parsedock.dev/parsedock/internal/jobs"
@@ -326,6 +327,25 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 // sweepOrphans removes input/result directories that have no live job row.
 // Only directories older than 10 minutes are touched, so an in-flight commit
 // is never destroyed.
+// staleStageDirs lists publication staging directories older than the orphan cutoff.
+func staleStageDirs(jobDir string) []string {
+	entries, err := os.ReadDir(jobDir)
+	if err != nil {
+		return nil
+	}
+	cutoff := nowUTC().Add(-10 * time.Minute)
+	var out []string
+	for _, e := range entries {
+		if !e.IsDir() || !strings.HasPrefix(e.Name(), ".stage-") {
+			continue
+		}
+		if info, err := e.Info(); err == nil && info.ModTime().Before(cutoff) {
+			out = append(out, filepath.Join(jobDir, e.Name()))
+		}
+	}
+	return out
+}
+
 func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 	removed := 0
 	cutoff := nowUTC().Add(-10 * time.Minute)
@@ -341,6 +361,12 @@ func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 			info, err := e.Info()
 			if err != nil || info.ModTime().After(cutoff) {
 				continue
+			}
+			// Staging directories from a crashed publication are never served; drop them
+			// once they are old, regardless of the job's state.
+			for _, stale := range staleStageDirs(filepath.Join(s.Store.Root, sub, e.Name())) {
+				_ = os.RemoveAll(stale)
+				rep.StaleParts++
 			}
 			var status, retention string
 			err = s.DB.QueryRowContext(ctx, `SELECT processing_status, retention_status FROM jobs WHERE id = ?`, e.Name()).

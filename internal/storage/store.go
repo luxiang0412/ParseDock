@@ -299,6 +299,30 @@ func (s *Store) CommitResult(jobID, engine, engineVer string, files map[string]i
 }
 
 // ReadManifest loads a committed manifest.
+// PruneResults removes result directories of a job other than keep (including leftovers from
+// an interrupted publication). Called after a generation is committed: the others are
+// unreachable, and leaving them would make disk usage exceed the storage accounting.
+func (s *Store) PruneResults(jobID, keep string) error {
+	entries, err := os.ReadDir(s.ResultDir(jobID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	keepName := strings.TrimPrefix(keep, "sha256:")
+	var firstErr error
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == keepName {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(s.ResultDir(jobID), e.Name())); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // ReadManifestAt loads the manifest of one result generation.
 func (s *Store) ReadManifestAt(jobID, version string) (*Manifest, error) {
 	b, err := os.ReadFile(filepath.Join(s.ResultDirAt(jobID, version), "manifest.json"))

@@ -808,9 +808,6 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	}
 	// A result can be much larger than its input, so admission alone cannot bound
 	// tenant storage: enforce the limit transactionally on the committed bytes.
-	if debugQuota {
-		fmt.Fprintf(os.Stderr, "DBG quota=%d resultBytes=%d files=%d\n", s.Cfg.Quota.MaxStorageBytes, resultBytes, len(manifest.Files))
-	}
 	if s.Cfg.Quota.MaxStorageBytes > 0 {
 		var stored int64
 		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
@@ -907,6 +904,9 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
+	// Older generations of this job are unreachable now; removing them keeps the bytes on
+	// disk equal to what storage accounting charges for.
+	_ = s.Store.PruneResults(p.JobID, manifest.Version)
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
 	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
 	s.appendEvent(ctx, p.JobID, "completed", map[string]any{
@@ -1468,5 +1468,3 @@ func nullIfEmpty(s string) any {
 func isUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unique constraint")
 }
-
-var debugQuota = os.Getenv("PARSEDOCK_DEBUG_QUOTA") == "1"
