@@ -270,14 +270,19 @@ func (x *Xberg) mapPages(doc *documentir.Document, out *xbergOutput, req Request
 		if looksLikeMarkdown(content) {
 			scratch := documentir.New()
 			LiftMarkdown(scratch, content)
+			renames := remapTables(scratch, len(doc.Tables))
 			for i := range scratch.Elements {
 				el := scratch.Elements[i]
 				el.Loc = &documentir.SourceLocation{Kind: pageKind(req.Format), Page: page.PageNumber}
+				if el.TableID != "" {
+					if nid, ok := renames[el.TableID]; ok {
+						el.TableID = nid
+					}
+				}
 				doc.Elements = append(doc.Elements, el)
 			}
 			for _, t := range scratch.Tables {
 				t.Loc = &documentir.SourceLocation{Kind: pageKind(req.Format), Page: page.PageNumber}
-				t.ID = fmt.Sprintf("tbl_%d", len(doc.Tables)+1)
 				doc.Tables = append(doc.Tables, t)
 			}
 			continue

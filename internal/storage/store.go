@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -61,6 +62,18 @@ func (s *Store) InputDir(jobID string) string  { return filepath.Join(s.Root, "i
 func (s *Store) InputPath(jobID string) string { return filepath.Join(s.InputDir(jobID), "input.bin") }
 func (s *Store) MetaPath(jobID string) string  { return filepath.Join(s.InputDir(jobID), "meta.json") }
 func (s *Store) ResultDir(jobID string) string { return filepath.Join(s.Root, "results", jobID) }
+
+// ResultDirAt is the directory of one published result generation. Results are
+// content-addressed by their manifest version, so two workers that race to finish the same
+// job write to different directories and the loser can be removed without touching the
+// winner's files. A retried attempt that produces identical bytes shares the directory,
+// which is harmless (same content).
+func (s *Store) ResultDirAt(jobID, version string) string {
+	return filepath.Join(s.ResultDir(jobID), strings.TrimPrefix(version, "sha256:"))
+}
+
+// ResultPath is the legacy job-wide path. Nothing publishes here any more; it is kept for
+// callers that only need the parent directory.
 func (s *Store) ResultPath(jobID, name string) string {
 	return filepath.Join(s.ResultDir(jobID), name)
 }
@@ -178,6 +191,9 @@ func (s *Store) CommitInput(w *InputWriter, jobID string, meta any) (int64, stri
 			return 0, "", err
 		}
 	}
+	// A rename is only durable once the containing directory is synced; otherwise the
+	// database could durably reference an input whose directory entry was lost.
+	syncDir(s.InputDir(jobID))
 	return w.n, sum, nil
 }
 
@@ -218,7 +234,11 @@ type Manifest struct {
 // then the manifest is written. A missing manifest therefore means "not
 // committed" and the Coordinator never marks such a job completed.
 func (s *Store) CommitResult(jobID, engine, engineVer string, files map[string]io.Reader) (*Manifest, error) {
-	dir := s.ResultDir(jobID)
+	// Stage inside the job's result directory (same filesystem, so the final renames are
+	// atomic) but under a private name: the destination is only known once the content
+	// hashes are computed.
+	stage := filepath.Join(s.ResultDir(jobID), ".stage-"+stageToken())
+	dir := stage
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, err
 	}
@@ -252,14 +272,36 @@ func (s *Store) CommitResult(jobID, engine, engineVer string, files map[string]i
 	manifest.Version = manifestVersion(manifest)
 	b, _ := json.MarshalIndent(manifest, "", "  ")
 	if err := s.writeAtomic(filepath.Join(dir, "manifest.json"), b); err != nil {
+		_ = os.RemoveAll(stage)
 		return nil, err
 	}
+	final := s.ResultDirAt(jobID, manifest.Version)
+	if err := os.MkdirAll(final, 0o750); err != nil {
+		_ = os.RemoveAll(stage)
+		return nil, err
+	}
+	// Move each staged file into the content-addressed directory. An identical concurrent
+	// publication writes identical bytes, so a rename over it is a no-op in effect.
+	for _, a := range manifest.Files {
+		if err := os.Rename(filepath.Join(stage, a.Name), filepath.Join(final, a.Name)); err != nil {
+			_ = os.RemoveAll(stage)
+			return nil, err
+		}
+	}
+	if err := os.Rename(filepath.Join(stage, "manifest.json"), filepath.Join(final, "manifest.json")); err != nil {
+		_ = os.RemoveAll(stage)
+		return nil, err
+	}
+	syncDir(final)
+	syncDir(s.ResultDir(jobID))
+	_ = os.RemoveAll(stage)
 	return manifest, nil
 }
 
 // ReadManifest loads a committed manifest.
-func (s *Store) ReadManifest(jobID string) (*Manifest, error) {
-	b, err := os.ReadFile(filepath.Join(s.ResultDir(jobID), "manifest.json"))
+// ReadManifestAt loads the manifest of one result generation.
+func (s *Store) ReadManifestAt(jobID, version string) (*Manifest, error) {
+	b, err := os.ReadFile(filepath.Join(s.ResultDirAt(jobID, version), "manifest.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -294,16 +336,37 @@ func (s *Store) DeleteJob(jobID string) error {
 	return firstErr
 }
 
-// DeleteResults removes only the published result directory (used when a result is
-// rejected after it was written but before the job committed).
-func (s *Store) DeleteResults(jobID string) error {
-	if jobID == "" || strings.ContainsAny(jobID, "/\\") {
-		return fmt.Errorf("invalid job id %q", jobID)
+// DropResult removes one unpublished result generation. It is a no-op when the directory
+// does not exist, so a losing attempt can always call it.
+func (s *Store) DropResult(jobID, version string) error {
+	if jobID == "" || version == "" || strings.ContainsAny(jobID, "/\\") {
+		return fmt.Errorf("invalid job id or version")
 	}
-	if err := os.RemoveAll(s.ResultDir(jobID)); err != nil && !os.IsNotExist(err) {
+	if err := os.RemoveAll(s.ResultDirAt(jobID, version)); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
+}
+
+// stageToken returns a short random suffix for a staging directory.
+func stageToken() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b[:])
+}
+
+// syncDir fsyncs a directory so a rename inside it survives a power loss. Renaming a file is
+// only durable once the containing directory is synced; without this the database could
+// durably reference a file whose directory entry was lost.
+func syncDir(dir string) {
+	f, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	_ = f.Sync()
+	_ = f.Close()
 }
 
 // SweepParts removes stale *.part files left behind by crashes.
@@ -358,7 +421,11 @@ func (s *Store) writeAtomic(dst string, data []byte) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	syncDir(filepath.Dir(dst))
+	return nil
 }
 
 func ingestFile(tmp, dst string, r io.Reader) error {
@@ -380,7 +447,11 @@ func ingestFile(tmp, dst string, r io.Reader) error {
 		_ = os.Remove(tmp)
 		return err
 	}
-	return os.Rename(tmp, dst)
+	if err := os.Rename(tmp, dst); err != nil {
+		return err
+	}
+	syncDir(filepath.Dir(dst))
+	return nil
 }
 
 func hashFile(p string) (string, error) {

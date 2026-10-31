@@ -278,3 +278,43 @@ func TestLimitedWriterDrainsPastLimit(t *testing.T) {
 		t.Fatalf("kept %d bytes, want 1024", len(res.Stdout))
 	}
 }
+
+// Audit (P1): two Markdown tables with the same row count used to receive the same table ID;
+// the text renderer resolves a duplicate to the first table and Markdown to the last, so one
+// table's content disappeared from one of the two outputs.
+func TestMarkdownTablesGetUniqueIDs(t *testing.T) {
+	md := "| a | b |\n| --- | --- |\n| 1 | 2 |\n\n" +
+		"| c | d |\n| --- | --- |\n| 3 | 4 |\n"
+	doc := documentir.New()
+	LiftMarkdown(doc, md)
+	if len(doc.Tables) != 2 {
+		t.Fatalf("tables = %d", len(doc.Tables))
+	}
+	if doc.Tables[0].ID == doc.Tables[1].ID {
+		t.Fatalf("duplicate table id %q", doc.Tables[0].ID)
+	}
+	for _, out := range []string{documentir.RenderText(doc), documentir.RenderMarkdown(doc)} {
+		for _, want := range []string{"a", "1", "c", "3"} {
+			if !strings.Contains(out, want) {
+				t.Fatalf("rendered output lost %q:\n%s", want, out)
+			}
+		}
+	}
+}
+
+// Audit (P1): merging a fragment must rename its tables and every reference to them.
+func TestRemapTablesRewritesReferences(t *testing.T) {
+	frag := documentir.New()
+	frag.Tables = append(frag.Tables, documentir.Table{ID: "tbl_1", Rows: 1, Cols: 1,
+		Cells: []documentir.Cell{{Row: 0, Col: 0, RowSpan: 1, ColSpan: 1, Text: "x"}}})
+	frag.Elements = append(frag.Elements,
+		documentir.Element{ID: "el_1", Type: documentir.ElTable, TableID: "tbl_1"},
+		documentir.Element{ID: "el_2", Type: documentir.ElParagraph, Text: "after"})
+	remapTables(frag, 5) // five tables already in the document
+	if frag.Tables[0].ID != "tbl_6" {
+		t.Fatalf("table id = %q", frag.Tables[0].ID)
+	}
+	if frag.Elements[0].TableID != "tbl_6" {
+		t.Fatalf("element reference = %q", frag.Elements[0].TableID)
+	}
+}

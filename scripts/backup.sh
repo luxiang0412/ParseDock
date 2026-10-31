@@ -24,6 +24,13 @@ DATA_DIR="${1:?usage: backup.sh <data-dir> <backup-dir>}"
 BACKUP_DIR="${2:?usage: backup.sh <data-dir> <backup-dir>}"
 DB="$DATA_DIR/coordinator.db"
 
+# Refuse a non-empty destination: copying only the current job set into an old tree would
+# leave artifacts that are no longer servable (and an old WAL beside the new database).
+if [[ -d "$BACKUP_DIR" && -n "$(ls -A "$BACKUP_DIR" 2>/dev/null)" ]]; then
+  echo "refusing to reuse non-empty $BACKUP_DIR" >&2
+  exit 1
+fi
+
 [[ -f "$DB" ]] || { echo "no coordinator.db in $DATA_DIR" >&2; exit 1; }
 mkdir -p "$BACKUP_DIR/files"
 

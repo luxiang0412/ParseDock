@@ -3,6 +3,7 @@ package coordinator
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -179,7 +180,7 @@ func TestClaimHeartbeatCompleteFencing(t *testing.T) {
 		t.Fatal("replayed completion accepted")
 	}
 	// Result is downloadable and consistent.
-	f, st, m, err := s.OpenResult(job.ID, "markdown")
+	f, st, m, err := s.OpenResult(job.ID, done.ResultVersion, "markdown")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1433,5 +1434,76 @@ func TestSweepOrphansSkipsOnLookupError(t *testing.T) {
 	}
 	if len(rep.Errors) == 0 {
 		t.Fatal("the lookup error was not reported")
+	}
+}
+
+// Audit (P1): two completions for the same job must not destroy each other's artifacts.
+// Results are content-addressed, so the loser removes only its own generation.
+func TestRejectedCompletionKeepsCommittedResult(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	done, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# winner"), Text: []byte("winner"), JSON: []byte(`{"winner":true}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A second completion with the same (now consumed) token and different content loses the
+	// fence. It must not take the winner's files with it.
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: task.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# loser"), Text: []byte("loser"), JSON: []byte(`{"loser":true}`)}); AsError(err).Code != jobs.ErrLeaseLost {
+		t.Fatalf("second completion: want lease_lost, got %v", err)
+	}
+	f, _, m, err := s.OpenResult(job.ID, done.ResultVersion, "markdown")
+	if err != nil {
+		t.Fatalf("winner's result disappeared: %v", err)
+	}
+	defer f.Close()
+	b, _ := io.ReadAll(f)
+	if string(b) != "# winner" || m.Version != done.ResultVersion {
+		t.Fatalf("served %q version %s", b, m.Version)
+	}
+}
+
+// Audit (P1): the reaper's job transition must be fenced by current_attempt. A stale
+// running attempt row (expired, but for an attempt the job no longer owns) must not requeue
+// the job a newer worker is parsing.
+func TestReapDoesNotTouchNewerAttempt(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	first, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || first == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	// Hand the job to a second attempt, then resurrect the first attempt row as a stale
+	// expired candidate (what a lost cleanup pass would have queued up).
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued', available_at = '' WHERE id = ?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'expired', lease_until = ? WHERE job_id = ? AND lease_token = ?`,
+		ts(nowUTC().Add(-time.Minute)), job.ID, first.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Claim(ctx, WorkerCaps{WorkerID: "w2", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || second == nil {
+		t.Fatalf("re-claim: %v", err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'running', lease_until = ? WHERE job_id = ? AND lease_token = ?`,
+		ts(nowUTC().Add(-time.Minute)), job.ID, first.LeaseToken); err != nil {
+		t.Fatal(err)
+	}
+	s.RunCleanup(ctx)
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.ProcessingStatus != jobs.StatusRunning || got.CurrentAttempt != second.AttemptNo {
+		t.Fatalf("reaper touched the newer attempt: status=%s attempt=%d", got.ProcessingStatus, got.CurrentAttempt)
+	}
+	if _, err := s.Complete(ctx, CompleteParams{JobID: job.ID, Token: second.LeaseToken, Engine: "native",
+		Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"), JSON: []byte("{}")}); err != nil {
+		t.Fatalf("newer attempt could not complete after cleanup: %v", err)
 	}
 }

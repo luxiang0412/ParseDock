@@ -332,6 +332,39 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	parseCtx, cancelParse := context.WithDeadline(ctx, deadline)
 	defer cancelParse()
 
+	var progress atomic.Int64
+	progress.Store(0)
+	stage := atomic.Value{}
+	stage.Store("downloading")
+
+	// Heartbeats start before the input is downloaded and run until the completion response
+	// arrives. Previously they started after the download and stopped before the upload, so a
+	// large input or a slow link could let the lease expire while the worker was visibly
+	// working (and the slot would then be reclaimed under it).
+	hbCtx, cancelHB := context.WithCancel(parseCtx)
+	defer cancelHB()
+	var hbErr atomic.Value
+	go func() {
+		t := time.NewTicker(w.Cfg.HeartbeatInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-hbCtx.Done():
+				return
+			case <-t.C:
+				// Send on every tick, not only when progress changes: during download and
+				// upload the stage does not change, and a skipped heartbeat is an expiring lease.
+				st, _ := stage.Load().(string)
+				if err := w.heartbeat(hbCtx, task, int(progress.Load()), st); err != nil {
+					hbErr.Store(err)
+					cancelHB()
+					cancelParse()
+					return
+				}
+			}
+		}
+	}()
+
 	local := filepath.Join(workDir, "input."+task.Format)
 	if err := w.downloadInput(parseCtx, task, local); err != nil {
 		return w.fail(ctx, task, jobs.ErrInternal, "download input: "+err.Error(), true)
@@ -344,38 +377,7 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	if task.Device == jobs.DeviceGPURequired && engine.Device() == "cpu" {
 		return w.fail(ctx, task, jobs.ErrGPUUnavailable, "gpu_required job cannot run on a CPU engine", false)
 	}
-
-	var progress atomic.Int64
-	progress.Store(0)
-	stage := atomic.Value{}
-	stage.Store("starting")
-	hbCtx, cancelHB := context.WithCancel(parseCtx)
-	defer cancelHB()
-	var hbErr atomic.Value
-	go func() {
-		t := time.NewTicker(w.Cfg.HeartbeatInterval)
-		defer t.Stop()
-		last := -1
-		for {
-			select {
-			case <-hbCtx.Done():
-				return
-			case <-t.C:
-				p := int(progress.Load())
-				st, _ := stage.Load().(string)
-				if p == last && st == "" {
-					continue
-				}
-				last = p
-				if err := w.heartbeat(hbCtx, task, p, st); err != nil {
-					hbErr.Store(err)
-					cancelHB()
-					cancelParse()
-					return
-				}
-			}
-		}
-	}()
+	stage.Store("parsing")
 
 	result, perr := engine.Parse(parseCtx, engines.Request{
 		JobID: task.JobID, Path: local, Format: task.Format, MimeType: task.MimeType,
@@ -414,7 +416,6 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	if perr == nil {
 		result, engine = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
 	}
-	cancelHB()
 	if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
 		// The job was cancelled while the engine was running: stop here even if
 		// the engine happened to finish, otherwise we would race the cleanup.

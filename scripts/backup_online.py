@@ -272,63 +272,12 @@ def main() -> int:
 
     if args.verify:
         t1 = time.time()
-        problems = []
-        check = sqlite3.connect(out / "coordinator.db")
-        ok = check.execute("PRAGMA integrity_check").fetchone()[0]
-        if ok != "ok":
-            problems.append(f"integrity_check: {ok}")
-        # Inputs are what a queued/running job needs to resume; artifacts exist only for
-        # completed jobs, so checking just artifacts would bless an unrestorable backup.
-        needs_files = {row[0] for row in conn_state if row[1] in ("queued", "running", "completed")}
-        for job_id, input_size in conn_inputs:
-            p = out / "files" / "inputs" / job_id / "input.bin"
-            if not p.exists():
-                if job_id in jobs:
-                    problems.append(f"missing input {job_id}")
-                continue
-            if input_size and p.stat().st_size != input_size:
-                problems.append(f"input size mismatch {job_id}: {p.stat().st_size} != {input_size}")
-            if sha256(p) != input_sha[job_id]:
-                problems.append(f"input hash mismatch {job_id}")
-        # A completed result is served through its manifest; a missing or malformed
-        # manifest makes the restored job undownloadable even when every artifact file
-        # matches SQLite.
-        for job_id, version, _manifest_path in completed:
-            mp = out / "files" / "results" / job_id / "manifest.json"
-            if not mp.exists():
-                if job_id in jobs:
-                    problems.append(f"missing manifest {job_id}")
-                continue
-            try:
-                man = json.loads(mp.read_text())
-            except (OSError, json.JSONDecodeError) as exc:
-                problems.append(f"unreadable manifest {job_id}: {exc}")
-                continue
-            # The manifest stores the version as result_version (storage.Manifest).
-            if version and man.get("result_version") != version:
-                problems.append(f"manifest version mismatch {job_id}: "
-                                f"{man.get('result_version')} != {version}")
-            if not man.get("files"):
-                problems.append(f"manifest lists no files {job_id}")
-
-        for job_id, kind, rel, size, want in artifacts:
-            # The JSON manifest records paths under the source data dir; resolve the copy.
-            p = out / "files" / "results" / job_id / Path(rel).name
-            if kind in ("markdown", "text", "json") and not p.exists():
-                p = out / "files" / "results" / job_id / kind
-            if not p.exists():
-                # Artifact rows survive a permanent failure; the files do not.
-                if job_id in jobs and job_id in needs_files:
-                    problems.append(f"missing artifact {job_id}/{kind}")
-                continue
-            got = sha256(p)
-            if want and got != want:
-                problems.append(f"sha mismatch {job_id}/{kind}: {got[:12]} != {want[:12]}")
-            if size and p.stat().st_size != size:
-                problems.append(f"size mismatch {job_id}/{kind}")
-        check.close()
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from verify_backup import verify as verify_backup  # noqa: E402  (same directory)
+        vr = verify_backup(out)
         report["verify"] = {"seconds": round(time.time() - t1, 3),
-                            "problems": problems, "ok": not problems}
+                            "problems": vr["problems"], "ok": vr["ok"],
+                            "checked": vr["checked"]}
 
     (out / "backup-report.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
     print(json.dumps(report, indent=2, sort_keys=True))
