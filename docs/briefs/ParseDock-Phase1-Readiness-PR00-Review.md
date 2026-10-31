@@ -149,7 +149,7 @@
 
 > 你是 ParseDock 的架构和工程审查负责人。请完整阅读本报告及其引用的 9 份源文档，并在仓库中核对实际实现。先不要重写核心架构，也不要连续实施 PR-01…PR-12。
 >
-> 1. 建立 `docs/PR00-ISSUE-MATRIX.md`，每一条 F01–F11 标注“证据位置 / 当前代码行为 / 建议修订 / 对外兼容性影响 / 测试 / 是否阻断发布”，纠正本报告中任何经代码证明不准确的推断。
+> 1. 建立 `docs/history/PR00-ISSUE-MATRIX.md`，每一条 F01–F11 标注“证据位置 / 当前代码行为 / 建议修订 / 对外兼容性影响 / 测试 / 是否阻断发布”，纠正本报告中任何经代码证明不准确的推断。
 > 2. 先复核引擎评分，使用 raw benchmark 记录编写自动评分脚本，重新生成两份评分表。不得伪造数据；语料不足时标记低置信度。
 > 3. 审查 `api/openapi.yaml` 与 Router/SDK 的逐项一致性，提出最小兼容改法，尤其处理 Cancel、Sync、ACK、SSE、ETag、3.1 nullable、multipart 字段顺序、公私规范分离。
 > 4. 审查 Document IR 和所有 adapter：结构、公式、sheet、bbox、image_ref、warning；禁止填充不存在的来源数据。
@@ -158,7 +158,7 @@
 > 7. 检查许可证真实打包物，包括 xberg `libx265`、MinerU 许可、CUDA 镜像。许可证责任的最终结论留给法律审核，不得以“子进程隔离”直接宣称合规。
 > 8. 为已确认的 P0/P1 问题实施最小可审查修订，更新测试、OpenAPI/SDK、相关文档。涉及语义突破性变化先记 ADR，并在报告中写明兼容迁移方案。
 > 9. 执行 `make test`、`make acceptance`、`make acceptance-real`、`make sdk-test` 以及可运行的契约与镜像测试。需要外部资源或双机场景的验证按 PARTIAL 标明，不能伪称 PASS。
-> 10. 交付 `docs/PHASE1-READINESS.md`、`docs/PR00-ISSUE-MATRIX.md`、各项测试结果、变更清单及更新后的 `docs/IMPLEMENTATION-PLAN.md`，并给出 GO / CONDITIONAL GO / NO-GO 的判断。
+> 10. 交付 `docs/history/PHASE1-READINESS.md`、`docs/history/PR00-ISSUE-MATRIX.md`、各项测试结果、变更清单及更新后的 `docs/IMPLEMENTATION-PLAN.md`，并给出 GO / CONDITIONAL GO / NO-GO 的判断。
 >
 > 边界：保留 Go 单二进制四角色、SQLite WAL、本地目录、ACK+TTL、无状态 API、CPU/GPU Worker、Docker；不新增强制外部依赖，不向公网暴露 internal API，不擅自改动宿主机或其他项目。先解决会造成长期返工的契约矛盾，不做不相关重构。
 
@@ -188,7 +188,7 @@
 
 ## 6. 依据文件
 
-- `docs/PHASE0-SUMMARY.md`
+- `docs/history/PHASE0-SUMMARY.md`
 - `docs/ENGINE-DECISION.md`
 - `docs/ENGINE-BENCHMARK.md`
 - `docs/IMPLEMENTATION-PLAN.md`

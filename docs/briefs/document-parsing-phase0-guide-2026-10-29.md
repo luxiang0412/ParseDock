@@ -355,7 +355,7 @@ command -v nvidia-smi >/dev/null && nvidia-smi || true
 
 **工作**：CPU-only 全流程；GPU 可用则测试容器看到 GPU、模型加载、实际显存变化、质量/吞吐收益；GPU 不可用则给出可复跑脚本和阻塞报告。
 
-**交付**：`docs/DEPLOYMENT.md`、CPU/GPU Compose、镜像版本清单、`docs/GPU-REPORT.md`。
+**交付**：`docs/DEPLOYMENT.md`、CPU/GPU Compose、镜像版本清单、`docs/history/GPU-REPORT.md`。
 
 **门槛**：无 GPU 机器能运行 CPU 版本；GPU 可选且不污染 CPU 镜像依赖；gpu_required 不静默降级。
 

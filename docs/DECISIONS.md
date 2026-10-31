@@ -221,7 +221,7 @@ make any change opt-in:
 * Tesseract stays the default because it is exact on English, 3x cheaper, and
   changing a default changes every existing result.
 
-**Evidence.** `docs/OCR-GPU-BENCHMARK.md` §2, `benchmark/results/ocr-cpu.json`.
+**Evidence.** `docs/history/OCR-GPU-BENCHMARK.md` §2, `benchmark/results/ocr-cpu.json`.
 
 **Rejected alternatives.** Making `paddle-ocr` the default (no benchmark on a real
 gold set yet); a standalone PaddleOCR worker (duplicates an engine that is already

@@ -71,7 +71,7 @@ harness redacts file identities by default.
 SSE progress, cancel, explicit release (never automatic), local-file previews (PDF via pdf.js,
 images, text/CSV, DOCX, XLSX) and a same-origin proxy that keeps the API key out of the browser.
 Docker profile `playground`, unit + Playwright E2E, screenshots in `docs/screenshots/`. Details:
-`docs/PLAYGROUND-IMPLEMENTATION.md`, evidence: `docs/PLAYGROUND-TEST-REPORT.md`.
+`docs/PLAYGROUND-IMPLEMENTATION.md`, evidence: `docs/history/PLAYGROUND-TEST-REPORT.md`.
 
 ## Post-Phase-1 audits
 
@@ -80,7 +80,7 @@ found 33 issues; all were fixed except two documented non-code items. The P0 and
 high-severity P1s were real: cleanup deleting live files after a failed lookup, an ACK that
 authorised deleting an in-flight job's input, two completions destroying each other's results,
 and a render path that could allocate ~20 billion strings from a 500 KB CSV. See
-`docs/AUDITS.md` for the list, the reasoning, and what was deliberately left alone
+`docs/history/AUDITS.md` for the list, the reasoning, and what was deliberately left alone
 (page-parallel OCR, legacy result migration, the L1 licence).
 
 ## Before you change anything

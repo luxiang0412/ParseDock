@@ -3,9 +3,9 @@
 > **Historical snapshot (2026-10-30, pre PR-00).** The scores quoted here were
 > recomputed by PR-00 with a corrected rubric and measurement pipeline; read
 > `docs/ENGINE-DECISION.md` §2 / `docs/ENGINE-BENCHMARK.md` §7 for the authoritative
-> numbers, and `docs/PR00-ISSUE-MATRIX.md` for what changed.
+> numbers, and `docs/history/PR00-ISSUE-MATRIX.md` for what changed.
 
-Deliverable of the Phase 0 task (`document-parsing-phase0-guide-2026-10-29.md`).
+Deliverable of the Phase 0 task (`docs/briefs/document-parsing-phase0-guide-2026-10-29.md`).
 Every claim below links to a reproducible artefact in this repository.
 
 ---
@@ -100,7 +100,7 @@ and `acceptance-real-20261030T161807.json`.
 | T14 | disk watermark | **PASS** | new upload `507`; existing result still 200; restored after restart |
 | T15 | stale attempt writes | **PASS** | late result and heartbeat both `409`; version/page count unchanged |
 | T16 | released/expired → 410 | **PASS** | 410 for both; foreign owner gets 401/404 without existence leak |
-| GPU | GPU verification | **PARTIAL** | CUDA + VRAM measured natively (Docling 30 p: 13.8 s CPU → 7.5 s CUDA, +1.5 GB); GPU container plumbing verified with `nvidia-smi`; **GPU worker image not built** (`docs/GPU-REPORT.md` §4) |
+| GPU | GPU verification | **PARTIAL** | CUDA + VRAM measured natively (Docling 30 p: 13.8 s CPU → 7.5 s CUDA, +1.5 GB); GPU container plumbing verified with `nvidia-smi`; **GPU worker image not built** (`docs/history/GPU-REPORT.md` §4) |
 | Container | CPU compose stack | **PASS** | coordinator + 2 api + worker; xberg and docling-rs parsed; ACK on one replica → 410 on the other |
 
 Also: `go test ./...` (storage sniffing, atomic store, IR rendering, engine ladders,

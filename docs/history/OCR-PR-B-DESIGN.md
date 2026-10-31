@@ -1,9 +1,9 @@
 # PR-B design — OCR escalation, revised
 
 > Status: **implemented in PR-B** (`feat/ocr-pr-b-escalation`). This document is
-> the revised design; the measured results are in `docs/OCR-PR-B-REPORT.md`.
+> the revised design; the measured results are in `docs/history/OCR-PR-B-REPORT.md`.
 >
-> Inputs: `docs/OCR-BACKEND-RESEARCH.md`, `internal/engines/{xberg,escalate}.go`,
+> Inputs: `docs/history/OCR-BACKEND-RESEARCH.md`, `internal/engines/{xberg,escalate}.go`,
 > `internal/worker/worker.go`, `tests/integration/ocr_backend.py`.
 
 ## 1. What was wrong

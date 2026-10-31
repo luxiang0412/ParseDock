@@ -1,6 +1,6 @@
 # PR-D1 report — GPU execution evidence and the `gpu_required` contract
 
-> Branch `feat/ocr-pr-d1-gpu-evidence`. Design: `docs/OCR-PR-D-DESIGN.md`
+> Branch `feat/ocr-pr-d1-gpu-evidence`. Design: `docs/history/OCR-PR-D-DESIGN.md`
 > (stage 1 implemented here; stage 2/3 remain). No image, container or public API
 > was changed.
 

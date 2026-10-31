@@ -259,7 +259,7 @@ Checklist when that happens:
      * `vkCreateInstance: Found no drivers!` / `Could not get 'vkCreateInstance'
        via 'vk_icdGetInstanceProcAddr'` ⇒ the ICD cannot initialise **inside the
        container** even though it works on the host: an NVIDIA driver/toolkit
-       problem, documented in `docs/OCR-PR-D2-REPORT.md`. Do not "fix" it with a
+       problem, documented in `docs/history/OCR-PR-D2-REPORT.md`. Do not "fix" it with a
        software Vulkan driver (llvmpipe) — PR-D1 would then report GPU execution
        for CPU work.
      * `providers=['CUDAExecutionProvider'], gpu=0` written **during** the task ⇒

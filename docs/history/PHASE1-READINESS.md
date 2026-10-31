@@ -1,7 +1,7 @@
 # PHASE 1 READINESS — PR-00 result
 
 > Date: 2026-10-30 · Branch state: `PR-00` on top of Phase 0 baseline `57a08b1`
-> Companion: `docs/PR00-ISSUE-MATRIX.md` (per-finding verification).
+> Companion: `docs/history/PR00-ISSUE-MATRIX.md` (per-finding verification).
 > Scope: the eleven findings (F01–F11) of the Phase 1 readiness review, plus the
 > tests the review asked for (PR00-01…PR00-15). **No PR-01…PR-12 work was done.**
 

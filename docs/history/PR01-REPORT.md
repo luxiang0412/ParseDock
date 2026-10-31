@@ -34,7 +34,7 @@ Commits on `main` (oldest first). Each is reviewable on its own.
 | `e9c43b2` | `ci:` pinned actions bumped to Node 24 releases (checkout v7, setup-go v7, upload-artifact v7, cache v6) |
 | `85b2764` | `fix(ci)`: worker image `FROM ${BASE_IMAGE}` + plain `docker build` (buildx could not see the local base image — found by the failing nightly run) |
 | `1200ad4` | `fix(ci)`: artifacts restricted to the current run (marker files); `classify_licence.py` + persisted classification |
-| `docs` commit | `docs/CI.md`, `docs/PR01-REPORT.md`, README + IMPLEMENTATION-PLAN updates |
+| `docs` commit | `docs/CI.md`, `docs/history/PR01-REPORT.md`, README + IMPLEMENTATION-PLAN updates |
 
 File map:
 

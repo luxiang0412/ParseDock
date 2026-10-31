@@ -1,7 +1,7 @@
 # PR-B report — OCR quality semantics and escalation
 
 > Branch `feat/ocr-pr-b-escalation`, merged as the PR linked below.
-> Design: `docs/OCR-PR-B-DESIGN.md`. Evidence: `tests/integration/ocr_backend.py`
+> Design: `docs/history/OCR-PR-B-DESIGN.md`. Evidence: `tests/integration/ocr_backend.py`
 > (9 real-process cases), Go unit tests, `benchmark/scripts/cer_breakdown.py`.
 >
 > No document from `test_data/` was read, copied or transmitted. All fixtures are

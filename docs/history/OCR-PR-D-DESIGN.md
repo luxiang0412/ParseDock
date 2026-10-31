@@ -1,13 +1,13 @@
 # PR-D design — `gpu_required` must prove GPU inference (fail-closed)
 
-> Status: **stage 1 implemented in PR-D1** (`docs/OCR-PR-D1-REPORT.md`):
+> Status: **stage 1 implemented in PR-D1** (`docs/history/OCR-PR-D1-REPORT.md`):
 > per-engine `Execution` evidence, enforcement before publish reusing
 > `gpu_unavailable`, `actual_device` derived from evidence, honest registration.
 > Stages 2–3 (coordinator filtering, `require` mode) remain unimplemented, and the
 > image fix is PR-D2.
 >
 > Evidence: `tests/integration/pr08_gpu.py` (existing), the MinerU daemon logs
-> quoted below, `docs/OCR-GPU-BENCHMARK.md` §3, `docs/OCR-GPU-DECISIONS.md`.
+> quoted below, `docs/history/OCR-GPU-BENCHMARK.md` §3, `docs/OCR-GPU-DECISIONS.md`.
 
 ## 1. The hole
 

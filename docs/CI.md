@@ -68,7 +68,7 @@ that regression is covered by a test, and a negative-control PR proved the fix
 
 **Enforcement caveat:** this repository is private on a free GitHub plan, where
 branch protection and rulesets return `HTTP 403`. The check names and the
-enablement command are documented in `docs/PR01-REPORT.md` §6b; until the owner
+enablement command are documented in `docs/history/PR01-REPORT.md` §6b; until the owner
 upgrades the plan (or makes the repo public), a red pipeline is visible but not
 technically unmergeable.
 
@@ -113,7 +113,7 @@ make license-audit   # enforce mode (fails on GPL)
   the critical path (~4m10s) and dominates the PR pipeline. It grew with PR-02/07/09/12
   runtime contracts; splitting it is a candidate if the wall time becomes painful.
 * No self-hosted GPU runner: GPU workers are verified manually (`make gpu-check`,
-  `docs/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
+  `docs/history/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
   GPU, so it is safe to run anywhere but proves nothing there.
 * The Java half of `sdk-check` (Maven downloads, the integration test and the two
   examples) runs in the nightly `sdks` job; the PR `sdk` job only runs the Python

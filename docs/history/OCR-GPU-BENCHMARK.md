@@ -169,9 +169,9 @@ repository is `2.53.3` without the `cuda` feature.
   delta, and identical latency with `MINERU_LMDEPLOY_DEVICE=cpu` and `=cuda`
   (4 248 vs 4 290 ms). The image has no `torch` at all. Either the flash tier in
   this build is CPU-only, or the daemon needs a device setting we have not found;
-  either way, the "MinerU = GPU path" claim in `docs/GPU-REPORT.md` is **not
+  either way, the "MinerU = GPU path" claim in `docs/history/GPU-REPORT.md` is **not
   reproducible today** and is marked unverified.
-* The earlier Python-Docling measurement in `docs/GPU-REPORT.md`
+* The earlier Python-Docling measurement in `docs/history/GPU-REPORT.md`
   (13.83 s → 7.52 s on 30 pages, 65 % utilisation) shows GPU acceleration *can*
   work on this card with a different runtime. The failure here is specific to the
   Rust/ONNX-Runtime CUDA build, not to the GPU.

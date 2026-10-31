@@ -14,7 +14,7 @@
 | Validation | `engines.ValidateOCRBackend`, called once in `run()`; the list is pinned in `engines.OCRBackends` and a unit test fails if it drifts from the binary's own error message |
 | Auditability | `Document.Routing.Reason` gains `(ocr_backend=<name>)` **only** when a backend is explicitly configured |
 | Deployment | `deploy/host/{docker-compose.yml,.env.example}` pass the variable through (empty is safe) |
-| Docs | `docs/DEPLOYMENT.md` config table, `docs/OCR-ROUTING-PROPOSAL.md` P1 marked implemented, `docs/OCR-BACKEND-RESEARCH.md` §3.5 language correction |
+| Docs | `docs/DEPLOYMENT.md` config table, `docs/history/OCR-ROUTING-PROPOSAL.md` P1 marked implemented, `docs/history/OCR-BACKEND-RESEARCH.md` §3.5 language correction |
 
 ## 2. The five required verifications
 
@@ -84,7 +84,7 @@ Fixed in `docker/Dockerfile.engines`: the cache is seeded at build time with
 network at run time).
 
 Peak RSS and latency on the 2-page Chinese scan (same host, same method as
-`docs/OCR-GPU-BENCHMARK.md`): **1 252 ms, 765 MiB** for paddle-ocr vs
+`docs/history/OCR-GPU-BENCHMARK.md`): **1 252 ms, 765 MiB** for paddle-ocr vs
 **406 ms, 224 MiB** for tesseract `chi_sim`.
 
 ### 2.4 End-to-end behaviour in `fast` and `auto`
@@ -101,7 +101,7 @@ Real standalone process, real engines (`tests/integration/ocr_backend.py`):
 The `auto` rows are **evidence for the PR-B revision**, not PR-A defects: with
 `paddle-ocr` a CER-0.000 result is escalated anyway, and with the default
 `eng` tesseract a 45 %-CER result is **not** escalated. Both are analysed in
-`docs/OCR-PR-B-DESIGN.md`.
+`docs/history/OCR-PR-B-DESIGN.md`.
 
 ### 2.5 Is the default really unchanged?
 

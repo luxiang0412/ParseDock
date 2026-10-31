@@ -43,7 +43,7 @@ make web-e2e           # Playwright against a real backend (make build first)
 ```
 
 See `docs/PLAYGROUND-IMPLEMENTATION.md` (design and decisions) and
-`docs/PLAYGROUND-TEST-REPORT.md` (evidence), plus `web/README.md` for daily commands.
+`docs/history/PLAYGROUND-TEST-REPORT.md` (evidence), plus `web/README.md` for daily commands.
 
 Contributing, or working here as an agent? Read `AGENTS.md` first — it has the
 non-negotiables, the command that *is* CI, and the traps we already paid for.
@@ -91,7 +91,7 @@ docker compose -f deploy/compose.cpu.yaml --env-file deploy/.env up -d
 # api-1 on :8080, api-2 on :8082, coordinator + worker on a private network
 ```
 
-GPU (optional, MinerU flash): `docs/GPU-REPORT.md` and `deploy/compose.gpu.yaml`.
+GPU (optional, MinerU flash): `docs/history/GPU-REPORT.md` and `deploy/compose.gpu.yaml`.
 
 ## API at a glance
 
@@ -250,8 +250,8 @@ protection on the free plan).
 | Document | Contents |
 | --- | --- |
 | `AGENTS.md` | operational contract for contributors/agents: rules, commands, traps, deliberate gaps |
-| `docs/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
-| `docs/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
+| `docs/history/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
+| `docs/history/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
 | `docs/PHASE1-SUMMARY.md` | Phase 1 status: what shipped, what was verified, what is blocked and why |
 | `docs/SLO.md` | SLO targets, result-loss budget, metric reference, tracing stance |
 | `docs/RUNBOOK.md` | backup/restore, upgrade, and one playbook per alert |
@@ -259,11 +259,11 @@ protection on the free plan).
 | `docs/RELEASING.md` | how a release is cut: tag, PyPI (OIDC), Maven Central, the failures to expect |
 | `docs/SDK.md` | Python package/CLI, Java client, version rule, lifecycle contract, publishing status |
 | `docs/PLAYGROUND-IMPLEMENTATION.md` | web playground: architecture, decisions, limits |
-| `docs/PLAYGROUND-TEST-REPORT.md` | playground evidence: unit/E2E/security runs, screenshots |
-| `docs/PLAYGROUND-READINESS.md` | pre-implementation survey (API, previews, integration) |
+| `docs/history/PLAYGROUND-TEST-REPORT.md` | playground evidence: unit/E2E/security runs, screenshots |
+| `docs/history/PLAYGROUND-READINESS.md` | pre-implementation survey (API, previews, integration) |
 | `docs/CI.md` | CI workflows, phases, pinned inputs, artifacts, licence policy |
 | `docs/REAL-CORPUS-TEST.md` | 958-file real corpus: results, defects found, engine comparison |
-| `docs/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |
+| `docs/history/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |
 | `docs/ENVIRONMENT.md` | host, toolchain, engine versions, isolation |
 | `docs/LICENSE-REVIEW.md` | per-component licence verification + open items |
 | `docs/ENGINE-CANDIDATES.md` | what each candidate does/fails at |
@@ -274,7 +274,7 @@ protection on the free plan).
 | `docs/JOB-LIFECYCLE.md` | states, timers, ACK semantics, cleanup algorithm |
 | `docs/ERROR-CODES.md` | every stable error code: HTTP status, retryability, meaning, origin |
 | `docs/CLUSTER-LITE.md` | worker protocol, fencing, failure matrix, upgrade triggers |
-| `docs/GPU-REPORT.md` | GPU verification and what remains |
+| `docs/history/GPU-REPORT.md` | GPU verification and what remains |
 | `docs/DEPLOYMENT.md` | images, compose, flags, probes, backups |
 | `docs/DECISIONS.md` | ADR log |
 | `docs/IMPLEMENTATION-PLAN.md` | Phase 1 PR slices |

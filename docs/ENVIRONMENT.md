@@ -23,7 +23,7 @@
 
 The machine is a workstation, **not** a dedicated benchmark host: the GPU also
 drives the desktop session (~395 MiB VRAM and a few % GPU utilisation at idle).
-GPU figures in `GPU-REPORT.md` therefore use a measured baseline subtraction
+GPU figures in `history/GPU-REPORT.md` therefore use a measured baseline subtraction
 (`nvidia-smi` sampled every 200 ms).
 
 ## 2. Isolation used for the PoC

@@ -186,7 +186,7 @@ code for paddle-ocr; it is not a silent fallback to Chinese.
   `nvidia-smi` shows **0 % utilisation and no VRAM delta** during a warm
   `flash` parse (B, 300 ms sampling). `MINERU_LMDEPLOY_DEVICE=cuda` and `=cpu`
   produced the same 4.2 s warm latency (B). In other words: on this image the
-  flash tier behaved as a CPU pipeline, and the pre-existing `docs/GPU-REPORT.md`
+  flash tier behaved as a CPU pipeline, and the pre-existing `docs/history/GPU-REPORT.md`
   claim ("daemon holds ≈ 880 MB VRAM", 876 ms–1.57 s) **could not be reproduced**
   and is now **[X] unverified** until the worker path is re-measured end to end.
 

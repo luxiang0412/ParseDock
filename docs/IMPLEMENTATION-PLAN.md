@@ -6,8 +6,8 @@
 > protection on a free private repo). Every PR below carries its own **Status:** line
 > with what was verified and what was deliberately left out.
 >
-> **PR-00 (Phase 1 readiness) is complete**: see `docs/PHASE1-READINESS.md` and
-> `docs/PR00-ISSUE-MATRIX.md`. Landed here: scored decisions generated from data,
+> **PR-00 (Phase 1 readiness) is complete**: see `docs/history/PHASE1-READINESS.md` and
+> `docs/history/PR00-ISSUE-MATRIX.md`. Landed here: scored decisions generated from data,
 > text-format routing, ACK/Cancel/Heartbeat/lease semantics, public/internal
 > OpenAPI split, per-representation ETag, any-order multipart, SSE scope, IR
 > provenance fixes, worker scratch reclamation, internal binding guard,
@@ -42,7 +42,7 @@ acceptance JSON as an artifact.
 `images.lock.json` enforced by `scripts/verify_pins.py`, reproducible binary proven
 by `scripts/repro-check.sh`, SDK drift checked, licence audit split into control
 plane PASS / worker BLOCK. Measured on GitHub-hosted runners: 3 m 53 s – 3 m 58 s
-per PR run; nightly 1 m 56 s. Details and residual risks: `docs/PR01-REPORT.md`.
+per PR run; nightly 1 m 56 s. Details and residual risks: `docs/history/PR01-REPORT.md`.
 Residual (out of PR-01 scope): GPU runner (PR-08), two-host cluster test (PR-07),
 registry publish step (PR-08/PR-12) which must depend on `release-gate`.
 
@@ -113,8 +113,8 @@ in that run were fixed in PR #3).
 | RC-3 | Scan-aware routing | 332/958 files (36 %) are scans; CJK scans need the PP-OCR path, Latin scans are fine with xberg | **PR-04** |
 | RC-4 | Upload cap vs real documents | 9 files are 58–74 MiB; the default 64 MiB cap rejects them | **PR-06** |
 | RC-5 | Rate limits must account for status polling | a batch client polling at 5 rps/thread exhausted the default 20 rps (429 on 36 files) | **PR-09** |
-| RC-7 | Chinese scans on the fast path use Tesseract (CER 0.075) while PP-OCRv6 is already inside xberg (CER 0.000) | spike 2026-10-31; PR-A/B in `docs/OCR-ROUTING-PROPOSAL.md` |
-| RC-8 | `device=gpu_required` is only enforced by the scheduler; docling-rs warns on stderr and falls back to CPU with exit 0 | spike 2026-10-31; PR-D in `docs/OCR-ROUTING-PROPOSAL.md` |
+| RC-7 | Chinese scans on the fast path use Tesseract (CER 0.075) while PP-OCRv6 is already inside xberg (CER 0.000) | spike 2026-10-31; PR-A/B in `docs/history/OCR-ROUTING-PROPOSAL.md` |
+| RC-8 | `device=gpu_required` is only enforced by the scheduler; docling-rs warns on stderr and falls back to CPU with exit 0 | spike 2026-10-31; PR-D in `docs/history/OCR-ROUTING-PROPOSAL.md` |
 | RC-9 | MinerU Flash GPU usage unverified (0 % util through the worker image) | spike 2026-10-31; `docs/OCR-GPU-DECISIONS.md` §2.6 |
 | RC-6 | Encrypted PDFs are 8/554 of real documents | explicit `encrypted_file` today; product decision on password support | PR-06 decision |
 
@@ -277,7 +277,7 @@ two hosts without further code changes.
 **Tests.** GPU acceptance: `gpu_required` succeeds on GPU worker, `409` without it;
 VRAM measured via `nvidia-smi` during the run; egress denied test.
 
-**DoD.** `docs/GPU-REPORT.md` §4 items become PASS with raw evidence.
+**DoD.** `docs/history/GPU-REPORT.md` §4 items become PASS with raw evidence.
 
 **Status: PARTIAL (PR-08).** Delivered and verified on the RTX 2080 Ti host:
 
@@ -286,7 +286,7 @@ VRAM measured via `nvidia-smi` during the run; egress denied test.
   registers `device_type=gpu` with **18 832 MiB free VRAM**, a `device=gpu_required`
   scanned-PDF job is routed to `mineru` and completes, and the result carries the
   provenance. Three image defects found by actually running it are documented in
-  `GPU-REPORT.md` §4 (broken venv shebang, root-owned mounted volume, `HOME=/root`).
+  `docs/history/GPU-REPORT.md` §4 (broken venv shebang, root-owned mounted volume, `HOME=/root`).
 * Free-VRAM reporting on every heartbeat (`-1` unknown, `0` genuinely full) and
   VRAM-aware admission: `--engine-min-vram-mb mineru:8192` makes `gpu_required` return
   `409 gpu_unavailable` naming the requirement when no live GPU worker has that much

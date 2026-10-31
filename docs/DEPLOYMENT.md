@@ -431,7 +431,7 @@ rule_files: [/etc/prometheus/parsedock-alerts.yaml]
 * No automatic Coordinator failover; the orchestrator must restart the single replica.
 * Public TLS termination is still the ingress/load balancer's job; ParseDock's own TLS
   covers the **internal** hop only.
-* No GPU image built in Phase 0 (recipe and acceptance steps in `GPU-REPORT.md` §4).
+* No GPU image built in Phase 0 (recipe and acceptance steps in `history/GPU-REPORT.md` §4).
 * `apache/tika:latest-full` is a moving tag in the PoC; pin the digest in production.
 * **Distribution gate.** `make license-audit` writes `build/sbom/<image>.json` and
   fails when an image contains a GPL library. `parsedock-worker-cpu` currently fails

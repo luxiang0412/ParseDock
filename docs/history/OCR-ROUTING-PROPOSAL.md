@@ -1,7 +1,7 @@
 # OCR routing proposal — minimal changes, no rewrite
 
-> Inputs: `docs/OCR-BACKEND-RESEARCH.md` (capabilities) and
-> `docs/OCR-GPU-BENCHMARK.md` (numbers). Every proposal below is sized so it can
+> Inputs: `docs/history/OCR-BACKEND-RESEARCH.md` (capabilities) and
+> `docs/history/OCR-GPU-BENCHMARK.md` (numbers). Every proposal below is sized so it can
 > ship on its own, with the current defaults unchanged until a benchmark approves
 > a default change.
 
@@ -53,7 +53,7 @@ checked at startup, so a typo fails before the first scan instead of per job.
 
 **Revised after the code audit** — the original sketch (escalate on
 `ocr_quality_unknown`) would have made every PP-OCRv6 job parse twice. Full
-design, thresholds and tests: **`docs/OCR-PR-B-DESIGN.md`**.
+design, thresholds and tests: **`docs/history/OCR-PR-B-DESIGN.md`**.
 
 When the backend reports `ocr_confidence.score == null` **and** OCR ran on a page
 with `scanned_confidence ≥ 0.7`, emit the warning ParseDock already defines —
@@ -94,7 +94,7 @@ result; the error code stays `encrypted_file` when it is absent or wrong.
 **Revised**: MinerU's own daemon log shows why our "GPU" worker runs on CPU
 (`libvulkan.so.1` missing → `providers=['CPUExecutionProvider'], gpu=None`), and
 docling-rs falls back to CPU with exit 0. Full design, staged rollout and tests:
-**`docs/OCR-PR-D-DESIGN.md`**.
+**`docs/history/OCR-PR-D-DESIGN.md`**.
 
 The measurement (see benchmark doc) is that CUDA on this GPU is 18× slower and
 changes output, while the engine hides a missing provider behind a warning. Two
@@ -128,10 +128,10 @@ contract, (b) a scanned-*table* fixture proves the coordinate space, (c) the
 
 | PR | Content | Risk | Gate | Status |
 | --- | --- | --- | --- | --- |
-| **A** | P1 backend selector + validation + docs + tests | none (defaults unchanged) | unit, contract | **merged (#32)**, `docs/OCR-PR-A-REPORT.md` |
-| **B** | P2 warning taxonomy + escalation revision + duplicate-parse guard | low (fewer, better-targeted escalations) | unit, lifecycle, benchmark latency | design: `docs/OCR-PR-B-DESIGN.md` |
+| **A** | P1 backend selector + validation + docs + tests | none (defaults unchanged) | unit, contract | **merged (#32)**, `docs/history/OCR-PR-A-REPORT.md` |
+| **B** | P2 warning taxonomy + escalation revision + duplicate-parse guard | low (fewer, better-targeted escalations) | unit, lifecycle, benchmark latency | design: `docs/history/OCR-PR-B-DESIGN.md` |
 | **C** | P3 docling-rs passthrough | none | unit | proposed |
-| **D** | P5 fail-closed GPU evidence (staged warn → require) | low in `warn`, medium in `require` | unit + T12 unchanged | design: `docs/OCR-PR-D-DESIGN.md` |
+| **D** | P5 fail-closed GPU evidence (staged warn → require) | low in `warn`, medium in `require` | unit + T12 unchanged | design: `docs/history/OCR-PR-D-DESIGN.md` |
 | **E** | P4 encrypted documents | medium (API + redaction) | contract, security review |
 | **F** | P6 IR OCR elements | blocked | upstream + fixture |
 

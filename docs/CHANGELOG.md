@@ -142,7 +142,7 @@ Java clients, and measured SLOs.
   inside the xberg distribution. The control-plane image (95 MB) is unaffected.
 * GPU execution is **not** proven on the current test host: MinerU's Vulkan path
   cannot initialise inside the container (driver/toolkit interaction, see
-  `OCR-PR-D2-REPORT.md`); docling-rs CUDA is 15–18× slower than CPU there. The
+  `history/OCR-PR-D2-REPORT.md`); docling-rs CUDA is 15–18× slower than CPU there. The
   recommended GPU route is docling-serve with CUDA.
 * Tables inside **scanned** pages are not structured by the default engine
   configuration; documents with 500+ MiB expanded XLSX sheets fail with

@@ -2,7 +2,7 @@
 
 > 目的：提供一套可直接交给本地 Pi 执行的产品与工程任务书。  
 > 范围：在**不改动现有 ParseDock 解析核心与公共 API** 的前提下，实现可运行、可测试、可 Docker 部署的「上传文件 → 解析 → 原文与 Markdown 对照」Web Playground。  
-> 基线：用户提供的 Pi `PLAYGROUND-READINESS` 摘要及现有 Phase 0/PR-00 设计；**动手前必须核对仓库最新代码和 `docs/PLAYGROUND-READINESS.md`，实际实现以仓库当前公开 OpenAPI 为准**。
+> 基线：用户提供的 Pi `PLAYGROUND-READINESS` 摘要及现有 Phase 0/PR-00 设计；**动手前必须核对仓库最新代码和 `docs/history/PLAYGROUND-READINESS.md`，实际实现以仓库当前公开 OpenAPI 为准**。
 
 ## 0. 本任务的完成定义
 
@@ -196,7 +196,7 @@ docs/
 
 ## 10. 每阶段执行流程
 
-1. 阅读 `docs/PLAYGROUND-READINESS.md`、当前 OpenAPI、Router/Handler、现有 CI 与 Compose。以实际代码确认字段、SSE framing、返回头、错误码及项目结构；将差异记录为 `docs/PLAYGROUND-IMPLEMENTATION.md` 的现状基线。
+1. 阅读 `docs/history/PLAYGROUND-READINESS.md`、当前 OpenAPI、Router/Handler、现有 CI 与 Compose。以实际代码确认字段、SSE framing、返回头、错误码及项目结构；将差异记录为 `docs/PLAYGROUND-IMPLEMENTATION.md` 的现状基线。
 2. 建立短小 ADR：为何选择同源代理、internal-only 共享 Key、为何不自动 ACK、预览格式与边界、Office 是否后置。
 3. 按 PG-01…10 实施，**每片开发→单测→本地集成→必要真实浏览器检查→PR→CI→复核**，不跳过绿灯门禁。任何改动不应对其他运行中的应用造成影响。
 4. 每阶段有提交记录、变更摘要、运行命令、截图（合成/公开文件）、测试结果和未完成项。不要把 UI mock 的测试写成真实解析服务验收。
@@ -209,7 +209,7 @@ docs/
 - 可复用的公共 OpenAPI 类型层、请求封装、SSE 状态管理；无 backend core 侵入式修改。
 - Docker/Compose 可选启动，部署说明包含 API key 安全注入、访问边界、上传限制和网络配置。
 - 实测截图、Playwright E2E、单元/集成、安全测试及稳定 CI；关键流程负向测试存在。
-- `docs/PLAYGROUND-IMPLEMENTATION.md`（实现与取舍）、`docs/PLAYGROUND-TEST-REPORT.md`（命令、原始证据、环境、通过/失败）、README 使用说明。
+- `docs/PLAYGROUND-IMPLEMENTATION.md`（实现与取舍）、`docs/history/PLAYGROUND-TEST-REPORT.md`（命令、原始证据、环境、通过/失败）、README 使用说明。
 - 完整记录最终 PR、commit、CI run ID、known limitations、后续 backlog。
 
 **禁止用纯静态 mock 或只做漂亮截图冒充完成；必须使用真实 ParseDock CPU 后端通过完整的上传→解析→对照→手动释放流程。**

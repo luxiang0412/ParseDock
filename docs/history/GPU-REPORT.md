@@ -14,7 +14,7 @@
 > identical latency with `MINERU_LMDEPLOY_DEVICE=cpu` and `=cuda`; the image has
 > no `torch`. Treat "MinerU Flash runs on the GPU" as unverified until the worker
 > path is re-measured. The Docling (Python) rows still stand. See
-> `docs/OCR-GPU-BENCHMARK.md` §3 and `docs/OCR-GPU-DECISIONS.md` §2.6.
+> `docs/history/OCR-GPU-BENCHMARK.md` §3 and `docs/OCR-GPU-DECISIONS.md` §2.6.
 
 ## 1. Verdict
 

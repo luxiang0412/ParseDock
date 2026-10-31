@@ -11,7 +11,7 @@
 | Branch / HEAD | `main` @ `f1fe2af` (merge of PR #26) | `git log -1` |
 | Worktree | clean (0 modified files) | `git status --porcelain` |
 | Merged PRs | #3 (real-corpus defects), #4–#7 (PR-02…PR-05), #8 (PR-06), #9 (PR-07), #10 (PR-08), #11 (PR-09), #12 (PR-10), #13 (PR-11), #14 (PR-12), #15 (AGENTS.md), #16 (doc sync), #18–#23 (audit batches A–F), #24 (html + page cap), #25 (table dedupe), #26 (export tool) | `gh pr list --state all` |
-| Open work | L1 licence (`libx265`) blocks worker-image **redistribution**; two-host cluster measurement; branch protection (free private repo); sheet-window extraction for 16 oversized XLSX (deferred by decision); zip-archive ingestion (declined) | `docs/PHASE1-SUMMARY.md`, `docs/AUDITS.md` |
+| Open work | L1 licence (`libx265`) blocks worker-image **redistribution**; two-host cluster measurement; branch protection (free private repo); sheet-window extraction for 16 oversized XLSX (deferred by decision); zip-archive ingestion (declined) | `docs/PHASE1-SUMMARY.md`, `docs/history/AUDITS.md` |
 | Backend stack | Go 1.27.3, single binary with 4 roles, SQLite (WAL) + local filesystem, no Redis/Postgres/S3/MQ | `go.mod`, `docs/ARCHITECTURE.md` |
 | Frontend code | **none** — no `web/`, `frontend/`, `ui/`, no `package.json` | `ls`, `find -maxdepth 2 -name package.json` |
 | Node toolchain available | Node 22.22.3, npm 10.9.8 | `node -v`, `npm -v` |
@@ -178,7 +178,7 @@ Nothing is strictly required for a same-origin MVP. Recommended, in order of val
 5. **Quota/rate abuse** — a shared key means a shared owner budget (concurrent jobs, 24 h bytes,
    storage). A public deployment needs per-session keys and a smaller quota.
 6. **Privacy** — the UI must state that the file leaves the browser and is stored server-side
-   until TTL/ACK, and that previews are local. `docs/AUDITS.md` records that document content is
+   until TTL/ACK, and that previews are local. `docs/history/AUDITS.md` records that document content is
    never logged; the UI must not log it either.
 
 **Performance**
