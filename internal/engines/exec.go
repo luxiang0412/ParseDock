@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -46,7 +47,17 @@ type ExecResult struct {
 	OOM bool
 	// Truncated is set when stdout exceeded the configured ceiling and was cut.
 	Truncated bool
+	// KilledBySignal is set when the parser died from a SIGKILL that RunCLI did not send
+	// (neither the timeout nor the RSS monitor). On Linux that is almost always the kernel
+	// or cgroup OOM killer, which leaves no stderr behind.
+	KilledBySignal bool
 }
+
+// cliWaitDelay bounds how long RunCLI waits for stdout/stderr to close after the parser
+// itself has exited (or been killed). A grandchild that inherited the pipes would
+// otherwise hold Wait open for as long as it lives, far past the parse timeout. It is a
+// variable so tests can shorten it.
+var cliWaitDelay = 2 * time.Second
 
 // ErrOutputTooLarge reports that a parser produced more output than the ceiling allows.
 var ErrOutputTooLarge = errors.New("engine output exceeded its size ceiling")
@@ -78,8 +89,10 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 			// the operator asked for.
 			return nil, fmt.Errorf("%w: network sandbox unavailable: %v", ErrSandboxUnavailable, err)
 		}
+		// Pass the resolved path: unshare runs with the same cwd (the attempt directory),
+		// where the operator's relative spec.Bin does not exist.
+		args = append([]string{"-n", "--", bin}, args...)
 		bin = "unshare"
-		args = append([]string{"-n", "--", spec.Bin}, args...)
 	}
 	cmd := exec.CommandContext(ctx, bin, args...)
 	// Note: workDir and args must be absolute. cmd.Dir sets the child's cwd, so a relative
@@ -96,13 +109,19 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	}
 	cmd.Stderr = &limitedWriter{w: &stderr, n: 1 << 20}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// ctxKilled records that *we* killed the parser because ctx ended. exec calls Cancel
+	// only when ctx is done before the process exits, so this separates "timed out" from
+	// "finished, then Wait sat on a pipe held by a grandchild until the deadline passed".
+	var ctxKilled atomic.Bool
 	cmd.Cancel = func() error {
 		// Kill the whole process group so helper processes die too.
 		if cmd.Process == nil {
 			return nil
 		}
+		ctxKilled.Store(true)
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 	}
+	cmd.WaitDelay = cliWaitDelay
 
 	start := time.Now()
 	if err := cmd.Start(); err != nil {
@@ -139,6 +158,14 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 	if spec.MaxRSSMB > 0 {
 		<-monitorDone // join the monitor before classifying the result
 	}
+	// Reap whatever is left of the process group (helpers, a grandchild that held the
+	// pipes). The group id is the leader's pid; ESRCH just means nothing was left.
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	if errors.Is(err, exec.ErrWaitDelay) && cmd.ProcessState != nil && cmd.ProcessState.Success() {
+		// The parser exited cleanly and only a leftover child kept a pipe open; what the
+		// parser wrote is complete, so this is not a failure.
+		err = nil
+	}
 	elapsed := time.Since(start)
 	res := &ExecResult{Stdout: stdout.Bytes(), Stderr: stderr.Bytes(), Elapsed: elapsed}
 	if lw, ok := cmd.Stdout.(*limitedWriter); ok && lw.overflow {
@@ -167,9 +194,21 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 		return res, ErrOOM
 	default:
 	}
-	if ctx.Err() != nil {
-		res.TimedOut = true
-		return res, context.DeadlineExceeded
+	if ctxKilled.Load() {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			res.TimedOut = true
+			return res, context.DeadlineExceeded
+		}
+		// Cancelled by the caller (job cancelled, lease lost, worker shutting down): not a
+		// timeout, and not a property of the document.
+		return res, context.Canceled
+	}
+	if cmd.ProcessState != nil {
+		if ws, ok := cmd.ProcessState.Sys().(syscall.WaitStatus); ok && ws.Signaled() && ws.Signal() == syscall.SIGKILL {
+			// Nothing in this process sent the kill, so it came from outside: the kernel or
+			// the container's cgroup OOM killer in practice.
+			res.KilledBySignal = true
+		}
 	}
 	if err != nil {
 		return res, err
