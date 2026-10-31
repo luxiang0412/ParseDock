@@ -137,6 +137,8 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 		req.Progress(80, "engine_done")
 	}
 	doc := documentir.New()
+	req.Report(doclingExecution(res.Stderr, map[string]string{"DOCLING_RS_EP": os.Getenv("DOCLING_RS_EP")}))
+
 	doc.ParserEngine = d.Name()
 	doc.ParserVersion = d.Version()
 	doc.Source.Format = req.Format
@@ -243,6 +245,10 @@ func (d *DoclingServe) Probe(ctx context.Context) error {
 
 // Parse implements Engine.
 func (d *DoclingServe) Parse(ctx context.Context, req Request) (*documentir.Document, error) {
+	// Evidence: docling-serve answers over HTTP and reports nothing about the
+	// device it used. Even a CUDA-enabled image is unprovable from here.
+	req.Report(UnknownEvidence("docling-serve:no-marker",
+		"docling-serve does not report the execution device per request"))
 	f, err := os.Open(req.Path)
 	if err != nil {
 		return nil, Errf(true, jobs.ErrInternal, "open input: %v", err)

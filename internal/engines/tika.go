@@ -87,6 +87,8 @@ func (t *Tika) Probe(ctx context.Context) error {
 //   - For OOXML/HTML it returns markdown (headings, pipe tables), which is lifted
 //     into the IR instead of being flattened into paragraphs.
 func (t *Tika) Parse(ctx context.Context, req Request) (*documentir.Document, error) {
+	// Apache Tika is a JVM text extractor with no GPU path.
+	req.Report(CPUEvidence("tika:http-service", "Tika extracts text on the JVM and has no GPU execution path"))
 	f, err := os.Open(req.Path)
 	if err != nil {
 		return nil, Errf(true, jobs.ErrInternal, "open input: %v", err)

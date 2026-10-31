@@ -49,6 +49,7 @@ func (n *Native) Probe(context.Context) error { return nil }
 
 // Parse implements Engine.
 func (n *Native) Parse(ctx context.Context, req Request) (*documentir.Document, error) {
+	req.Report(CPUEvidence("native:in-process", "the native text adapter is pure Go and has no GPU path"))
 	raw, err := os.ReadFile(req.Path)
 	if err != nil {
 		return nil, Errf(true, jobs.ErrInternal, "read input: %v", err)

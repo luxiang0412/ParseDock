@@ -44,7 +44,7 @@ Therefore ParseDock stores a structured IR and renders three views:
   "parser_engine": "docling-rs",
   "parser_version": "docling-rs 2.53.3 (chunking, mcp); ONNX Runtime 1.31",
   "routing":  { "requested_mode", "requested_device", "actual_device",
-                "engine", "fallback", "reason" },
+                "engine", "fallback", "reason" },   // actual_device: gpu|cpu|unknown
   "page_count": 3,
   "page_kind": "pdf" | "sheet" | "slide" | "none",
   "elements": [ Element… ],          // reading order = array order (reading_order field duplicated)
@@ -55,6 +55,20 @@ Therefore ParseDock stores a structured IR and renders three views:
                 "started_at"?, "finished_at"? }
 }
 ```
+
+### Routing.actual_device
+
+`actual_device` is the device that **executed this task**, derived from evidence,
+not from the engine's declared capability:
+
+| Value | Meaning |
+| --- | --- |
+| `gpu` | the adapter proved GPU execution for this task; only this value satisfies `device=gpu_required` |
+| `cpu` | the adapter proved CPU execution (CPU-only adapter, engine default, or an observed provider fallback) |
+| `unknown` | nothing could be proven — never read as "GPU", and not as "CPU" either |
+
+On GPU workers `routing.reason` ends with `; exec=<kind>(<source>)`, e.g.
+`exec=cpu_verified(mineru:daemon-log-startup)`.
 
 ### Element
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -77,6 +78,21 @@ func (m *MinerU) Probe(ctx context.Context) error {
 	return nil
 }
 
+// daemonLogPath is where MinerU's daemon writes its operational log inside
+// MINERU_HOME. It is the only per-task source of device information MinerU has.
+func (m *MinerU) daemonLogPath() string {
+	home := strings.TrimSpace(m.Home)
+	if home == "" {
+		// Deployments set MINERU_HOME for the daemon; reading the same variable
+		// keeps the evidence working without a second knob.
+		home = strings.TrimSpace(os.Getenv("MINERU_HOME"))
+	}
+	if home == "" {
+		return ""
+	}
+	return filepath.Join(home, "logs", "doclib.log")
+}
+
 // Parse implements Engine.
 func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, error) {
 	timeout := m.Timeout
@@ -117,6 +133,10 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 	if req.Progress != nil {
 		req.Progress(5, "engine_start")
 	}
+	// Evidence: snapshot the daemon log before the task so start-up lines (which
+	// may legitimately mention CUDAExecutionProvider) can never be mistaken for
+	// this task's execution.
+	logWindow := openDaemonWindow(m.daemonLogPath())
 	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, Sandbox: m.Sandbox, MaxOutput: 8 << 20, MaxRSSMB: m.MaxRSSMB},
 		req.WorkDir, args...)
 	if err != nil {
@@ -141,6 +161,19 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 	if rerr != nil {
 		return nil, Errf(false, jobs.ErrInternal, "mineru produced no output: %v", rerr)
 	}
+	lines, haveWindow := logWindow.newLines()
+	evidence := mineruExecution(lines, haveWindow, m.daemonLogPath())
+	if evidence.Kind == ExecutionUnknown {
+		// Nothing was written during the task (the daemon loaded its models
+		// earlier). Start-up evidence may still rule a GPU *out*, never in.
+		if startup, ok := logWindow.tailLines(256 << 10); ok {
+			if cpu := mineruStartupExecution(startup); cpu.Kind != "" {
+				evidence = cpu
+			}
+		}
+	}
+	req.Report(evidence)
+
 	doc := documentir.New()
 	doc.ParserEngine = m.Name()
 	doc.ParserVersion = m.Version()
