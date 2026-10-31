@@ -81,9 +81,20 @@
     },
     {
       "id": "el_4",
+      "type": "section",
+      "text": "Summary",
+      "level": 2,
+      "reading_order": 3,
+      "source_location": {
+        "kind": "sheet",
+        "sheet": "Summary"
+      }
+    },
+    {
+      "id": "el_5",
       "type": "paragraph",
       "text": "Sheet note",
-      "reading_order": 3,
+      "reading_order": 4,
       "source_location": {
         "kind": "sheet",
         "sheet": "Summary"
@@ -149,7 +160,7 @@
   "metrics": {
     "parse_ms": 0,
     "input_bytes": 0,
-    "output_chars": 79,
+    "output_chars": 86,
     "pages": 1
   }
 }

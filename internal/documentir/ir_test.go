@@ -141,7 +141,7 @@ func TestLimitsRejectGiganticTable(t *testing.T) {
 		t.Fatal("a 20-billion-cell table was accepted")
 	}
 	// Rendering the same table must not allocate the grid.
-	if g := tableGrid(&d.Tables[0]); g != nil {
+	if g := tableGrid(&d.Tables[0], textCell); g != nil {
 		t.Fatalf("renderer allocated a %d-row grid", len(g))
 	}
 	// A realistic document passes.
@@ -440,5 +440,24 @@ func TestDropTableShadowRelocatesTwoAppendedTables(t *testing.T) {
 	}
 	if d.Elements[1].TableID != "t1" || d.Elements[3].TableID != "t2" {
 		t.Fatalf("tables in wrong order: %+v", d.Elements)
+	}
+}
+
+// rich_text is rendered, so it shares the text budget: a document cannot smuggle an
+// unbounded second copy of its content past the limit.
+func TestLimitsCountRichText(t *testing.T) {
+	l := Limits{MaxElements: 10, MaxTables: 10, MaxTableCells: 100, MaxTextBytes: 10}
+	ok := &Document{Elements: []Element{{ID: "e1", Type: ElParagraph, Text: "hello"}}}
+	if err := l.Validate(ok); err != nil {
+		t.Fatalf("5 bytes rejected: %v", err)
+	}
+	ok.Elements[0].RichText = "**hello**"
+	if err := l.Validate(ok); err == nil {
+		t.Fatal("element rich_text was not counted against MaxTextBytes")
+	}
+	cells := &Document{Tables: []Table{{ID: "t1", Rows: 1, Cols: 1,
+		Cells: []Cell{{RowSpan: 1, ColSpan: 1, Text: "abc", RichText: "**abc** and more"}}}}}
+	if err := l.Validate(cells); err == nil {
+		t.Fatal("cell rich_text was not counted against MaxTextBytes")
 	}
 }

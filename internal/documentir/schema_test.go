@@ -67,10 +67,12 @@ func TestSchemaAcceptsProducedIR(t *testing.T) {
 		{ID: "el_2", Type: ElTable, Text: "1x1", TableID: "tbl_1", ReadingOrder: 1,
 			Loc: &SourceLocation{Kind: "sheet", Sheet: "Summary", Range: "A1"}},
 		{ID: "el_3", Type: ElImage, Text: "alt", ReadingOrder: 2, Metadata: map[string]string{"k": "v"}},
+		{ID: "el_4", Type: ElListItem, Text: "bold item", RichText: "**bold** item", Level: 1, ReadingOrder: 3,
+			Metadata: map[string]string{MetaListOrdered: "true", MetaListMarker: "3."}},
 	}
 	d.Tables = []Table{{ID: "tbl_1", Rows: 1, Cols: 1, HeaderRows: 1, Confidence: &conf,
 		Loc: &SourceLocation{Kind: "sheet", Sheet: "Summary"},
-		Cells: []Cell{{Row: 0, Col: 0, RowSpan: 1, ColSpan: 2, Text: "42",
+		Cells: []Cell{{Row: 0, Col: 0, RowSpan: 1, ColSpan: 2, Text: "42", RichText: "**42**",
 			Formula: "=SUM(A1:A2)", CachedValue: "42", DataType: "number", Confidence: &conf}}}}
 	d.AddWarning(WarnOCRLowConfidence, "low", "warn")
 	d.Finalize()

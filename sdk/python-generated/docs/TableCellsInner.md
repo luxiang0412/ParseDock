@@ -10,6 +10,7 @@ Name | Type | Description | Notes
 **row_span** | **int** |  | [optional] 
 **col_span** | **int** |  | [optional] 
 **text** | **str** |  | [optional] 
+**rich_text** | **str** | Optional cell text with CommonMark inline markup | [optional] 
 **formula** | **str** |  | [optional] 
 **cached_value** | **str** |  | [optional] 
 **data_type** | **str** |  | [optional] 

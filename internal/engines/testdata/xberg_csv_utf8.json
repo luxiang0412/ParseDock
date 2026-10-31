@@ -1,0 +1,88 @@
+{
+ "extraction_time_ms": 6.6368,
+ "peak_memory_bytes": 34828288,
+ "result": {
+  "content": "| region | pallets | on_time_pct | cost_per_pallet |\n| --- | --- | --- | --- |\n| North | 48120 | 97.4 | 3.85 |\n| Central | 41600 | 95.1 | 4.02 |\n| South | 38680 | 93.8 | 4.31 |\n| Total | 128400 | 95.7 | 4.03 |\n",
+  "counts": {
+   "images": 0,
+   "pages": 0,
+   "tables": 1
+  },
+  "extraction_confidence": {
+   "combined": 1.0,
+   "ocr_aggregate": null,
+   "schema_compliance": "all_valid",
+   "text_coverage": 1.0
+  },
+  "extraction_method": "native",
+  "metadata": {
+   "additional": {
+    "extraction_method": "native",
+    "final_uri": "engine-input.csv",
+    "source_index": 0,
+    "source_kind": "uri",
+    "source_uri": "engine-input.csv"
+   },
+   "format": {
+    "column_count": 4,
+    "column_types": [
+     "text",
+     "numeric",
+     "numeric",
+     "numeric"
+    ],
+    "format_type": "csv",
+    "has_header": true,
+    "row_count": 5
+   },
+   "ocr_used": false,
+   "output_format": "markdown"
+  },
+  "mime_type": "text/csv",
+  "quality_score": 1.0,
+  "tables": [
+   {
+    "cells": [
+     [
+      "region",
+      "pallets",
+      "on_time_pct",
+      "cost_per_pallet"
+     ],
+     [
+      "North",
+      "48120",
+      "97.4",
+      "3.85"
+     ],
+     [
+      "Central",
+      "41600",
+      "95.1",
+      "4.02"
+     ],
+     [
+      "South",
+      "38680",
+      "93.8",
+      "4.31"
+     ],
+     [
+      "Total",
+      "128400",
+      "95.7",
+      "4.03"
+     ]
+    ],
+    "columns": [
+     "region",
+     "pallets",
+     "on_time_pct",
+     "cost_per_pallet"
+    ],
+    "markdown": "| region | pallets | on_time_pct | cost_per_pallet |\n| --- | --- | --- | --- |\n| North | 48120 | 97.4 | 3.85 |\n| Central | 41600 | 95.1 | 4.02 |\n| South | 38680 | 93.8 | 4.31 |\n| Total | 128400 | 95.7 | 4.03 |\n",
+    "page_number": 1
+   }
+  ]
+ }
+}

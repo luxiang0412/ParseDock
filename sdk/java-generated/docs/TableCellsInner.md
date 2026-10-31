@@ -12,6 +12,7 @@
 |**rowSpan** | **Integer** |  |  [optional] |
 |**colSpan** | **Integer** |  |  [optional] |
 |**text** | **String** |  |  [optional] |
+|**richText** | **String** | Optional cell text with CommonMark inline markup |  [optional] |
 |**formula** | **String** |  |  [optional] |
 |**cachedValue** | **String** |  |  [optional] |
 |**dataType** | [**DataTypeEnum**](#DataTypeEnum) |  |  [optional] |

@@ -219,6 +219,22 @@ A malformed numeric or duration environment value (`PARSEDOCK_MAX_UPLOAD_MB=64M`
 `PARSEDOCK_HEARTBEAT=10`) is a startup error naming the variable (exit code 2); it used
 to fall back to the default silently.
 
+### Layout-sensitive PDFs
+
+`mode=auto` (and `fast`) sends native PDFs to xberg and escalates to the accurate engine
+only on OCR-quality signals; it does not look at layout. xberg reads ordinary
+multi-column pages in column order, but text that is drawn on top of other text
+(overlapping text boxes, layered columns, some form and newsletter layouts) comes out
+with lines merged word by word. Send such documents with `mode=accurate` (docling-rs),
+which keeps them apart: on `pdf_two_column_en.pdf` docling-rs keeps all four paragraph
+markers in order, xberg does not.
+
+An automatic layout escalation was evaluated and **not** shipped: the only cheap signal
+found (lower-case word glued to a capitalised word) fired on 17/17 two-column fixture
+PDFs and 0/52 other PDFs, but the 16 two-column corpus PDFs are copies of one document,
+and the same signal fired on 14/46 of this repository's own Markdown documents (camelCase
+identifiers), so it would escalate real technical PDFs for nothing.
+
 ### Internal and worker tokens
 
 Generate both with `openssl rand -hex 24`. The internal token goes to the coordinator

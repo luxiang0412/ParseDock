@@ -151,7 +151,9 @@ Semantics that are easy to get wrong:
   `scope=retention` follows the job until `released`/`expired`.
 * `mode=accurate` means "prefer structure and provenance", not "more accurate text
   everywhere"; text formats always use the native engine. See
-  `docs/ENGINE-BENCHMARK.md` §7 for the measured counter-examples.
+  `docs/ENGINE-BENCHMARK.md` §7 for the measured counter-examples. Use it for
+  layout-sensitive PDFs (overlapping or layered text): `auto` does not escalate on
+  layout (`docs/DEPLOYMENT.md` §4, "Layout-sensitive PDFs").
 
 ## Architecture
 
