@@ -37,7 +37,7 @@ Other entry points: `download_and_ack(..., sink=...)` (ACK only after your sink
 returns), `parse_sync(path)` (small files), `events(job_id, last_event_id=...)`
 (SSE, resumable), `cancel(job_id)`. Errors are `ParseDockError(status, code,
 message)` with `.retryable`; the wrapper retries retryable failures with backoff.
-`docs/SDK.md` §Errors lists the codes, `skills/parsedock-python-sdk/SKILL.md` is a
+`docs/SDK.md` §Errors lists the codes, `.agents/skills/parsedock-python-sdk/SKILL.md` is a
 condensed version for agent use.
 
 ### Java
@@ -80,7 +80,7 @@ api.ackJob(done.getJobId(),
 Failures throw `ApiException` (`getCode()` = HTTP status). The generated client
 has **no retry policy**: back off on `429 rate_limited` and 5xx, never on the
 other 4xx codes. `sdk/java-client-test` is a worked example (JUnit, runs against a
-live server); `skills/parsedock-java-sdk/SKILL.md` is the condensed version.
+live server); `.agents/skills/parsedock-java-sdk/SKILL.md` is the condensed version.
 
 ## Lifecycle rules the wrapper enforces
 
