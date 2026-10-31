@@ -159,7 +159,7 @@ engine invocation and are capped by `--max-parse-minutes` and the job's
 | No GPU and `device=gpu_required` | `409 gpu_unavailable`, **no job row created** | T12 |
 | Invalid/adversarial upload | `4xx` with stable code, service stays healthy | T13 |
 | Disk below watermark | new upload `507`, existing results still downloadable | T14 |
-| Late result from a superseded attempt | `409 lease_lost`, files deleted, no state change | T15 |
+| Late result from a superseded attempt | `409 lease_lost`, no state change; the unreferenced generation it published is left in place (it may be byte-identical to the winner's) and the cleaner removes it once it is older than the 10-minute orphan cutoff | T15, `TestSupersededCompletionKeepsInput`, `TestRejectedCompletionKeepsCommittedResult` |
 | Released/expired result | `410 gone` during tombstone, foreign owner gets `404`/`401` | T16 |
 
 ## 6. Cleanup algorithm (idempotent, crash-safe)
@@ -191,10 +191,12 @@ Results are content-addressed: `results/<job>/<sha256 of the manifest>/` holds
 `result.md`, `result.txt`, `result.json` and `manifest.json`. The database records the
 generation it committed, so:
 
-* two workers racing to finish the same job write to different directories, and the loser
-  removes only its own generation (never the winner's files);
+* two workers racing to finish the same job write to different directories; the loser
+  deletes nothing synchronously, and the cleaner's `pruneGenerations` removes every
+  generation the database does not reference once it is older than the orphan cutoff
+  (10 min), never the committed one;
 * a retried attempt that produces identical bytes resolves to the same directory, which is
-  harmless — the loser then deletes nothing;
+  harmless — that is exactly why the loser must not delete its directory itself;
 * `release`/`expire` still remove the whole job directory, so retention is unchanged.
 
 Publishing writes into a `.stage-<random>` directory first and renames the files into the
@@ -221,9 +223,10 @@ commits first (the deletion then sees the lease and defers) or the transition wi
 fails, making the backup retry with a fresh snapshot. A *failed* lease lookup is treated as
 "leased" — unknown is never permission to delete.
 
-Late results from a **superseded** attempt are different: they only remove the result
-directory that attempt wrote. The input belongs to the job, which another attempt may still be
-parsing, so its retention state must not move.
+Late results from a **superseded** attempt are different: they remove nothing at all. The
+generation that attempt wrote is reclaimed later by the cleaner (`pruneGenerations`, after the
+orphan cutoff), and the input belongs to the job, which another attempt may still be parsing, so
+its retention state must not move.
 
 ## 7. Storage layout and atomicity
 

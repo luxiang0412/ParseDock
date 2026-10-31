@@ -185,6 +185,9 @@ func (w *InputWriter) Abort() {
 // Size returns bytes written so far.
 func (w *InputWriter) Size() int64 { return w.n }
 
+// Path is the staging file the upload is being written to (valid until Commit/Abort).
+func (w *InputWriter) Path() string { return w.part }
+
 // Commit fsyncs, renames into place and returns size and sha256.
 func (s *Store) CommitInput(w *InputWriter, jobID string, meta any) (int64, string, error) {
 	if err := w.f.Sync(); err != nil {
@@ -379,18 +382,6 @@ func (s *Store) DeleteJob(jobID string) error {
 	}
 	s.cleanupParts(jobID)
 	return firstErr
-}
-
-// DropResult removes one unpublished result generation. It is a no-op when the directory
-// does not exist, so a losing attempt can always call it.
-func (s *Store) DropResult(jobID, version string) error {
-	if jobID == "" || version == "" || strings.ContainsAny(jobID, "/\\") {
-		return fmt.Errorf("invalid job id or version")
-	}
-	if err := os.RemoveAll(s.ResultDirAt(jobID, version)); err != nil && !os.IsNotExist(err) {
-		return err
-	}
-	return nil
 }
 
 // stageToken returns a short random suffix for a staging directory.

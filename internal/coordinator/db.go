@@ -89,21 +89,12 @@ func Migrate(db *sql.DB) error {
 	return nil
 }
 
-// ts formats a time for storage.
 // ts formats a timestamp for storage.
 //
 // The layout is fixed width on purpose: timestamps are compared as TEXT by SQLite, and
 // RFC3339Nano trims trailing zeros, which breaks that ordering ("...:00Z" sorts after
 // "...:00.1Z"). Nine fractional digits keep every comparison chronological.
 func ts(t time.Time) string { return t.UTC().Format("2006-01-02T15:04:05.000000000Z") }
-
-// tsPtr formats an optional time.
-func tsPtr(t *time.Time) any {
-	if t == nil {
-		return nil
-	}
-	return ts(*t)
-}
 
 // parseTS parses a stored timestamp.
 func parseTS(s string) (time.Time, error) {
@@ -119,10 +110,6 @@ func parseTSPtr(ns sql.NullString) *time.Time {
 		return nil
 	}
 	return &t
-}
-
-func nullStr(s string) sql.NullString {
-	return sql.NullString{String: s, Valid: s != ""}
 }
 
 // nowUTC returns the current time truncated to microseconds so that values

@@ -153,7 +153,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	}
 	lim := s.limits()
 	// Validate before publishing so a rejected upload never has a job row.
-	if err := s.validateStaged(jobID, writer, p.InputName, lim); err != nil {
+	if err := validateFile(writer.Path(), p.InputName, lim); err != nil {
 		writer.Abort()
 		return nil, false, err
 	}
@@ -278,11 +278,6 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	})
 	s.instr().jobsCreated.With(job.RequestedMode, job.Format).Inc()
 	return job, true, nil
-}
-
-func (s *Service) validateStaged(jobID string, w *storage.InputWriter, name string, lim storage.Limits) error {
-	tmp := filepath.Join(s.Store.Root, "tmp", jobID+".input.part")
-	return validateFile(tmp, name, lim)
 }
 
 func sniffCommitted(path, name string, lim storage.Limits) (storage.Format, error) {
@@ -899,14 +894,11 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		return nil, NewError(500, jobs.ErrInternal, "complete: "+err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// Lost the fence: this generation was never referenced. Drop it, but only if the
-		// winning attempt did not produce byte-identical output (content addressing makes
-		// those the same directory).
-		var committed sql.NullString
-		_ = tx.QueryRowContext(ctx, `SELECT result_version FROM jobs WHERE id = ?`, p.JobID).Scan(&committed)
+		// Lost the fence: this generation is not referenced by the job. It is not removed
+		// here, because content addressing makes a byte-identical result from the winning
+		// attempt the very same directory. pruneGenerations (cleaner) removes unreferenced
+		// generations once they are older than the orphan cutoff.
 		_ = tx.Rollback()
-		if !committed.Valid || committed.String != manifest.Version {
-		}
 		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'succeeded', engine = ?, device_type = ?
