@@ -16,9 +16,15 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.openapitools.client.ApiClient;
 import org.openapitools.client.ApiException;
+import org.openapitools.client.JSON;
 import org.openapitools.client.api.JobsApi;
 import org.openapitools.client.model.AckJobRequest;
+import org.openapitools.client.model.DocumentIR;
+import org.openapitools.client.model.DocumentIRRouting;
+import org.openapitools.client.model.DocumentIRWarningsInner;
+import org.openapitools.client.model.Element;
 import org.openapitools.client.model.Job;
+import org.openapitools.client.model.Table;
 
 /**
  * The generated Java client against a live ParseDock stack.
@@ -85,10 +91,43 @@ class ParseDockClientIT {
     @Order(2)
     void downloadsBothRepresentations() throws Exception {
         String markdown = api.downloadResult(jobId, "markdown");
-        String ir = api.downloadResult(jobId, "json");
+        String irJson = api.downloadResult(jobId, "json");
         assertTrue(markdown != null && !markdown.isEmpty(), "empty markdown");
-        assertTrue(ir.contains("\"schema_version\""), "IR download is not JSON IR");
-        assertTrue(ir.contains("doc-ir/0.1"), "unexpected IR schema");
+        assertTrue(irJson != null && irJson.contains("\"schema_version\""), "IR download is not JSON IR");
+
+        // Deserialise with the generated model, exactly as a consumer would: a field
+        // the client cannot bind is a broken contract, not a formatting detail.
+        DocumentIR ir = JSON.deserialize(irJson, DocumentIR.class);
+        assertNotNull(ir, "IR did not deserialise into the generated model");
+        assertEquals(DocumentIR.SchemaVersionEnum.DOC_IR_0_1, ir.getSchemaVersion(),
+                "schema version drifted from the client");
+        assertNotNull(ir.getParserEngine(), "parser_engine missing");
+        assertNotNull(ir.getElements(), "elements missing");
+        assertFalse(ir.getElements().isEmpty(), "no elements in the IR");
+        for (Element el : ir.getElements()) {
+            assertNotNull(el.getType(), "element without a type");
+            assertNotNull(el.getId(), "element without an id");
+        }
+
+        DocumentIRRouting routing = ir.getRouting();
+        assertNotNull(routing, "routing missing");
+        assertNotNull(routing.getActualDevice(), "actual_device missing");
+        assertTrue(routing.getActualDevice().equals("cpu")
+                        || routing.getActualDevice().equals("gpu")
+                        || routing.getActualDevice().equals("unknown"),
+                "unexpected actual_device: " + routing.getActualDevice());
+        assertNotNull(routing.getEngine(), "routing.engine missing");
+
+        for (DocumentIRWarningsInner w : ir.getWarnings()) {
+            assertNotNull(w.getCode(), "warning without a code");
+            assertFalse(w.getCode().isEmpty(), "empty warning code");
+        }
+        for (Table t : ir.getTables()) {
+            assertTrue(t.getRows() > 0 && t.getCols() > 0, "table without a grid");
+            assertFalse(t.getCells() == null || t.getCells().isEmpty(), "table without cells");
+            assertTrue(t.getCells().size() <= t.getRows() * t.getCols(),
+                    "more cells than the grid can hold");
+        }
     }
 
     @Test

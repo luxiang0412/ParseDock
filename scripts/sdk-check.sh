@@ -79,9 +79,23 @@ if [[ $WITH_JAVA -eq 1 ]]; then
   echo "java client built: $jar"
 
   echo "== java sdk: integration =="
-  # A live stack for the generated client; the mock engine keeps it deterministic.
+  # A live stack for the generated client. With --real (nightly) it runs the real
+  # xberg engine on a scanned PDF, so the generated DocumentIR model is exercised
+  # against real parser output, not only against the deterministic mock.
   PORT=18192
   INT_PORT=18193
+  JAVA_ENGINES="mock"
+  JAVA_FIXTURE="$ROOT/benchmark/fixtures/generated/pdf_text_en_3p.pdf"
+  JAVA_EXTRA=()
+  if [[ $WITH_REAL -eq 1 && -x "$ROOT/runtime/engines/xberg-cli/xberg" ]]; then
+    JAVA_ENGINES="native,xberg"
+    JAVA_FIXTURE="$ROOT/benchmark/fixtures/ocr/zh_dense.pdf"
+    JAVA_EXTRA=(--xberg-bin "$ROOT/runtime/engines/xberg-cli/xberg"
+                --xberg-lib-dir "$ROOT/runtime/engines/xberg-cli")
+    echo "   engine: xberg (real), fixture: $(basename "$JAVA_FIXTURE")"
+  else
+    echo "   engine: mock"
+  fi
   if (exec 3<>"/dev/tcp/127.0.0.1/$PORT") 2>/dev/null; then
     echo "port $PORT busy; stop the previous run" >&2
     exit 1
@@ -89,8 +103,8 @@ if [[ $WITH_JAVA -eq 1 ]]; then
   DATA="$(mktemp -d -t sdk-java-XXXXXX)"
   PARSEDOCK_MOCK_DELAY_MS=200 "$BIN" --role standalone \
     --listen "127.0.0.1:$PORT" --internal-listen "127.0.0.1:$INT_PORT" \
-    --data-dir "$DATA" --work-dir "$DATA/work" --engines mock \
-    --internal-token itest --api-keys "java-it-token:java-it" \
+    --data-dir "$DATA" --work-dir "$DATA/work" --engines "$JAVA_ENGINES" \
+    --internal-token itest --api-keys "java-it-token:java-it" "${JAVA_EXTRA[@]}" \
     --result-ttl 120s --cleanup-interval 1s >"$DATA/server.log" 2>&1 &
   SRV=$!
   cleanup() { kill "$SRV" 2>/dev/null || true; rm -rf "$DATA"; }
@@ -102,7 +116,7 @@ if [[ $WITH_JAVA -eq 1 ]]; then
   mvn -q -f sdk/java-client-test/pom.xml test \
     -Dparsedock.base="http://127.0.0.1:$PORT" \
     -Dparsedock.token=java-it-token \
-    -Dparsedock.fixture="$ROOT/benchmark/fixtures/generated/pdf_text_en_3p.pdf"
+    -Dparsedock.fixture="$JAVA_FIXTURE"
   cleanup
   trap - EXIT
 else
