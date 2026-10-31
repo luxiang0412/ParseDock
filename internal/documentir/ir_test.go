@@ -245,8 +245,10 @@ func TestDropTableShadowBlock(t *testing.T) {
 }
 
 // Office exports attach the table element at the end of the page while the rows stay in the
-// text, so the duplicate is not adjacent to the table element.
-func TestDropTableShadowNotAdjacent(t *testing.T) {
+// text, so the duplicate is not adjacent to the table element. The table must take the place
+// of its rows - not simply survive at the end, which is how tables ended up at the bottom of a
+// section while their rows vanished from the middle.
+func TestDropTableShadowMovesTableIntoPlace(t *testing.T) {
 	d := &Document{
 		Tables: []Table{{ID: "tbl_1", Rows: 3, Cols: 2, HeaderRows: 1, Cells: []Cell{
 			{Row: 0, Col: 0, Text: "Region"}, {Row: 0, Col: 1, Text: "Pallets"},
@@ -264,8 +266,65 @@ func TestDropTableShadowNotAdjacent(t *testing.T) {
 	if n := d.DropTableShadows(); n != 3 {
 		t.Fatalf("removed %d elements, want 3", n)
 	}
-	if len(d.Elements) != 2 || d.Elements[0].Text != "Two risks need attention." {
-		t.Fatalf("unexpected elements: %+v", d.Elements)
+	if len(d.Elements) != 2 {
+		t.Fatalf("elements = %d, want 2 (%+v)", len(d.Elements), d.Elements)
+	}
+	if d.Elements[0].Type != ElTable || d.Elements[0].TableID != "tbl_1" {
+		t.Fatalf("table did not move to where its rows were: %+v", d.Elements)
+	}
+	if d.Elements[1].Type != ElParagraph || d.Elements[1].Text != "Two risks need attention." {
+		t.Fatalf("following paragraph lost or reordered: %+v", d.Elements)
+	}
+}
+
+// A body paragraph before the table rows must stay before the moved table, and a body
+// paragraph after them must stay after it.
+func TestDropTableShadowKeepsSurroundingOrder(t *testing.T) {
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: 2, Cols: 2, Cells: []Cell{
+			{Row: 0, Col: 0, Text: "Region"}, {Row: 0, Col: 1, Text: "Pallets"},
+			{Row: 1, Col: 0, Text: "North"}, {Row: 1, Col: 1, Text: "48,120"},
+		}}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "Financial indicators"},
+			{ID: "el_2", Type: ElParagraph, Text: "Region Pallets"},
+			{ID: "el_3", Type: ElParagraph, Text: "North 48,120"},
+			{ID: "el_4", Type: ElParagraph, Text: "Business segments"},
+			{ID: "el_5", Type: ElTable, TableID: "tbl_1"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 2 {
+		t.Fatalf("removed %d elements, want 2", n)
+	}
+	if len(d.Elements) != 3 {
+		t.Fatalf("elements = %d, want 3", len(d.Elements))
+	}
+	order := []string{d.Elements[0].Type, d.Elements[1].Type, d.Elements[2].Type}
+	if order[0] != ElParagraph || order[1] != ElTable || order[2] != ElParagraph {
+		t.Fatalf("order = %v, want paragraph, table, paragraph", order)
+	}
+	if d.Elements[0].Text != "Financial indicators" || d.Elements[2].Text != "Business segments" {
+		t.Fatalf("surrounding paragraphs changed: %+v", d.Elements)
+	}
+}
+
+// A table that is already in the right place (markdown lift interleaves it) is left alone.
+func TestDropTableShadowLeavesInterleavedTableAlone(t *testing.T) {
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: 2, Cols: 1, Cells: []Cell{
+			{Row: 0, Col: 0, Text: "a"}, {Row: 1, Col: 0, Text: "b"},
+		}}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "intro"},
+			{ID: "el_2", Type: ElTable, TableID: "tbl_1", Text: "2 rows x 1 cols"},
+			{ID: "el_3", Type: ElParagraph, Text: "after"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 0 {
+		t.Fatalf("removed %d elements, want 0", n)
+	}
+	if len(d.Elements) != 3 || d.Elements[1].Type != ElTable {
+		t.Fatalf("interleaved table disturbed: %+v", d.Elements)
 	}
 }
 
@@ -292,5 +351,94 @@ func TestDropTableShadowKeepsSecondTableText(t *testing.T) {
 	}
 	if len(d.Elements) != 2 {
 		t.Fatalf("elements = %+v", d.Elements)
+	}
+}
+
+// Real-world shape that produced "tables at the bottom of the section": xberg
+// returns the page body as one paragraph whose middle block is the table written
+// row per line, plus a tables array appended after every body element. The header
+// row is reformatted by the engine, so only the body rows match exactly.
+func TestDropTableShadowRelocatesBlockWithReformattedHeader(t *testing.T) {
+	rows := [][]string{
+		{"Metric", "Current", "Prior"},
+		{"Revenue", "1,284", "1,150"},
+		{"Margin", "18.4%", "17.9%"},
+		{"Headcount", "412", "398"},
+	}
+	cells := []Cell{}
+	for r, row := range rows {
+		for c, v := range row {
+			cells = append(cells, Cell{Row: r, Col: c, Text: v})
+		}
+	}
+	// The engine's own text for the header row differs (e.g. spacing/marks).
+	block := "Metric*  Current  Prior\n" +
+		"Revenue 1,284 1,150\n" +
+		"Margin 18.4% 17.9%\n" +
+		"Headcount 412 398"
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: len(rows), Cols: 3, HeaderRows: 1, Cells: cells}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "Financial indicators"},
+			{ID: "el_2", Type: ElParagraph, Text: block},
+			{ID: "el_3", Type: ElParagraph, Text: "Business segments"},
+			{ID: "el_4", Type: ElTable, TableID: "tbl_1"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 1 {
+		t.Fatalf("removed %d elements, want 1", n)
+	}
+	if len(d.Elements) != 3 {
+		t.Fatalf("elements = %d, want 3", len(d.Elements))
+	}
+	if d.Elements[0].Text != "Financial indicators" {
+		t.Fatalf("preceding paragraph moved: %+v", d.Elements[0])
+	}
+	if d.Elements[1].Type != ElTable {
+		t.Fatalf("table not relocated after its section heading: %+v", d.Elements)
+	}
+	if d.Elements[2].Text != "Business segments" {
+		t.Fatalf("following paragraph moved: %+v", d.Elements[2])
+	}
+}
+
+// Two tables appended by the engine must each find their own rows; the second
+// element sits after every body element, so a single shared window would starve it.
+func TestDropTableShadowRelocatesTwoAppendedTables(t *testing.T) {
+	mk := func(id string, body ...string) Table {
+		tbl := Table{ID: id, Rows: len(body) + 1, Cols: 2}
+		tbl.Cells = append(tbl.Cells, Cell{Row: 0, Col: 0, Text: "K"}, Cell{Row: 0, Col: 1, Text: "V"})
+		for i, line := range body {
+			parts := strings.SplitN(line, " ", 2)
+			tbl.Cells = append(tbl.Cells,
+				Cell{Row: i + 1, Col: 0, Text: parts[0]}, Cell{Row: i + 1, Col: 1, Text: parts[1]})
+		}
+		return tbl
+	}
+	d := &Document{
+		Tables: []Table{mk("t1", "a 1", "b 2"), mk("t2", "c 3", "d 4")},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "first section"},
+			{ID: "el_2", Type: ElParagraph, Text: "K V\na 1\nb 2"},
+			{ID: "el_3", Type: ElParagraph, Text: "second section"},
+			{ID: "el_4", Type: ElParagraph, Text: "K V\nc 3\nd 4"},
+			{ID: "el_5", Type: ElTable, TableID: "t1"},
+			{ID: "el_6", Type: ElTable, TableID: "t2"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 2 {
+		t.Fatalf("removed %d elements, want 2", n)
+	}
+	want := []string{ElParagraph, ElTable, ElParagraph, ElTable}
+	if len(d.Elements) != len(want) {
+		t.Fatalf("elements = %d, want %d", len(d.Elements), len(want))
+	}
+	for i, typ := range want {
+		if d.Elements[i].Type != typ {
+			t.Fatalf("position %d = %s, want %s (%+v)", i, d.Elements[i].Type, typ, d.Elements)
+		}
+	}
+	if d.Elements[1].TableID != "t1" || d.Elements[3].TableID != "t2" {
+		t.Fatalf("tables in wrong order: %+v", d.Elements)
 	}
 }
