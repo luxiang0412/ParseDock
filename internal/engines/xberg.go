@@ -157,7 +157,8 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	if res != nil && res.Truncated {
 		// The parser's output exceeded the ceiling; a JSON prefix may even still parse, so
 		// this must be an explicit rejection rather than a "malformed file".
-		return nil, fmt.Errorf("%w: %d MiB ceiling", ErrOutputTooLarge, 512)
+		return nil, Errf(false, jobs.ErrExpandedTooLarge,
+			"xberg produced more than the %d MiB result ceiling; this document needs windowed extraction", 256)
 	}
 	if err != nil && res != nil && !res.OOM && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
 		// exec.Cmd can report context.Canceled after a successful run when the

@@ -89,6 +89,7 @@ the bottleneck:
 | client concurrency | wall | throughput | what limits it |
 | --- | --- | --- | --- |
 | 4 | 419 s | 2.3 files/s | the *client*: the harness polls every 500 ms, and slot utilisation was only 26 % |
+| 8 (after the 250 ms poll interval, PR after the audit) | **266 s** | **3.66 files/s** | the 4 parser slots |
 | 16 | 267 s | 3.6 files/s | the 4 parser slots, at **90 % utilisation** (`parsedock_parse_seconds` sum ÷ wall ÷ slots) |
 
 At c=16 the mean claim→commit time was 1.04 s per document, of which the engine itself was
@@ -115,6 +116,23 @@ guard, so the fast result was kept. Quality totals are unchanged from §2 (23.34
    **1 220 ms → 417 ms** each after the interval became configurable and defaulted to 250 ms
    (`--poll-interval`). With a deep queue the same change raised a mock-engine 4-slot run from
    11.4 to 13.0 jobs/s.
+
+### What is *not* processed, and why (current run)
+
+972 files are eligible (the service accepts the type and size); 938 complete. The other 45
+files the harness skips are not documents at all, and the 34 failures are all limits:
+
+| Group | Files | Bytes | What it is | What it would take |
+| --- | --- | --- | --- | --- |
+| Oversized XLSX | **16** | 1 011 MiB | 58–74 MiB SAP ledgers (expand to 550–770 MiB); 14 hit the upload cap, 2 the 256 MiB result ceiling | sheet-window extraction (RC-2) |
+| Encrypted PDFs | 8 | 22 MiB | password-protected | a password field on the API (not planned) |
+| Not a document | 8 | 10 MiB | 4 `.doc` are HTML with a UTF-8 BOM (export artefact), 8 `.xlsx`/`.pdf` carry a DRM/zero-filled header | 4 recoverable by content sniffing → needs `html` in the public format enum |
+| Corrupt | 1 | 0.8 MiB | truncated PDF | nothing |
+| Too many pages | 1 | 3.4 MiB | above `--max-pages 500` | raise the flag |
+| Skipped by the harness | 45 | 1 643 MiB | 9 **ZIP archives** (1.6 GiB — archives, not documents), 24 no-extension cache blobs (`00 00 00 01`, 0.2 MiB), 10 Office lock files (`~$`), 1 KML, 1 SVG | a zip-bundle feature would be needed for the archives |
+
+So of the 4.4 GiB corpus, the **1.6 GiB share is nine zip archives**, and the next largest
+unprocessed group is the 16 oversized spreadsheets.
 
 ### Still open after this run
 

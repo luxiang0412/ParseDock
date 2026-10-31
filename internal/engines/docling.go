@@ -104,12 +104,13 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 	if req.Progress != nil {
 		req.Progress(5, "engine_start")
 	}
-	spec := CLISpec{Bin: d.Bin, Env: d.ExtraEnv, Sandbox: d.Sandbox, MaxOutput: 512 << 20, MaxRSSMB: d.MaxRSSMB}
+	spec := CLISpec{Bin: d.Bin, Env: d.ExtraEnv, Sandbox: d.Sandbox, MaxOutput: 256 << 20, MaxRSSMB: d.MaxRSSMB}
 	res, err := RunCLI(ctx, spec, d.ModelRoot, args...)
 	if res != nil && res.Truncated {
 		// The parser's output exceeded the ceiling; a JSON prefix may even still parse, so
 		// this must be an explicit rejection rather than a "malformed file".
-		return nil, fmt.Errorf("%w: %d MiB ceiling", ErrOutputTooLarge, 512)
+		return nil, Errf(false, jobs.ErrExpandedTooLarge,
+			"docling-rs produced more than the %d MiB result ceiling; this document needs windowed extraction", 256)
 	}
 	if err != nil && res != nil && !res.OOM && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
 		err = nil
