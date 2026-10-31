@@ -40,6 +40,37 @@ What was verified on this host (2026-10-30):
 The coordinator is **not** published on the host: compose puts it on an
 `internal: true` Docker network. Only the two API ports are exposed.
 
+## 2a. Single-host stack with the Playground (4 containers)
+
+`deploy/host/docker-compose.yml` is the smallest deployment that serves both the
+API and the web UI from one host. It publishes exactly two ports and nothing
+else:
+
+```bash
+cd deploy/host && cp .env.example .env      # then fill in the three secrets
+openssl rand -hex 24                        # PARSEDOCK_INTERNAL_TOKEN, API key, PLAYGROUND_KEY
+docker compose up -d
+```
+
+| Service | Image | Published | State |
+| --- | --- | --- | --- |
+| `coordinator` | `parsedock:0.1.0` | — (internal net) | `/data` volume: SQLite + inputs + results |
+| `api` | `parsedock:0.1.0` | `8080` | stateless; add replicas freely |
+| `worker-cpu` | `parsedock-worker-cpu:0.1.0` | — (internal net) | tmpfs scratch, 2 parse slots |
+| `playground` | `parsedock-playground:0.1.0` | `8090` | static app + same-origin `/v1` proxy |
+
+Both ports are overridable with `API_PORT` / `PLAYGROUND_PORT`.
+`PARSEDOCK_XBERG_OCR_LANG` must match the corpus (`zh` for Chinese scans); a
+wrong value silently degrades OCR instead of failing the job.
+
+Verified on a second host (Docker 27.1.2, Compose v2.29.1, x86-64): API
+`/healthz` and `/readyz` 200, unauthenticated `401`, `POST /v1/jobs` → `completed`
+via `xberg` in 14 ms for a 3-page PDF, Markdown download 200, ACK 202 then 410,
+the proxy returning 404 for `/internal/*` and 403 without the CSRF header, and
+the Playground E2E suite (10 passed, 1 skipped) against that deployment.
+See `deploy/host/README.md` for prerequisites, image transfer, verification and
+operations.
+
 ## 3. GPU stack (optional)
 
 ```bash
