@@ -34,6 +34,12 @@ public class Example {
     ApiClient defaultClient = Configuration.getDefaultApiClient();
     defaultClient.setBasePath("http://localhost:8080");
     
+    // Configure API key authorization: apiKeyAuth
+    ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("apiKeyAuth");
+    apiKeyAuth.setApiKey("YOUR API KEY");
+    // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
+    //apiKeyAuth.setApiKeyPrefix("Token");
+
     // Configure HTTP bearer authorization: bearerAuth
     HttpBearerAuth bearerAuth = (HttpBearerAuth) defaultClient.getAuthentication("bearerAuth");
     bearerAuth.setBearerToken("BEARER TOKEN");
@@ -70,7 +76,7 @@ public class Example {
 
 ### Authorization
 
-[bearerAuth](../README.md#bearerAuth)
+[apiKeyAuth](../README.md#apiKeyAuth), [bearerAuth](../README.md#bearerAuth)
 
 ### HTTP request headers
 
@@ -111,6 +117,12 @@ public class Example {
     ApiClient defaultClient = Configuration.getDefaultApiClient();
     defaultClient.setBasePath("http://localhost:8080");
     
+    // Configure API key authorization: apiKeyAuth
+    ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("apiKeyAuth");
+    apiKeyAuth.setApiKey("YOUR API KEY");
+    // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
+    //apiKeyAuth.setApiKeyPrefix("Token");
+
     // Configure HTTP bearer authorization: bearerAuth
     HttpBearerAuth bearerAuth = (HttpBearerAuth) defaultClient.getAuthentication("bearerAuth");
     bearerAuth.setBearerToken("BEARER TOKEN");
@@ -145,7 +157,7 @@ public class Example {
 
 ### Authorization
 
-[bearerAuth](../README.md#bearerAuth)
+[apiKeyAuth](../README.md#apiKeyAuth), [bearerAuth](../README.md#bearerAuth)
 
 ### HTTP request headers
 
@@ -185,6 +197,12 @@ public class Example {
     ApiClient defaultClient = Configuration.getDefaultApiClient();
     defaultClient.setBasePath("http://localhost:8080");
     
+    // Configure API key authorization: apiKeyAuth
+    ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("apiKeyAuth");
+    apiKeyAuth.setApiKey("YOUR API KEY");
+    // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
+    //apiKeyAuth.setApiKeyPrefix("Token");
+
     // Configure HTTP bearer authorization: bearerAuth
     HttpBearerAuth bearerAuth = (HttpBearerAuth) defaultClient.getAuthentication("bearerAuth");
     bearerAuth.setBearerToken("BEARER TOKEN");
@@ -235,7 +253,7 @@ public class Example {
 
 ### Authorization
 
-[bearerAuth](../README.md#bearerAuth)
+[apiKeyAuth](../README.md#apiKeyAuth), [bearerAuth](../README.md#bearerAuth)
 
 ### HTTP request headers
 
@@ -280,6 +298,12 @@ public class Example {
     ApiClient defaultClient = Configuration.getDefaultApiClient();
     defaultClient.setBasePath("http://localhost:8080");
     
+    // Configure API key authorization: apiKeyAuth
+    ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("apiKeyAuth");
+    apiKeyAuth.setApiKey("YOUR API KEY");
+    // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
+    //apiKeyAuth.setApiKeyPrefix("Token");
+
     // Configure HTTP bearer authorization: bearerAuth
     HttpBearerAuth bearerAuth = (HttpBearerAuth) defaultClient.getAuthentication("bearerAuth");
     bearerAuth.setBearerToken("BEARER TOKEN");
@@ -314,7 +338,7 @@ public class Example {
 
 ### Authorization
 
-[bearerAuth](../README.md#bearerAuth)
+[apiKeyAuth](../README.md#apiKeyAuth), [bearerAuth](../README.md#bearerAuth)
 
 ### HTTP request headers
 
@@ -356,6 +380,12 @@ public class Example {
     ApiClient defaultClient = Configuration.getDefaultApiClient();
     defaultClient.setBasePath("http://localhost:8080");
     
+    // Configure API key authorization: apiKeyAuth
+    ApiKeyAuth apiKeyAuth = (ApiKeyAuth) defaultClient.getAuthentication("apiKeyAuth");
+    apiKeyAuth.setApiKey("YOUR API KEY");
+    // Uncomment the following line to set a prefix for the API key, e.g. "Token" (defaults to null)
+    //apiKeyAuth.setApiKeyPrefix("Token");
+
     // Configure HTTP bearer authorization: bearerAuth
     HttpBearerAuth bearerAuth = (HttpBearerAuth) defaultClient.getAuthentication("bearerAuth");
     bearerAuth.setBearerToken("BEARER TOKEN");
@@ -388,7 +418,7 @@ public class Example {
 
 ### Authorization
 
-[bearerAuth](../README.md#bearerAuth)
+[apiKeyAuth](../README.md#apiKeyAuth), [bearerAuth](../README.md#bearerAuth)
 
 ### HTTP request headers
 

@@ -88,6 +88,12 @@ configuration = parsedock_client.Configuration(
 # Examples for each auth method are provided below, use the example that
 # satisfies your auth use case.
 
+# Configure API key authorization: apiKeyAuth
+configuration.api_key['apiKeyAuth'] = os.environ["API_KEY"]
+
+# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
+# configuration.api_key_prefix['apiKeyAuth'] = 'Bearer'
+
 # Configure Bearer authorization: bearerAuth
 configuration = parsedock_client.Configuration(
     access_token = os.environ["BEARER_TOKEN"]
@@ -162,6 +168,13 @@ Authentication schemes defined for the API:
 ### bearerAuth
 
 - **Type**: Bearer authentication
+
+<a id="apiKeyAuth"></a>
+### apiKeyAuth
+
+- **Type**: API key
+- **API key parameter name**: X-Api-Key
+- **Location**: HTTP header
 
 
 ## Author

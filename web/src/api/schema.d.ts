@@ -241,6 +241,11 @@ export interface paths {
          * @description Returns `503` when SQLite is down or the cleaner has stalled. A low disk
          *     watermark keeps the service `ready` (reads and ACKs must keep working) but
          *     reports `accepting_uploads=false`.
+         *
+         *     The probe is unauthenticated, so `checks` carries verdicts only (`sqlite`,
+         *     `storage`, `cleanup`, `accepting_uploads`). Free bytes, the last cleanup
+         *     time and error details are available to operators on the coordinator's
+         *     internal listener with the internal token, and as metrics.
          */
         get: operations["readyz"];
         put?: never;
@@ -509,9 +514,8 @@ export interface components {
              * @example {
              *       "sqlite": "ok",
              *       "storage": "ok",
-             *       "free_bytes": 935962714112,
-             *       "accepting_uploads": true,
-             *       "last_cleanup": "2026-10-30T07:51:55Z"
+             *       "cleanup": "ok",
+             *       "accepting_uploads": true
              *     }
              */
             checks?: {

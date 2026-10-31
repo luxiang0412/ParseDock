@@ -342,6 +342,7 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
+            'apiKeyAuth', 
             'bearerAuth'
         ]
 
@@ -633,6 +634,7 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
+            'apiKeyAuth', 
             'bearerAuth'
         ]
 
@@ -1080,6 +1082,7 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
+            'apiKeyAuth', 
             'bearerAuth'
         ]
 
@@ -1381,6 +1384,7 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
+            'apiKeyAuth', 
             'bearerAuth'
         ]
 
@@ -1657,6 +1661,7 @@ class JobsApi:
 
         # authentication setting
         _auth_settings: List[str] = [
+            'apiKeyAuth', 
             'bearerAuth'
         ]
 

@@ -70,7 +70,7 @@ No authorization required
 
 Readiness (delegated to the coordinator)
 
-Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;. 
+Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;.  The probe is unauthenticated, so &#x60;checks&#x60; carries verdicts only (&#x60;sqlite&#x60;, &#x60;storage&#x60;, &#x60;cleanup&#x60;, &#x60;accepting_uploads&#x60;). Free bytes, the last cleanup time and error details are available to operators on the coordinator&#39;s internal listener with the internal token, and as metrics. 
 
 ### Example
 ```java

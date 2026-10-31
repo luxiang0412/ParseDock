@@ -296,7 +296,7 @@ class ProbesApi:
     ) -> Readiness:
         """Readiness (delegated to the coordinator)
 
-        Returns `503` when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service `ready` (reads and ACKs must keep working) but reports `accepting_uploads=false`. 
+        Returns `503` when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service `ready` (reads and ACKs must keep working) but reports `accepting_uploads=false`.  The probe is unauthenticated, so `checks` carries verdicts only (`sqlite`, `storage`, `cleanup`, `accepting_uploads`). Free bytes, the last cleanup time and error details are available to operators on the coordinator's internal listener with the internal token, and as metrics. 
 
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -360,7 +360,7 @@ class ProbesApi:
     ) -> ApiResponse[Readiness]:
         """Readiness (delegated to the coordinator)
 
-        Returns `503` when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service `ready` (reads and ACKs must keep working) but reports `accepting_uploads=false`. 
+        Returns `503` when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service `ready` (reads and ACKs must keep working) but reports `accepting_uploads=false`.  The probe is unauthenticated, so `checks` carries verdicts only (`sqlite`, `storage`, `cleanup`, `accepting_uploads`). Free bytes, the last cleanup time and error details are available to operators on the coordinator's internal listener with the internal token, and as metrics. 
 
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -424,7 +424,7 @@ class ProbesApi:
     ) -> RESTResponseType:
         """Readiness (delegated to the coordinator)
 
-        Returns `503` when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service `ready` (reads and ACKs must keep working) but reports `accepting_uploads=false`. 
+        Returns `503` when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service `ready` (reads and ACKs must keep working) but reports `accepting_uploads=false`.  The probe is unauthenticated, so `checks` carries verdicts only (`sqlite`, `storage`, `cleanup`, `accepting_uploads`). Free bytes, the last cleanup time and error details are available to operators on the coordinator's internal listener with the internal token, and as metrics. 
 
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request

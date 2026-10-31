@@ -28,6 +28,7 @@ servers:
   url: http://localhost:8080
 security:
 - bearerAuth: []
+- apiKeyAuth: []
 tags:
 - description: Asynchronous parse jobs
   name: jobs
@@ -543,6 +544,11 @@ paths:
         Returns `503` when SQLite is down or the cleaner has stalled. A low disk
         watermark keeps the service `ready` (reads and ACKs must keep working) but
         reports `accepting_uploads=false`.
+
+        The probe is unauthenticated, so `checks` carries verdicts only (`sqlite`,
+        `storage`, `cleanup`, `accepting_uploads`). Free bytes, the last cleanup
+        time and error details are available to operators on the coordinator's
+        internal listener with the internal token, and as metrics.
       operationId: readyz
       responses:
         "200":
@@ -1259,9 +1265,8 @@ components:
         checks:
           sqlite: ok
           storage: ok
-          free_bytes: 935962714112
+          cleanup: ok
           accepting_uploads: true
-          last_cleanup: 2026-10-30T07:51:55Z
       properties:
         status:
           enum:
@@ -1273,9 +1278,8 @@ components:
           example:
             sqlite: ok
             storage: ok
-            free_bytes: 935962714112
+            cleanup: ok
             accepting_uploads: true
-            last_cleanup: 2026-10-30T07:51:55Z
           type: object
     createJob_request:
       properties:
@@ -1600,6 +1604,18 @@ components:
 
         A missing scope returns `403 insufficient_scope`. Keys without an explicit
         scope list (legacy `token:owner` form) hold all three.
+
+        Plaintext keys must be at least 16 characters (32+ recommended). Repeated
+        authentication failures from one client address are answered with
+        `429 rate_limited` (`Retry-After`) before the token is looked at.
       scheme: bearer
       type: http
+    apiKeyAuth:
+      description: |
+        The same API token as `bearerAuth`, for clients that cannot set an
+        `Authorization` header. It is read only when no bearer token is sent; scopes
+        and limits are identical.
+      in: header
+      name: X-Api-Key
+      type: apiKey
 
