@@ -9,9 +9,19 @@ FROM nvidia/cuda:13.2.0-runtime-ubuntu24.04@sha256:36cccda4bebc3b0b1ebe1907ead81
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_NO_CACHE_DIR=1 \
     MINERU_HOME=/work/mineru-home
+# libvulkan1 (loader) + the X11 libs the NVIDIA Vulkan ICD links against are
+# copied into the final image by the broad /usr/lib/x86_64-linux-gnu COPY below.
+# MinerU's GPU path is WebGPU-through-Vulkan on Linux; without the loader its
+# device selection fails with "libvulkan.so.1: cannot open shared object file".
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 python3-venv python3-pip ca-certificates curl \
+      libvulkan1 libx11-6 libxext6 libxcb1 \
  && rm -rf /var/lib/apt/lists/*
+# The NVIDIA driver itself is mounted at run time by the container toolkit, so the
+# ICD manifest has to be shipped here: the toolkit does not provide it.
+RUN mkdir -p /opt/vulkan-icd \
+ && printf '%s\n' '{"file_format_version":"1.0.1","ICD":{"library_path":"libGLX_nvidia.so.0","api_version":"1.3.242"}}' \
+      > /opt/vulkan-icd/nvidia_icd.json
 RUN python3 -m venv /opt/mineru \
  && /opt/mineru/bin/pip install --upgrade pip \
  && /opt/mineru/bin/pip install "mineru==4.1.2"
@@ -28,6 +38,7 @@ COPY --from=mineru /usr/bin/python3.12 /usr/bin/python3.12
 COPY --from=mineru /usr/lib/python3.12 /usr/lib/python3.12
 COPY --from=mineru /usr/lib/x86_64-linux-gnu /usr/lib/x86_64-linux-gnu
 COPY --from=mineru /usr/lib/python3 /usr/lib/python3
+COPY --from=mineru /opt/vulkan-icd/nvidia_icd.json /usr/share/vulkan/icd.d/nvidia_icd.json
 RUN ln -sf /usr/bin/python3.12 /usr/bin/python3 \
  && ln -sf /usr/bin/python3.12 /usr/bin/python \
  && useradd --uid 10001 --user-group --no-create-home --shell /usr/sbin/nologin parsedock || true \
