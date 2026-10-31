@@ -122,5 +122,30 @@ gate: ## engine quality gate vs benchmark/results/baseline.json
 gate-baseline: ## record the current benchmark summary as the quality baseline
 	python3 benchmark/scripts/gate.py --update
 
+# ---------------------------------------------------------------- playground (web/)
+web-install: ## install playground dependencies (lockfile-exact)
+	cd web && npm ci --no-audit --no-fund
+
+web-dev: ## run the playground dev server (needs PARSEDOCK_DEV_KEY and a running API)
+	cd web && npm run dev
+
+web-test: ## playground lint, typecheck, unit tests and production build
+	cd web && npm run api:types:check && npm run lint && npm run typecheck && npm test && npm run build
+	cd web && node scripts/check-dist-secrets.mjs
+
+web-e2e: ## Playwright E2E against a local backend (make build first; E2E_ENGINES=native,xberg for a real PDF)
+	cd web && npm run build && npx playwright test
+
+web-e2e-compose: ## Playwright E2E against the running Docker Compose stack (PLAYGROUND_URL=http://127.0.0.1:8090)
+	cd web && E2E_COMPOSE_URL=$${PLAYGROUND_URL:-http://127.0.0.1:8090} npx playwright test
+
+playground-up: ## start the CPU stack + playground (needs deploy/.env)
+	docker compose -f deploy/compose.cpu.yaml -f deploy/compose.playground.yaml \
+		--env-file deploy/.env --profile playground up -d --build
+
+playground-down: ## stop the playground profile
+	docker compose -f deploy/compose.cpu.yaml -f deploy/compose.playground.yaml \
+		--env-file deploy/.env --profile playground down
+
 clean: ## remove local runtime state (keeps engines/models)
 	rm -rf runtime/data runtime/work runtime/acceptance runtime/sdk-test-data runtime/bench-work

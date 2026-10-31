@@ -221,3 +221,76 @@ func TestDropTableShadowsKeepsProse(t *testing.T) {
 		t.Fatalf("removed %d elements, want 0", n)
 	}
 }
+
+// Office engines return the table block as one paragraph with embedded newlines and tabs;
+// that is still the same table text and must not be rendered twice.
+func TestDropTableShadowBlock(t *testing.T) {
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: 2, Cols: 2, HeaderRows: 1, Cells: []Cell{
+			{Row: 0, Col: 0, Text: "Region"}, {Row: 0, Col: 1, Text: "Pallets"},
+			{Row: 1, Col: 0, Text: "North"}, {Row: 1, Col: 1, Text: "48,120"},
+		}}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "Intro"},
+			{ID: "el_2", Type: ElParagraph, Text: "Region\tPallets\nNorth\t48,120"},
+			{ID: "el_3", Type: ElTable, TableID: "tbl_1"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 1 {
+		t.Fatalf("removed %d elements, want 1", n)
+	}
+	if len(d.Elements) != 2 || d.Elements[1].Type != ElTable {
+		t.Fatalf("unexpected elements: %+v", d.Elements)
+	}
+}
+
+// Office exports attach the table element at the end of the page while the rows stay in the
+// text, so the duplicate is not adjacent to the table element.
+func TestDropTableShadowNotAdjacent(t *testing.T) {
+	d := &Document{
+		Tables: []Table{{ID: "tbl_1", Rows: 3, Cols: 2, HeaderRows: 1, Cells: []Cell{
+			{Row: 0, Col: 0, Text: "Region"}, {Row: 0, Col: 1, Text: "Pallets"},
+			{Row: 1, Col: 0, Text: "North"}, {Row: 1, Col: 1, Text: "48,120"},
+			{Row: 2, Col: 0, Text: "Total"}, {Row: 2, Col: 1, Text: "48,120"},
+		}}},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "Region\tPallets"},
+			{ID: "el_2", Type: ElParagraph, Text: "North\t48,120"},
+			{ID: "el_3", Type: ElParagraph, Text: "Total\t48,120"},
+			{ID: "el_4", Type: ElParagraph, Text: "Two risks need attention."},
+			{ID: "el_5", Type: ElTable, TableID: "tbl_1"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 3 {
+		t.Fatalf("removed %d elements, want 3", n)
+	}
+	if len(d.Elements) != 2 || d.Elements[0].Text != "Two risks need attention." {
+		t.Fatalf("unexpected elements: %+v", d.Elements)
+	}
+}
+
+// Two identical tables in one document must not delete each other's text.
+func TestDropTableShadowKeepsSecondTableText(t *testing.T) {
+	table := Table{ID: "t1", Rows: 2, Cols: 1, Cells: []Cell{
+		{Row: 0, Col: 0, Text: "a"}, {Row: 1, Col: 0, Text: "b"},
+	}}
+	second := table
+	second.ID = "t2"
+	d := &Document{
+		Tables: []Table{table, second},
+		Elements: []Element{
+			{ID: "el_1", Type: ElParagraph, Text: "a"},
+			{ID: "el_2", Type: ElParagraph, Text: "b"},
+			{ID: "el_3", Type: ElTable, TableID: "t1"},
+			{ID: "el_4", Type: ElParagraph, Text: "a"},
+			{ID: "el_5", Type: ElParagraph, Text: "b"},
+			{ID: "el_6", Type: ElTable, TableID: "t2"},
+		},
+	}
+	if n := d.DropTableShadows(); n != 4 {
+		t.Fatalf("removed %d elements, want 4", n)
+	}
+	if len(d.Elements) != 2 {
+		t.Fatalf("elements = %+v", d.Elements)
+	}
+}

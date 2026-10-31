@@ -1,0 +1,127 @@
+@import 'tailwindcss';
+
+/* A developer-tool workbench: neutral surfaces, one accent, monospace for machine facts. */
+@theme {
+  --font-sans:
+    'Inter var', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, 'Noto Sans SC', sans-serif;
+  --font-mono:
+    'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+
+  --color-ink-50: oklch(0.985 0.002 260);
+  --color-ink-100: oklch(0.966 0.004 260);
+  --color-ink-200: oklch(0.92 0.006 260);
+  --color-ink-300: oklch(0.86 0.008 260);
+  --color-ink-400: oklch(0.7 0.012 260);
+  --color-ink-500: oklch(0.55 0.014 260);
+  --color-ink-600: oklch(0.44 0.015 260);
+  --color-ink-700: oklch(0.34 0.016 262);
+  --color-ink-800: oklch(0.24 0.017 264);
+  --color-ink-900: oklch(0.17 0.018 266);
+  --color-ink-950: oklch(0.12 0.018 268);
+
+  --color-accent-50: oklch(0.97 0.02 220);
+  --color-accent-100: oklch(0.94 0.04 220);
+  --color-accent-300: oklch(0.83 0.1 220);
+  --color-accent-500: oklch(0.66 0.15 220);
+  --color-accent-600: oklch(0.58 0.15 220);
+  --color-accent-700: oklch(0.5 0.14 220);
+
+  --color-ok-500: oklch(0.7 0.15 150);
+  --color-warn-500: oklch(0.78 0.15 80);
+  --color-danger-500: oklch(0.63 0.2 25);
+}
+
+@layer base {
+  html {
+    @apply bg-ink-50 text-ink-900 antialiased;
+  }
+  @media (prefers-color-scheme: dark) {
+    html {
+      @apply bg-ink-950 text-ink-100;
+    }
+  }
+  body {
+    @apply min-h-full;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-accent-500;
+  }
+  ::selection {
+    @apply bg-accent-300/40;
+  }
+}
+
+@layer components {
+  /* Markdown: readable long-form typography without a plugin dependency. */
+  .md {
+    @apply text-[0.95rem] leading-7;
+  }
+  .md > * + * {
+    @apply mt-4;
+  }
+  .md h1 {
+    @apply mt-8 text-2xl font-semibold tracking-tight;
+  }
+  .md h2 {
+    @apply mt-8 text-xl font-semibold tracking-tight;
+  }
+  .md h3 {
+    @apply mt-6 text-lg font-semibold;
+  }
+  .md h4,
+  .md h5,
+  .md h6 {
+    @apply mt-5 font-semibold;
+  }
+  .md p {
+    @apply max-w-none;
+  }
+  .md a {
+    @apply text-accent-700 underline underline-offset-2 dark:text-accent-300;
+  }
+  .md ul {
+    @apply list-disc pl-6;
+  }
+  .md ol {
+    @apply list-decimal pl-6;
+  }
+  .md li + li {
+    @apply mt-1;
+  }
+  .md blockquote {
+    @apply border-l-2 border-ink-300 pl-4 text-ink-600 dark:border-ink-700 dark:text-ink-300;
+  }
+  .md code {
+    @apply rounded bg-ink-100 px-1.5 py-0.5 font-mono text-[0.85em] dark:bg-ink-800;
+  }
+  .md pre {
+    @apply overflow-x-auto rounded-lg border border-ink-200 bg-ink-100 p-4 text-[0.85rem] leading-6 dark:border-ink-800 dark:bg-ink-900;
+  }
+  .md pre code {
+    @apply bg-transparent p-0 text-[1em];
+  }
+  .md hr {
+    @apply my-8 border-ink-200 dark:border-ink-800;
+  }
+  .md table {
+    @apply my-4 w-full border-collapse text-[0.88rem];
+    display: block;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+  .md th,
+  .md td {
+    @apply border border-ink-200 px-3 py-1.5 text-left align-top dark:border-ink-800;
+  }
+  .md th {
+    @apply bg-ink-100 font-semibold dark:bg-ink-900;
+  }
+  .md img {
+    @apply max-w-full;
+  }
+  .md .remote-image {
+    @apply inline-flex items-center gap-2 rounded border border-dashed border-ink-300 px-2 py-1 font-mono text-xs text-ink-500 dark:border-ink-700;
+  }
+}

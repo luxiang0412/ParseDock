@@ -1,0 +1,47 @@
+# Optional Playground profile: static web app + same-origin /v1 proxy in front of the CPU stack.
+#
+#   export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)
+#   export PARSEDOCK_API_KEYS="$(openssl rand -hex 24):acme"
+#   export PLAYGROUND_KEY="$(openssl rand -hex 24)"   # a bare token, not token:owner
+#   docker compose -f deploy/compose.cpu.yaml -f deploy/compose.playground.yaml \
+#       --profile playground up -d --build
+#   open http://localhost:8090
+#
+# Everything else stays as it is: only this service publishes a port, the API replicas stay
+# reachable on the internal network, and no worker image is built or published here.
+name: parsedock
+
+services:
+  # The playground token is appended to the API key list automatically, so the proxy can never
+  # present a key the API replicas do not know.
+  api-1:
+    environment:
+      PARSEDOCK_API_KEYS: ${PARSEDOCK_API_KEYS:?},${PLAYGROUND_KEY:?set PLAYGROUND_KEY}:playground
+  api-2:
+    environment:
+      PARSEDOCK_API_KEYS: ${PARSEDOCK_API_KEYS:?},${PLAYGROUND_KEY:?set PLAYGROUND_KEY}:playground
+
+  playground:
+    profiles: ["playground"]
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.playground
+    image: ${PARSEDOCK_PLAYGROUND_IMAGE:-parsedock-playground:0.1.0}
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    read_only: true
+    tmpfs:
+      # nginx writes its pid, caches and the envsubst-generated server block; everything
+      # else (binary, html, template) stays on the read-only root filesystem.
+      - /var/cache/nginx:mode=1777
+      - /var/run:mode=1777
+      - /etc/nginx/conf.d:mode=1777
+    environment:
+      PARSEDOCK_API_UPSTREAM: http://api-1:8080
+      # The key lives here and in nginx only. Never expose it as a VITE_* variable.
+      PARSEDOCK_PROXY_TOKEN: ${PLAYGROUND_KEY:?set a dedicated playground API key (<token>:<owner>)}
+      NGINX_PORT: "8080"
+    ports: ["${PLAYGROUND_PORT:-8090}:8080"]
+    # Only the public API network: the playground must not reach the coordinator or workers.
+    networks: [frontend]
+    depends_on: [api-1]

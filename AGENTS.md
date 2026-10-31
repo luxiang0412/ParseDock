@@ -58,6 +58,7 @@ client → api replica (auth, scopes, rate limit, quota pre-check) → coordinat
 | `tests/` | `contract/`, `integration/` (real processes), `unit/`, `load/`, `chaos/` |
 | `scripts/ci-local.sh` | the single source of truth for CI phases |
 | `benchmark/` | fixtures (`generated/`, 110-doc `corpus/`), bench/score/gate scripts |
+| `web/` | React + Vite playground (its own `package.json`; not part of the Go build) |
 | `docs/` | design + operations; `docs/PHASE1-SUMMARY.md` is the status page |
 
 ## Commands
@@ -73,6 +74,10 @@ make sdk-check      # Python e2e + CLI + one version across artefacts + Java bui
 make acceptance     # T03–T16 (mock engine)
 make drill          # online backup + restore, prints RTO
 make gate           # benchmark quality/latency gate vs benchmark/results/baseline.json
+cd web && npm ci    # playground deps (lockfile-exact); then npm run lint/typecheck/test/build
+make web-test       # lint + typecheck + unit tests + build + dist secret scan
+make web-e2e        # Playwright against a real backend (E2E_ENGINES=native,xberg for a PDF)
+make playground-up  # CPU stack + playground via docker compose (needs deploy/.env)
 ```
 
 Always `pkill -x docparse` before starting a stack in a script; leftover processes cause
@@ -124,6 +129,11 @@ port clashes and confusing failures in the integration tests.
 * **Error codes are a public contract.** Add to `internal/jobs/job.go` + the OpenAPI enum +
   `docs/DEPLOYMENT.md`; classifiers live in `internal/engines/exec.go` (`ClassifyCLIError`).
 * **The Go binary and both SDKs must share one version** (`scripts/check_versions.py`).
+* **The playground never holds the API key** — the dev/preview proxy and nginx inject it from the
+  environment. Never rename it to `VITE_*` (Vite inlines those) and never ACK a result
+  automatically; `web/scripts/check-dist-secrets.mjs` fails CI if a key reaches `dist/`.
+* **`web/src/api/schema.d.ts` is generated** from `api/openapi.yaml` (`npm run api:types`); the
+  CI drift check fails if it is stale, so an API change and the client move together.
 * **Benchmark inputs must be run-scoped.** `PARSEDOCK_BENCH_RAW` / `PARSEDOCK_BENCH_SUMMARY`
   point at `build/ci/bench-*` in CI; without that, `summarize.py` happily mixes in older runs.
 

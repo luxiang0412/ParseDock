@@ -140,10 +140,50 @@ jobs:
           path: build/ci/
           if-no-files-found: warn
 
+  web:
+    name: web
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: install (lockfile-exact)
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+      - name: api types are generated from the public spec
+        working-directory: web
+        run: npm run api:types:check
+      - name: lint
+        working-directory: web
+        run: npm run lint
+      - name: typecheck
+        working-directory: web
+        run: npm run typecheck
+      - name: unit tests
+        working-directory: web
+        run: npm test
+      - name: build
+        working-directory: web
+        run: npm run build
+      - name: no secrets in the bundle
+        working-directory: web
+        env:
+          PARSEDOCK_DEV_KEY: ci-should-not-appear-in-dist
+        run: node scripts/check-dist-secrets.mjs
+      - name: bundle size report
+        working-directory: web
+        run: du -sh dist && ls -S dist/assets | head -5
+
   ci-summary:
     name: ci-summary
     if: always()
-    needs: [static, unit, contract, lifecycle, image]
+    needs: [static, unit, contract, lifecycle, image, web]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -161,4 +201,5 @@ jobs:
             contract=${{ needs.contract.result }}
             lifecycle=${{ needs.lifecycle.result }}
             image=${{ needs.image.result }}
+            web=${{ needs.web.result }}
         run: python3 scripts/ci_summary.py "$RESULTS" --github-summary "$GITHUB_STEP_SUMMARY"

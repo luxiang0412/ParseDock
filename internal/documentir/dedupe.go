@@ -1,20 +1,18 @@
 package documentir
 
-import (
-	"strings"
-)
+import "strings"
 
 // DropTableShadows removes paragraph elements that merely repeat a table's cells.
 //
 // Engines commonly return a table twice: once as the lines of text they saw on the page and
-// once as a structured Table. Both end up in the IR, so the rendered Markdown and text
-// contain every cell twice (a real corpus document repeated a 5x4 table verbatim). The
-// duplicate lines are recognisable — they are the run of paragraphs immediately preceding the
-// table element, one per row, in row order, with cells joined by whitespace — so removing
-// them is safe; a paragraph that happens to quote one row elsewhere in the document is left
-// alone because it is not adjacent to the table element.
+// once as a structured Table. Both reach the IR, so the rendered Markdown and text showed
+// every cell twice. The duplicate is recognisable without guessing: it is a run of one or more
+// paragraphs (or a single paragraph with embedded newlines, as Office exports produce) whose
+// lines match the table's rows one per row, in order.
 //
-// Returns the number of elements removed.
+// The search is bounded to the elements since the previous table, so two identical tables in
+// one document cannot delete each other's text, and a paragraph that merely quotes one row is
+// never touched (the whole table must be covered).
 func (d *Document) DropTableShadows() int {
 	if len(d.Tables) == 0 || len(d.Elements) == 0 {
 		return 0
@@ -25,39 +23,24 @@ func (d *Document) DropTableShadows() int {
 	}
 	drop := make([]bool, len(d.Elements))
 	removed := 0
-	for i := len(d.Elements) - 1; i >= 0; i-- {
+	sectionStart := 0
+	for i := range d.Elements {
 		el := &d.Elements[i]
-		if el.Type != ElTable || el.TableID == "" {
+		if el.Type != ElTable {
 			continue
 		}
 		table, ok := rows[el.TableID]
-		if !ok || len(table) == 0 {
-			continue
-		}
-		// Walk backwards over the immediately preceding paragraphs. They must match the
-		// table's rows in order (last row first when walking backwards).
-		j := i - 1
-		matched := 0
-		for r := len(table) - 1; r >= 0 && j >= 0; r-- {
-			if d.Elements[j].Type != ElParagraph {
-				break
-			}
-			if normalizeSpace(d.Elements[j].Text) != normalizeSpace(strings.Join(table[r], " ")) {
-				break
-			}
-			j--
-			matched++
-		}
-		// Require the whole table to be covered; a partial match is more likely to be prose.
-		if matched != len(table) {
-			continue
-		}
-		for k := j + 1; k < i; k++ {
-			if !drop[k] {
-				drop[k] = true
-				removed++
+		if ok && len(table) > 1 {
+			if start, count, found := matchTableRun(d.Elements, sectionStart, i, table); found {
+				for k := start; k < start+count; k++ {
+					if !drop[k] {
+						drop[k] = true
+						removed++
+					}
+				}
 			}
 		}
+		sectionStart = i + 1
 	}
 	if removed == 0 {
 		return 0
@@ -70,6 +53,46 @@ func (d *Document) DropTableShadows() int {
 	}
 	d.Elements = kept
 	return removed
+}
+
+// matchTableRun looks for the table's rows written out as text between start and end.
+// It accepts either a single paragraph with one line per row or a run of consecutive
+// paragraphs. Returns the first index of the run, its element count, and whether it matched.
+func matchTableRun(elements []Element, start, end int, table [][]string) (int, int, bool) {
+	for k := start; k < end; k++ {
+		if elements[k].Type != ElParagraph {
+			continue
+		}
+		// One paragraph holding the whole block (Office exports: tab-separated, newline rows).
+		if lines := strings.Split(strings.Trim(elements[k].Text, "\n"), "\n"); len(lines) == len(table) {
+			if rowsMatch(lines, table, 0) {
+				return k, 1, true
+			}
+		}
+		// One paragraph per row.
+		if k+len(table) <= end && rowsMatchTexts(elements[k:k+len(table)], table) {
+			return k, len(table), true
+		}
+	}
+	return 0, 0, false
+}
+
+func rowsMatch(lines []string, table [][]string, offset int) bool {
+	for r := 0; r+offset < len(table) && r < len(lines); r++ {
+		if normalizeSpace(lines[r]) != normalizeSpace(strings.Join(table[r+offset], " ")) {
+			return false
+		}
+	}
+	return true
+}
+
+func rowsMatchTexts(run []Element, table [][]string) bool {
+	for r := range table {
+		if normalizeSpace(run[r].Text) != normalizeSpace(strings.Join(table[r], " ")) {
+			return false
+		}
+	}
+	return true
 }
 
 // gridText returns the table's rows as cell text, ordered by row then column.

@@ -1,0 +1,108 @@
+# ParseDock Playground — same-origin static app + authenticated /v1 proxy.
+#
+# Rendered by the official nginx image at start-up (`envsubst` over
+# /etc/nginx/templates/*.template). Required environment:
+#   PARSEDOCK_API_UPSTREAM  e.g. http://api-1:8080   (a public API replica)
+#   PARSEDOCK_PROXY_TOKEN   the API key nginx injects; never reaches the browser
+#
+# Boundaries enforced here:
+#   * only /v1 (plus /healthz,/readyz) is proxied — /internal/* returns 404;
+#   * the Authorization header is always replaced, so a client cannot choose its own key;
+#   * state-changing requests must carry X-Parsedock-Playground: 1, which a cross-site form
+#     cannot set (CSRF defence on top of SameSite-free bearer auth);
+#   * SSE works because buffering is off and the read timeout exceeds a 10-minute stream;
+#   * a CSP keeps document-rendered Markdown/Office previews from loading remote resources.
+
+server {
+    listen       ${NGINX_PORT};
+    server_name  _;
+    root         /usr/share/nginx/html;
+    index        index.html;
+
+    # The backend accepts 128 MiB uploads; leave room for multipart framing.
+    client_max_body_size 140m;
+
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+    add_header X-Frame-Options DENY always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    # blob: is needed for local previews (pdf.js canvases, object URLs); 'unsafe-inline' for
+    # docx-preview's injected styles. No remote origins are allowed anywhere.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self'; frame-src blob:; object-src 'none'; base-uri 'none'; form-action 'self'" always;
+    add_header Cache-Control "no-store" always;
+
+    # Never proxy the internal surface, whatever the upstream offers.
+    location /internal/ {
+        return 404;
+    }
+
+    location /v1/ {
+        # CSRF: a state-changing request must carry the marker header. nginx forbids nested
+        # `if`, so this is a small state machine: default allow, flag non-GET, clear the flag
+        # when the header is present, reject if it is still set.
+        set $csrf_block 0;
+        if ($request_method !~ ^(GET|HEAD|OPTIONS)$) {
+            set $csrf_block 1;
+        }
+        if ($http_x_parsedock_playground = "1") {
+            set $csrf_block 0;
+        }
+        if ($csrf_block = 1) {
+            return 403;
+        }
+
+        proxy_pass ${PARSEDOCK_API_UPSTREAM};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization "Bearer ${PARSEDOCK_PROXY_TOKEN}";
+        proxy_set_header Cookie "";
+        proxy_set_header X-Parsedock-Playground "";
+        # Uploads stream through; results stream back without buffering.
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location = /healthz {
+        proxy_pass ${PARSEDOCK_API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header Authorization "Bearer ${PARSEDOCK_PROXY_TOKEN}";
+        access_log off;
+    }
+
+    location = /readyz {
+        proxy_pass ${PARSEDOCK_API_UPSTREAM};
+        proxy_set_header Host $host;
+        proxy_set_header Authorization "Bearer ${PARSEDOCK_PROXY_TOKEN}";
+        access_log off;
+    }
+
+    # The app has no client-side router: unknown paths are 404s, not the SPA shell.
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store" always;
+    }
+
+    # nginx's mime.types has no entry for .mjs/.wasm, so they would be served as
+    # application/octet-stream and browsers refuse to load them as modules (pdf.js worker).
+    location ~* \.(mjs|wasm)$ {
+        types {
+            application/javascript  mjs;
+            application/wasm        wasm;
+        }
+        try_files $uri =404;
+    }
+
+    location /assets/ {
+        # Content-hashed filenames; the server-level `no-store` still applies to the shell.
+        # (A per-location add_header would drop the inherited CSP/nosniff headers.)
+        try_files $uri =404;
+    }
+}
