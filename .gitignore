@@ -26,3 +26,8 @@ bin/
 # Maven build output for the generated clients
 sdk/java-generated/target/
 sdk/java-client-test/target/
+# example runs
+examples/python/.venv/
+examples/python/out/
+examples/java/target/
+examples/java/out/
