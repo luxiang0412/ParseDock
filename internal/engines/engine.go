@@ -200,10 +200,13 @@ func (r *Registry) Pick(hint, format, mode string) (Engine, error) {
 		})
 		return candidates[0], nil
 	}
-	if mode == "" || mode == "auto" && r.Supports(format, mode) {
+	// Last resort for auto/unspecified mode only: any engine that serves the format and
+	// declares at least one mode. (Without the parentheses, mode=="" skipped the Supports
+	// check and could pick an engine that declares no mode at all.)
+	if (mode == "" || mode == "auto") && r.Supports(format, mode) {
 		var best Engine
 		for _, e := range r.engines {
-			if !supportsFormat(e, format) {
+			if !supportsFormat(e, format) || !supportsMode(e, mode) {
 				continue
 			}
 			if best == nil || priorityOf(e) > priorityOf(best) ||
@@ -218,13 +221,19 @@ func (r *Registry) Pick(hint, format, mode string) (Engine, error) {
 	return nil, Errf(false, "unsupported_type", "no engine for format %q (mode %q)", format, mode)
 }
 
+// hasWildcard reports whether e serves format only through a "*" entry. An engine that
+// lists the format explicitly is an exact match even if it also declares "*".
 func hasWildcard(e Engine, format string) bool {
+	wild := false
 	for _, f := range e.Formats() {
+		if f == format {
+			return false
+		}
 		if f == "*" {
-			return true
+			wild = true
 		}
 	}
-	return false
+	return wild
 }
 
 func priorityOf(e Engine) int {

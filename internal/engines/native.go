@@ -213,7 +213,7 @@ func liftPlainText(doc *documentir.Document, text string) {
 	// (minified JSON, a single-row export, a log dump) completed with everything after
 	// that line silently dropped.
 	var para []string
-	line := 0
+	line, start := 0, 0 // start is the 1-based line where the current paragraph begins
 	flush := func() {
 		if len(para) == 0 {
 			return
@@ -227,7 +227,7 @@ func liftPlainText(doc *documentir.Document, text string) {
 			ID:   fmt.Sprintf("el_%d", len(doc.Elements)+1),
 			Type: documentir.ElParagraph,
 			Text: body,
-			Loc:  &documentir.SourceLocation{Kind: "none", Line: line},
+			Loc:  &documentir.SourceLocation{Kind: "none", Line: start},
 		})
 	}
 	for _, l := range strings.Split(text, "\n") {
@@ -236,6 +236,9 @@ func liftPlainText(doc *documentir.Document, text string) {
 		if strings.TrimSpace(l) == "" {
 			flush()
 			continue
+		}
+		if len(para) == 0 {
+			start = line
 		}
 		para = append(para, l)
 	}

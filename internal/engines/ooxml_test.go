@@ -251,7 +251,9 @@ func TestEnrichKeepsEngineDateType(t *testing.T) {
 			{Row: 0, Col: 1, Text: "label", DataType: "string"},
 			{Row: 0, Col: 2, Text: "5", DataType: "number"},
 		}}}
-	EnrichXLSXFormulas(context.Background(), path, doc)
+	if _, _, err := EnrichXLSXFormulas(context.Background(), path, doc); err != nil {
+		t.Fatal(err)
+	}
 	cell := doc.Tables[0].Cells[0]
 	if cell.DataType != "date" {
 		t.Fatalf("engine date type overwritten: %q", cell.DataType)
@@ -375,6 +377,28 @@ func TestReadZipXMLRespectsCancellation(t *testing.T) {
 	}
 	if _, err := readZipXML[xlsxWorksheet](context.Background(), zr, "xl/worksheets/sheet1.xml"); err != nil {
 		t.Fatalf("live context failed to decode: %v", err)
+	}
+}
+
+// Review finding: a part larger than the read ceiling was cut silently. It must be an
+// explicit expanded_too_large, and enrichment must not run on a partial string table.
+func TestReadZipXMLRefusesOversizedPart(t *testing.T) {
+	path := writeMinimalXLSX(t)
+	zr, err := zip.OpenReader(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer zr.Close()
+	old := zipXMLMax
+	zipXMLMax = 16
+	t.Cleanup(func() { zipXMLMax = old })
+	_, err = readZipXML[xlsxWorkbook](context.Background(), zr, "xl/workbook.xml")
+	if !isExpandedTooLarge(err) {
+		t.Fatalf("err = %v, want expanded_too_large", err)
+	}
+	doc := documentir.New()
+	if _, _, err := EnrichXLSXFormulas(context.Background(), path, doc); !isExpandedTooLarge(err) {
+		t.Fatalf("enrichment err = %v, want expanded_too_large", err)
 	}
 }
 

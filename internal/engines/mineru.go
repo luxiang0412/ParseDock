@@ -2,11 +2,11 @@ package engines
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -73,7 +73,16 @@ func (m *MinerU) Probe(ctx context.Context) error {
 	}
 	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, MaxOutput: 8192}, os.TempDir(), "server", "status")
 	if err != nil {
-		return fmt.Errorf("mineru server not reachable: %v", firstLine(string(res.Stderr)))
+		// res is nil when the binary could not even be started (missing, not executable):
+		// report that instead of dereferencing it and taking the worker down.
+		if res == nil {
+			return fmt.Errorf("mineru server not reachable: %v", err)
+		}
+		detail := firstLine(strings.TrimSpace(string(res.Stderr)))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("mineru server not reachable: %s", detail)
 	}
 	return nil
 }
@@ -136,26 +145,18 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 	// Evidence: snapshot the daemon log before the task so start-up lines (which
 	// may legitimately mention CUDAExecutionProvider) can never be mistaken for
 	// this task's execution.
+	//
+	// Known limit: the window is scoped by time, not by task. MinerU's session lines
+	// ("ONNX session ready: kind=..., providers=[...]") carry no task or document id, so
+	// if several workers share one daemon (one MINERU_HOME), lines written for another
+	// task during this window are attributed to this one. A GPU worker runs one task at
+	// a time, so this is exact only when each daemon serves a single worker; deployments
+	// must not share a MinerU daemon between workers if gpu_required evidence matters.
 	logWindow := openDaemonWindow(m.daemonLogPath())
 	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, Sandbox: m.Sandbox, MaxOutput: 8 << 20, MaxRSSMB: m.MaxRSSMB},
 		req.WorkDir, args...)
 	if err != nil {
-		if res != nil && res.TimedOut {
-			return nil, Errf(true, jobs.ErrTimeout, "mineru timed out after %s", timeout)
-		}
-		if errors.Is(err, ErrOOM) {
-			return nil, Errf(true, jobs.ErrEngineOOM,
-				"mineru exceeded its memory ceiling while parsing this document")
-		}
-		if errors.Is(err, ErrSandboxUnavailable) {
-			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
-		}
-		code, msg := jobs.ErrMalformed, "mineru failed"
-		if res != nil {
-			code, msg = ClassifyCLIError(string(res.Stderr))
-			msg = fmt.Sprintf("mineru exit %d: %s", res.ExitCode, msg)
-		}
-		return nil, &Error{Code: code, Message: msg}
+		return nil, cliFailure("mineru", timeout, res, err)
 	}
 	raw, rerr := os.ReadFile(outFile)
 	if rerr != nil {
@@ -215,8 +216,8 @@ func (m *MinerU) liftPages(doc *documentir.Document, md, format string) {
 		if i+1 < len(locs) {
 			end = locs[i+1][0]
 		}
-		pageNo := 0
-		fmt.Sscanf(md[loc[2]:loc[3]], "%d", &pageNo)
+		// The regexp guarantees digits; only an absurd overflow fails, which leaves 0 (unknown).
+		pageNo, _ := strconv.Atoi(md[loc[2]:loc[3]])
 		scratch := documentir.New()
 		LiftMarkdown(scratch, md[start:end])
 		remapTables(scratch, len(doc.Tables), len(doc.Elements))

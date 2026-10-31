@@ -22,7 +22,7 @@ func fakeTika(t *testing.T, tikaBody string, pagesJSON string) *httptest.Server 
 		w.Header().Set("Content-Type", "text/plain")
 		fmt.Fprint(w, tikaBody)
 	})
-	mux.HandleFunc("/rmeta/text", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/meta", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, pagesJSON)
 	})

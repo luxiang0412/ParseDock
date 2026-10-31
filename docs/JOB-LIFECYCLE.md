@@ -128,8 +128,8 @@ copy), so the result follows the normal TTL and the caller releases it with
 2. the attempt row is marked `cancelled`, so any later heartbeat returns
    `409 cancelled` and any later result commit fails the fencing check;
 3. the worker aborts the engine process at its next heartbeat (default 10 s;
-   `--heartbeat`), then calls `/fail`, which is an idempotent no-op for a cancelled
-   attempt — a cancelled job is never turned into `failed`;
+   `--heartbeat`) and stops without reporting a failure (`/fail` would be an idempotent
+   no-op for a cancelled attempt anyway) — a cancelled job is never turned into `failed`;
 4. if the engine had already produced a result, the worker discards it instead of
    uploading (PR-03): a cancelled job cannot publish a result that would race the
    cleanup;
@@ -140,7 +140,20 @@ interval** (T17 asserts < 12 s with a 1 s test interval; the mock engine runs 40
 so the job is genuinely mid-parse). Per-engine ceilings (`--xberg-timeout`,
 `--docling-rs-timeout`, `--mineru-timeout`, default 10/15/30 min) bound a single
 engine invocation and are capped by `--max-parse-minutes` and the job's
-`processing_deadline_at`.
+`processing_deadline_at`. Hitting that deadline is reported as retryable `timeout`
+(never as `cancelled`), and a worker that is shutting down hands its attempt back as
+retryable `internal_error`.
+
+### Heartbeat failures
+
+Only an explicit answer stops an attempt at once: `409 cancelled` (above) or
+`409 lease_lost` (the attempt was reaped or superseded). Any other heartbeat failure —
+connection refused during a coordinator restart, a timeout, a `5xx` — is retried on the
+next tick for as long as the lease would still be valid by the worker's estimate (the
+`lease_until` of the last accepted heartbeat, measured on the worker's clock when it
+arrived). When the lease is lost either way the worker kills the engine and abandons the
+attempt **without** calling `/fail`; the coordinator requeues the job when it reaps the
+lease, so a transient outage costs one attempt at most instead of failing the job.
 
 ## 5. Failure matrix (§4.3 of the task guide) and how it is covered
 
@@ -154,7 +167,7 @@ engine invocation and are capped by `--max-parse-minutes` and the job's
 | repeated ACK | 202, idempotent | T06 |
 | Coordinator `SIGKILL` during cleanup | restart resumes `deleting`, files removed | T08 (3 jobs, 6 files left at kill, all gone after restart) |
 | Worker `SIGKILL` mid-task | lease expires, job requeued, attempt 2 succeeds; stale token rejected | T09 (attempts: expired → succeeded; stale result/heartbeat `409`) |
-| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and calls `/fail`, which is an idempotent no-op; the job stays `cancelled`; a result produced after the cancel is discarded | `TestCancelledAttemptFinalisation`, `TestCancelRecordsRequestTime`, T17 |
+| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and stops without reporting; the job stays `cancelled`; a result produced after the cancel is discarded | `TestCancelledAttemptFinalisation`, `TestCancelRecordsRequestTime`, T17 |
 | Cancel a job whose engine already finished | the worker discards the result; no artifact is published | PR-03 worker guard, T17 |
 | No GPU and `device=gpu_required` | `409 gpu_unavailable`, **no job row created** | T12 |
 | Invalid/adversarial upload | `4xx` with stable code, service stays healthy | T13 |

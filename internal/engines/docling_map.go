@@ -3,7 +3,6 @@ package engines
 import (
 	"encoding/json"
 	"fmt"
-	"sort"
 	"strings"
 
 	"parsedock.dev/parsedock/internal/documentir"
@@ -459,14 +458,4 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
-}
-
-// sortedPageNumbers is used for deterministic diagnostics.
-func sortedPageNumbers(d doclingDoc) []int {
-	out := make([]int, 0, len(d.Pages))
-	for _, p := range d.Pages {
-		out = append(out, p.PageNo)
-	}
-	sort.Ints(out)
-	return out
 }
