@@ -53,6 +53,14 @@ METADATA = f"""    <url>{PROJECT_URL}</url>
     </developers>
 """
 
+# The generator attaches a `tests` classifier jar. Consumers never need our test
+# classes, and publishing it is one more artifact Central has to associate with a
+# POM; the release build drops it.
+DROP_TEST_JAR = re.compile(
+    r"[ \t]*<execution>\s*<goals>\s*<goal>test-jar</goal>\s*</goals>\s*</execution>\n",
+    re.S,
+)
+
 RELEASE_PROFILE = """
     <profiles>
         <profile>
@@ -131,6 +139,11 @@ def patch(path: Path) -> bool:
         if n != 1:
             raise SystemExit(f"{path}: could not find the metadata block to replace")
         changed = True
+
+    if "test-jar" in text:
+        text, n = DROP_TEST_JAR.subn("", text, count=1)
+        if n == 1:
+            changed = True
 
     if "<id>release</id>" not in text:
         # The generator emits its own <profiles> with a bare GPG sign profile.
