@@ -271,7 +271,7 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		} else {
 			liftPlainText(doc, out.Result.Content)
 		}
-		x.attachTables(doc, &out, 0, true)
+		x.attachTables(doc, &out, req.Format, 0, true)
 	default:
 		return nil, Errf(false, jobs.ErrMalformed, "engine produced no content")
 	}
@@ -335,12 +335,12 @@ func (x *Xberg) mapPages(doc *documentir.Document, out *xbergOutput, req Request
 			el.ID = fmt.Sprintf("el_%d", len(doc.Elements)+1)
 			doc.Elements = append(doc.Elements, el)
 		}
-		x.attachTables(doc, out, page.PageNumber, false)
+		x.attachTables(doc, out, req.Format, page.PageNumber, false)
 	}
 }
 
 // attachTables appends engine-detected tables with real bounding boxes.
-func (x *Xberg) attachTables(doc *documentir.Document, out *xbergOutput, page int, all bool) {
+func (x *Xberg) attachTables(doc *documentir.Document, out *xbergOutput, format string, page int, all bool) {
 	existing := map[string]bool{}
 	for _, t := range doc.Tables {
 		existing[t.ID] = true
@@ -364,7 +364,7 @@ func (x *Xberg) attachTables(doc *documentir.Document, out *xbergOutput, page in
 				})
 			}
 		}
-		loc := &documentir.SourceLocation{Kind: pageKindOfPage(page), Page: t.PageNumber}
+		loc := &documentir.SourceLocation{Kind: pageKind(format), Page: t.PageNumber}
 		if loc.Page == 0 {
 			loc.Page = page
 		}
@@ -394,8 +394,6 @@ func pageKind(format string) string {
 	}
 }
 
-func pageKindOfPage(int) string { return "pdf" }
-
 func splitStyleAnnotation(s string) (string, string) {
 	m := styleAnnoRe.FindStringSubmatch(s)
 	if m == nil {
@@ -423,7 +421,7 @@ func styleLevel(style string) (int, string) {
 func looksLikeMarkdown(s string) bool {
 	return strings.Contains(s, "\n## ") || strings.HasPrefix(s, "## ") ||
 		strings.Contains(s, "\n# ") || strings.Contains(s, "| --- |") ||
-		strings.Contains(s, "| --- |") || strings.Contains(s, "|---|")
+		strings.Contains(s, "|---|")
 }
 
 func splitBlocks(s string) []string {

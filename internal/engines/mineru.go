@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -215,8 +216,8 @@ func (m *MinerU) liftPages(doc *documentir.Document, md, format string) {
 		if i+1 < len(locs) {
 			end = locs[i+1][0]
 		}
-		pageNo := 0
-		fmt.Sscanf(md[loc[2]:loc[3]], "%d", &pageNo)
+		// The regexp guarantees digits; only an absurd overflow fails, which leaves 0 (unknown).
+		pageNo, _ := strconv.Atoi(md[loc[2]:loc[3]])
 		scratch := documentir.New()
 		LiftMarkdown(scratch, md[start:end])
 		remapTables(scratch, len(doc.Tables), len(doc.Elements))

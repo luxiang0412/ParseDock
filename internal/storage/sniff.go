@@ -43,6 +43,7 @@ func pdfHeaderNear(b []byte) bool {
 	}
 	return bytes.Contains(window, []byte("%PDF-"))
 }
+
 var pngMagic = func(b []byte) bool {
 	return len(b) >= 8 && bytes.Equal(b[:8], []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})
 }
