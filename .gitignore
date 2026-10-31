@@ -31,3 +31,5 @@ examples/python/.venv/
 examples/python/out/
 examples/java/target/
 examples/java/out/
+# setuptools metadata produced by `pip install -e` (never commit)
+*.egg-info/

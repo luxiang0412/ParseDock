@@ -1,2 +1,0 @@
-[console_scripts]
-parsedock = parsedock_sdk.cli:main
