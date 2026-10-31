@@ -82,6 +82,7 @@ def verify(backup: Path) -> dict:
         if input_sha and sha256(p) != input_sha:
             problems.append(f"input hash mismatch {job_id}")
 
+    resolved = {}
     for job_id, version in manifests.items():
         gen = files / "results" / job_id / (version or "").removeprefix("sha256:")
         mp = gen / "manifest.json"
@@ -91,6 +92,7 @@ def verify(backup: Path) -> dict:
             legacy = files / "results" / job_id / "manifest.json"
             if legacy.exists():
                 gen, mp = files / "results" / job_id, legacy
+        resolved[job_id] = gen
         if not mp.exists():
             problems.append(f"missing manifest {job_id}")
             continue
@@ -148,7 +150,7 @@ def verify(backup: Path) -> dict:
         version = manifests.get(job_id)
         if not version:
             continue
-        fp = files / "results" / job_id / version.removeprefix("sha256:") / kind
+        fp = resolved.get(job_id, files / "results" / job_id / version.removeprefix("sha256:")) / kind
         if not fp.exists():
             problems.append(f"missing artifact row {job_id}/{kind}")
         elif want and sha256(fp) != want:
