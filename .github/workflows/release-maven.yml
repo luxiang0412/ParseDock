@@ -49,6 +49,23 @@ jobs:
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
           gpg --list-secret-keys --keyid-format LONG
+      - name: verify the signing key actually signs
+        # "Bad passphrase" from the deploy step is unhelpful and only appears after
+        # a 20 s build; prove the key/passphrase pair here instead.
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          key=$(gpg --list-secret-keys --with-colons | awk -F: '/^sec/{print $5; exit}')
+          test -n "$key" || { echo "no secret key imported"; exit 1; }
+          echo "signing key: $key"
+          if printf 'preflight' | gpg --batch --pinentry-mode loopback \
+               --passphrase "$MAVEN_GPG_PASSPHRASE" -u "$key" --armor --detach-sign >/dev/null; then
+            echo "signing OK"
+          else
+            echo "::error::MAVEN_GPG_PASSPHRASE does not match key $key (or the key is unusable)"
+            exit 1
+          fi
+          # The passphrase comes from the environment: stdin carries the payload.
       - name: verify the POM carries release metadata
         run: |
           grep -q "<name>Apache License 2.0</name>" sdk/java-generated/pom.xml
