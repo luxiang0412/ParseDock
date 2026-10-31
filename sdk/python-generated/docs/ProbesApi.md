@@ -79,6 +79,11 @@ Returns `503` when SQLite is down or the cleaner has stalled. A low disk
 watermark keeps the service `ready` (reads and ACKs must keep working) but
 reports `accepting_uploads=false`.
 
+The probe is unauthenticated, so `checks` carries verdicts only (`sqlite`,
+`storage`, `cleanup`, `accepting_uploads`). Free bytes, the last cleanup
+time and error details are available to operators on the coordinator's
+internal listener with the internal token, and as metrics.
+
 
 ### Example
 

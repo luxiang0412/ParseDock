@@ -23,12 +23,22 @@ import (
 //
 //	HandlePublic   /v1/*        job API consumed by API replicas (internal token
 //	                            + X-Parsedock-Owner injected after auth)
-//	HandleInternal /internal/*  worker protocol (internal token + lease token)
+//	HandleInternal /internal/*  worker protocol (worker token + lease token) and
+//	                            operator endpoints (internal token)
 //
 // Neither mux must ever be exposed to the public internet directly.
+//
+// Two credentials can be configured. InternalToken is the gateway credential: it is
+// the only one that may assert an owner (X-Parsedock-Owner) and the only one accepted
+// by operator endpoints (metrics, diagnostics, throttle reports). WorkerToken, when
+// set, is what workers present; it opens the worker protocol only, so a compromised
+// worker host cannot read or ACK any tenant's results through /v1. For compatibility
+// the internal token keeps working on the worker protocol, and with WorkerToken unset
+// the behaviour is exactly the single-token one.
 type Server struct {
 	Svc           *Service
 	InternalToken string
+	WorkerToken   string
 	Log           *slog.Logger
 
 	// ssePollEvery overrides the SSE poll interval (tests); zero means 500 ms.
@@ -60,14 +70,34 @@ func (s *Server) PublicMux() http.Handler {
 	return m
 }
 
+// tokenMatches compares a presented token in constant time; an unset secret never
+// matches.
+func tokenMatches(got, want string) bool {
+	return want != "" && subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1
+}
+
+// gatewayAuthorized admits only the internal (gateway) token. A worker token is
+// refused with 403 so a misconfiguration is distinguishable from a wrong secret.
+func (s *Server) gatewayAuthorized(w http.ResponseWriter, r *http.Request) bool {
+	if s.InternalToken == "" {
+		return true // single-host development without a token (loopback only, see ValidateInternalBinding)
+	}
+	got := r.Header.Get("X-Internal-Token")
+	if tokenMatches(got, s.InternalToken) {
+		return true
+	}
+	if tokenMatches(got, s.WorkerToken) {
+		writeErr(w, NewError(403, jobs.ErrUnauthorized, "the worker token is not valid for this endpoint"))
+		return false
+	}
+	writeErr(w, NewError(401, jobs.ErrUnauthorized, "invalid internal token"))
+	return false
+}
+
 func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.InternalToken != "" {
-			got := r.Header.Get("X-Internal-Token")
-			if subtle.ConstantTimeCompare([]byte(got), []byte(s.InternalToken)) != 1 {
-				writeErr(w, NewError(401, jobs.ErrUnauthorized, "invalid internal token"))
-				return
-			}
+		if !s.gatewayAuthorized(w, r) {
+			return
 		}
 		owner := r.Header.Get("X-Parsedock-Owner")
 		if owner == "" {
@@ -77,6 +107,11 @@ func (s *Server) guard(next http.HandlerFunc) http.HandlerFunc {
 		ctx := context.WithValue(r.Context(), ownerKey{}, owner)
 		if rid := r.Header.Get("X-Request-Id"); rid != "" && len(rid) <= 128 {
 			ctx = WithRequestID(ctx, rid)
+		}
+		// The gateway resolved the client address; it is believed only because the
+		// request carries the gateway credential.
+		if ip := parseClientIP(r.Header.Get(clientIPHeader)); ip != "" {
+			ctx = WithClientIP(ctx, ip)
 		}
 		next(w, r.WithContext(ctx))
 	}
@@ -675,12 +710,21 @@ func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"status": "ok", "role": "coordinator"})
 }
 
+// handleReadyz answers the readiness probe. Probes are unauthenticated (orchestrators
+// and the public gateway call them), so the default view carries only the verdicts:
+// sqlite/storage/cleanup states and accepting_uploads. Free bytes, the last cleanup
+// time and raw error strings (which contain filesystem paths) are added only for a
+// caller presenting the internal token; operators also have /internal/metrics.
 func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
+	detail := tokenMatches(r.Header.Get("X-Internal-Token"), s.InternalToken)
 	checks := map[string]any{}
 	ready := true
 	if err := s.Svc.DB.PingContext(r.Context()); err != nil {
 		s.Log.Error("readiness: sqlite ping failed", "err", err)
 		checks["sqlite"] = "down"
+		if detail {
+			checks["sqlite_error"] = err.Error()
+		}
 		ready = false
 	} else {
 		checks["sqlite"] = "ok"
@@ -688,9 +732,14 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	if free, err := s.Svc.Store.FreeBytes(); err != nil {
 		s.Log.Error("readiness: free-space probe failed", "err", err)
 		checks["storage"] = "error"
+		if detail {
+			checks["storage_error"] = err.Error()
+		}
 		ready = false
 	} else {
-		checks["free_bytes"] = free
+		if detail {
+			checks["free_bytes"] = free
+		}
 		checks["storage"] = "ok"
 		if free < s.Svc.Store.MinFree {
 			checks["storage"] = "below watermark"
@@ -701,7 +750,10 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	lc := s.Svc.LastCleanup()
-	checks["last_cleanup"] = lc
+	if detail {
+		checks["last_cleanup"] = lc
+	}
+	checks["cleanup"] = "ok"
 	if !lc.IsZero() && time.Since(lc) > 3*s.Svc.Cfg.CleanupInterval {
 		checks["cleanup"] = "stalled"
 		ready = false
@@ -727,36 +779,38 @@ func (s *Server) InternalMux() http.Handler {
 	m.HandleFunc("POST /internal/tasks/{id}/heartbeat", s.workerGuard(s.handleTaskHeartbeat))
 	m.HandleFunc("PUT /internal/tasks/{id}/result", s.workerGuard(s.handleTaskResult))
 	m.HandleFunc("POST /internal/tasks/{id}/fail", s.workerGuard(s.handleTaskFail))
-	// Operator diagnostics belong to the internal surface, not the public mux.
-	m.HandleFunc("GET /internal/diagnostics/workers", s.workerGuard(s.handleWorkers))
+	// Operator diagnostics belong to the internal surface, not the public mux, and
+	// to the operator credential, not the worker one.
+	m.HandleFunc("GET /internal/diagnostics/workers", s.internalGuard(s.handleWorkers))
+
 	m.HandleFunc("GET /healthz", s.handleHealthz)
 	m.HandleFunc("GET /readyz", s.handleReadyz)
 	return m
 }
 
 // internalGuard protects operator endpoints that need the internal token but no owner
-// identity (metrics, diagnostics).
+// identity (metrics, diagnostics, throttle reports). The worker token is refused.
 func (s *Server) internalGuard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.InternalToken != "" {
-			got := r.Header.Get("X-Internal-Token")
-			if subtle.ConstantTimeCompare([]byte(got), []byte(s.InternalToken)) != 1 {
-				writeErr(w, NewError(401, jobs.ErrUnauthorized, "invalid internal token"))
-				return
-			}
+		if !s.gatewayAuthorized(w, r) {
+			return
 		}
 		next(w, r)
 	}
 }
 
+// workerGuard protects the worker protocol. It accepts the worker token and, for
+// deployments that have not split the credentials yet, the internal token.
 func (s *Server) workerGuard(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if s.InternalToken != "" {
-			got := r.Header.Get("X-Internal-Token")
-			if subtle.ConstantTimeCompare([]byte(got), []byte(s.InternalToken)) != 1 {
-				writeErr(w, NewError(401, jobs.ErrUnauthorized, "invalid internal token"))
-				return
-			}
+		if s.InternalToken == "" && s.WorkerToken == "" {
+			next(w, r)
+			return
+		}
+		got := r.Header.Get("X-Internal-Token")
+		if !tokenMatches(got, s.WorkerToken) && !tokenMatches(got, s.InternalToken) {
+			writeErr(w, NewError(401, jobs.ErrUnauthorized, "invalid worker token"))
+			return
 		}
 		next(w, r)
 	}

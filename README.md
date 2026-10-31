@@ -161,7 +161,7 @@ api replicas (stateless, auth + rate limit + reverse proxy)
         ▼
 coordinator (SQLite WAL, inputs/, results/, cleaner, leases, fencing)
         ▲  pull protocol: claim → input → heartbeat → result/fail
-        │
+        │  worker token (cannot act for an owner on /v1)
 workers (cpu: native/xberg/docling-rs · gpu: mineru flash)
 ```
 

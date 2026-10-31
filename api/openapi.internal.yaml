@@ -6,9 +6,10 @@ info:
   description: |
     **Private contract.** These endpoints live on the Coordinator's internal
     listener and are never exposed by the API replicas (the public gateway has no
-    `/internal/*` route). Every request needs the shared internal token
-    (`X-Internal-Token`); task-scoped endpoints additionally need the attempt's
-    lease token (`X-Lease-Token` / `lease_token`), which is the fencing token.
+    `/internal/*` route). Every request carries a credential in `X-Internal-Token`
+    (see the `internalToken` scheme for which one); task-scoped endpoints
+    additionally need the attempt's lease token (`X-Lease-Token` / `lease_token`),
+    which is the fencing token.
 
     This document is separate from `api/openapi.yaml` on purpose (F06): generated
     SDKs must not contain worker operations. It is versioned with the service and
@@ -299,6 +300,7 @@ paths:
                     type: array
                     items: { $ref: '#/components/schemas/WorkerRegistration' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'The worker token was presented; this operator endpoint accepts only the internal token.' }
 
   /internal/metrics:
     get:
@@ -318,6 +320,7 @@ paths:
               schema:
                 type: string
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'The worker token was presented; this operator endpoint accepts only the internal token.' }
 
   /internal/throttle:
     post:
@@ -342,6 +345,7 @@ paths:
       responses:
         '202': { description: Accepted for aggregation. }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { description: 'The worker token was presented; this operator endpoint accepts only the internal token.' }
 
 components:
   securitySchemes:
@@ -350,9 +354,23 @@ components:
       in: header
       name: X-Internal-Token
       description: |
-        Shared secret for the private coordinator/worker network. Permanent mTLS is
-        planned (PR-07); until then the listener must stay on a private interface and
-        the coordinator refuses to bind non-loopback without a token.
+        Credential for the private coordinator network, sent in `X-Internal-Token`.
+        Two values can be configured on the coordinator:
+
+        * the **internal token** (`--internal-token`) — held by API replicas; the only
+          credential that may assert an owner on `/v1` and the only one accepted by
+          the operator endpoints (`/internal/metrics`, `/internal/diagnostics/*`,
+          `/internal/throttle`), and the one that unlocks the detailed `/readyz` view;
+        * the optional **worker token** (`--worker-token`) — held by workers; accepted
+          on `/internal/workers/*` and `/internal/tasks/*` only. Presented anywhere
+          else it is refused with `403`. For compatibility the worker routes keep
+          accepting the internal token, and without a worker token every route
+          behaves as with a single shared secret.
+
+        Mutual TLS (`--tls-client-ca`, PR-07) authenticates the host underneath; the
+        certificate's role is not checked against the token. The listener must stay
+        on a private interface; the coordinator refuses to bind non-loopback without
+        an internal token.
 
   parameters:
     JobId:

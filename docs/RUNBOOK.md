@@ -9,9 +9,9 @@ N stateless API replicas, M workers. Every alert in
 | What | Where |
 | --- | --- |
 | Coordinator state | `<data-dir>/coordinator.db` (WAL) + `<data-dir>/{inputs,results,tmp}` |
-| Coordinator listener | `--internal-listen`, internal token + mTLS (PR-07) |
-| Metrics | `GET /internal/metrics` on the coordinator (internal token) |
-| Probes | `/healthz` (liveness), `/readyz` (SQLite, disk watermark, cleanup) |
+| Coordinator listener | `--internal-listen`, internal token (api replicas, operators) + worker token (workers, `--worker-token`) + mTLS (PR-07) |
+| Metrics | `GET /internal/metrics` on the coordinator (internal token; the worker token gets `403`) |
+| Probes | `/healthz` (liveness), `/readyz` (SQLite, disk watermark, cleanup verdicts; details such as `free_bytes`, `last_cleanup` and error text only with the internal token) |
 | SLOs | `docs/SLO.md` |
 | Engine ceiling | `--engine-max-rss-mb` (default off), `--max-parse-minutes` |
 | Quota | `--quota-concurrent`, `--quota-jobs-per-day`, `--quota-bytes-per-day`, `--quota-storage-mb` |
@@ -108,11 +108,12 @@ Each starts with the metric that fires and ends with the command that proves rec
 
 ```bash
 systemctl status parsedock-coordinator; journalctl -u parsedock-coordinator -n 100
-curl -sf localhost:8081/readyz || curl -s localhost:8081/readyz | jq
+curl -sf localhost:8081/readyz || curl -s -H "X-Internal-Token: $TOKEN" localhost:8081/readyz | jq
 ```
 Restart. If `readyz` reports `sqlite: down`, check disk space and file permissions before
-restarting; if it reports `storage`, see 3.5. Workers reconnect automatically and requeue
-jobs whose lease expired. A running worker keeps parsing through a coordinator restart
+restarting (with the internal token the response also carries `sqlite_error`); if it
+reports `storage`, see 3.5. Workers reconnect automatically and requeue jobs whose lease
+expired. A running worker keeps parsing through a coordinator restart
 shorter than the lease (`--worker-lease`, default 60 s): failed heartbeats are retried and
 only an explicit `409 lease_lost`/`cancelled`, or the lease running out by the worker's own
 estimate, stops the attempt (logged as `heartbeat failed; keeping the attempt…` and
@@ -133,14 +134,20 @@ probe result at start-up.
 
 ### 3.3 No workers online (`ParseDockNoWorkersOnline`)
 
-Registration fails on: wrong `--internal-token`, missing/expired client certificate
+Registration fails on: a wrong worker credential (`invalid worker token`, `401`, in the
+worker log: the worker must present `PARSEDOCK_WORKER_TOKEN` when the coordinator has
+`--worker-token`, or the internal token otherwise), missing/expired client certificate
 (`tls: bad certificate` in the worker log), or a coordinator URL pointing at the public
-port. Verify with:
+port. Verify from the worker host with the operator (internal) token — the diagnostics
+endpoint answers the worker token with `403` on purpose:
 
 ```bash
 curl -sS --cacert ca.crt --cert worker.crt --key worker.key \
   -H "X-Internal-Token: $TOKEN" https://coordinator:8081/internal/diagnostics/workers | jq
 ```
+
+Adopting or rotating the worker token: `docs/DEPLOYMENT.md` §4 "Internal and worker
+tokens" (coordinator first; the worker routes accept both tokens during the roll).
 
 ### 3.4 Cleanup failing (`ParseDockCleanupFailing`)
 

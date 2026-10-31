@@ -45,7 +45,7 @@ XBERG = ENGINES / "xberg-cli" / "xberg"
 DOCLING = ENGINES / "docling-rs" / "docling-rs"
 FIX = ROOT / "benchmark" / "fixtures" / "ocr"
 WORK = ROOT / "runtime" / "ocr-backend"
-API_TOKEN = "ocrb-api-token"
+API_TOKEN = "ocrb-api-token-01"
 INTERNAL = "ocrb-internal"
 
 results: list[tuple[str, bool, str]] = []

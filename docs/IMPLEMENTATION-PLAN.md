@@ -485,6 +485,22 @@ whatever data it is given, so it will report the real number on production-sized
 
 ---
 
+## Post-release security review (gateway, credentials, deployment)
+
+**Status: DONE in code, runtime suites not yet re-run.** Separate worker token
+(coordinator guards: worker token only on `/internal/workers|tasks/*`, `403` elsewhere),
+standalone token generation, redacted `/readyz`, gateway proxy transport above the sync
+window, per-address failed-auth limiter, bounded limiters, key-length/duplicate policy,
+client IP into audit lines with `--trusted-proxies`, per-request body read deadline,
+strict env parsing and flag validation, playground loopback bind and header fix,
+capability drops in compose, cluster-lite network fix. Unit tests cover each
+(`internal/api`, `internal/tlsutil`, `internal/coordinator/auth_test.go`,
+`cmd/docparse`); the contract phase additionally checks the gateway mux and the scope
+table. Not verified yet: `scripts/ci-local.sh lifecycle`/`all` and a compose run
+(fixture keys were lengthened for the new 16-character floor). Out of scope: binding
+mTLS certificate roles to tokens; the worker learning the upload limit from the
+coordinator.
+
 ## Sequencing
 
 ```

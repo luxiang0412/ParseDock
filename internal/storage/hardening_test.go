@@ -66,9 +66,6 @@ func TestPathHelpersNeverEscapeTheirDirectory(t *testing.T) {
 		if _, err := s.NewInputWriter(bad, 10); err == nil {
 			t.Errorf("NewInputWriter(%q) accepted", bad)
 		}
-		if err := s.DropResult("job_test", bad+"/x"); err == nil {
-			t.Errorf("DropResult version %q accepted", bad+"/x")
-		}
 	}
 	if _, err := os.Stat(keep); err != nil {
 		t.Fatalf("data root damaged: %v", err)

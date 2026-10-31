@@ -36,7 +36,7 @@ ACKed**:
 ## 2. Metric surface
 
 All series come from `/internal/metrics` on the **internal** listener (internal token
-required). Labels are deliberately low-cardinality: no owner, job id or file name ever
+required; the worker token is refused with `403`). Labels are deliberately low-cardinality: no owner, job id or file name ever
 appears.
 
 | Metric | Type | Labels | Meaning |
@@ -52,7 +52,7 @@ appears.
 | `parsedock_workers_online` | gauge | `device` | workers with a heartbeat in 3 min |
 | `parsedock_leases_expired_total` | counter | – | attempts lost to lease expiry |
 | `parsedock_cleanup_passes_total` | counter | `outcome`=`ok|error` | cleanup passes |
-| `parsedock_throttled_total` | counter | `reason`=`rate_limited|quota_exceeded|insufficient_storage` | refusals (RC-5) |
+| `parsedock_throttled_total` | counter | `reason`=`rate_limited|quota_exceeded|insufficient_storage` | refusals (RC-5); `rate_limited` also counts the per-address refusals after repeated failed authentication, so a spike with no matching owner traffic is usually a credential-guessing client |
 | `parsedock_disk_free_bytes` | gauge | – | free bytes on the data volume |
 
 API replicas are stateless and have no scrape endpoint. They batch their refusals and post

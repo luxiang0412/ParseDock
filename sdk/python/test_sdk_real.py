@@ -35,7 +35,7 @@ ENGINES = ROOT / "runtime" / "engines"
 XBERG = ENGINES / "xberg-cli" / "xberg"
 PDF = ROOT / "benchmark" / "fixtures" / "generated" / "pdf_text_en_3p.pdf"
 SCAN = ROOT / "benchmark" / "fixtures" / "ocr" / "zh_dense.pdf"
-TOKEN = "sdk-real-token"
+TOKEN = "sdk-real-token-01"
 PORT, INT_PORT = 18188, 18189
 
 failures: list[str] = []

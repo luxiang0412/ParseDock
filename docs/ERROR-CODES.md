@@ -64,7 +64,7 @@ is a breaking API change.
 | `unauthorized` | 401 | no | Missing or invalid API key (public) or internal token (internal API) | API gateway, coordinator internal auth |
 | `insufficient_scope` | 403 | no | The API key is valid but lacks the scope the route needs (e.g. `jobs:ack`) | API gateway (`internal/api/server.go`) |
 | `rate_limited` | 429 (with `Retry-After`) | yes, after `Retry-After` | Per-owner request rate exceeded | API gateway rate limiter |
-| `coordinator_unavailable` | 502 | yes | The API replica cannot reach the coordinator; the replica itself stays healthy. `api/openapi.yaml` documents this response as `503`, the gateway currently sends `502` | API gateway reverse proxy (`internal/api/server.go`) |
+| `coordinator_unavailable` | 503 | yes | The API replica cannot reach the coordinator; the replica itself stays healthy | API gateway reverse proxy (`internal/api/server.go`) |
 
 Codes not in this table are not part of the contract. A client that receives an
 unknown code should treat it like `internal_error` (the generated SDKs are built with

@@ -7,11 +7,16 @@
 #
 # Boundaries enforced here:
 #   * only /v1 (plus /healthz,/readyz) is proxied — /internal/* returns 404;
-#   * the Authorization header is always replaced, so a client cannot choose its own key;
+#   * the Authorization header is always replaced and X-Api-Key always cleared, so a client
+#     cannot choose its own key (the gateway also accepts X-Api-Key when no bearer is sent);
 #   * state-changing requests must carry X-Parsedock-Playground: 1, which a cross-site form
 #     cannot set (CSRF defence on top of SameSite-free bearer auth);
 #   * SSE works because buffering is off and the read timeout exceeds a 10-minute stream;
 #   * a CSP keeps document-rendered Markdown/Office previews from loading remote resources.
+#
+# nginx add_header inheritance: a location with ANY add_header of its own drops every
+# server-level add_header (CSP, X-Frame-Options, nosniff, Referrer-Policy...). So no
+# location below sets add_header; keep it that way, or repeat the full set there.
 
 server {
     listen       ${NGINX_PORT};
@@ -57,6 +62,8 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Authorization "Bearer ${PARSEDOCK_PROXY_TOKEN}";
+        proxy_set_header X-Api-Key "";
+        proxy_set_header X-Debug-Owner "";
         proxy_set_header Cookie "";
         proxy_set_header X-Parsedock-Playground "";
         # Uploads stream through; results stream back without buffering.
@@ -67,17 +74,20 @@ server {
         proxy_send_timeout 600s;
     }
 
+    # Probes are unauthenticated on the gateway: never forward a credential to them.
     location = /healthz {
         proxy_pass ${PARSEDOCK_API_UPSTREAM};
         proxy_set_header Host $host;
-        proxy_set_header Authorization "Bearer ${PARSEDOCK_PROXY_TOKEN}";
+        proxy_set_header Authorization "";
+        proxy_set_header X-Api-Key "";
         access_log off;
     }
 
     location = /readyz {
         proxy_pass ${PARSEDOCK_API_UPSTREAM};
         proxy_set_header Host $host;
-        proxy_set_header Authorization "Bearer ${PARSEDOCK_PROXY_TOKEN}";
+        proxy_set_header Authorization "";
+        proxy_set_header X-Api-Key "";
         access_log off;
     }
 
@@ -86,9 +96,9 @@ server {
         try_files $uri $uri/ =404;
     }
 
-    location = /index.html {
-        add_header Cache-Control "no-store" always;
-    }
+    # The shell (index.html) is served by `location /` and inherits the server-level
+    # `Cache-Control: no-store` with the security headers. A dedicated
+    # `location = /index.html { add_header Cache-Control ... }` used to drop them all.
 
     # nginx's mime.types has no entry for .mjs/.wasm, so they would be served as
     # application/octet-stream and browsers refuse to load them as modules (pdf.js worker).

@@ -31,6 +31,10 @@ USER 10001:10001
 ENV PARSEDOCK_DATA_DIR=/data \
     PARSEDOCK_WORK_DIR=/work \
     PARSEDOCK_LOG_LEVEL=info
+# 8080 is the public API. 8081 is the coordinator's INTERNAL listener (/v1 for the
+# gateway, /internal/* for workers and operators): documented for tooling, but it must
+# never be published to a public interface — keep it on a private network, behind the
+# internal/worker tokens and, across hosts, mutual TLS (docs/DEPLOYMENT.md §6c).
 EXPOSE 8080 8081
 ENTRYPOINT ["/usr/local/bin/docparse"]
 CMD ["--role", "standalone", "--listen", "0.0.0.0:8080", "--internal-listen", "0.0.0.0:8081"]

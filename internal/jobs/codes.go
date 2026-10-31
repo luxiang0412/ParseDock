@@ -26,6 +26,9 @@ var knownErrorCodes = map[string]bool{
 	ErrConflict:          true,
 	ErrUnauthorized:      true,
 	ErrRateLimited:       true,
+	// Produced only by the API gateway; listed so the set mirrors job.go exactly.
+	ErrInsufficientScope:      true,
+	ErrCoordinatorUnavailable: true,
 }
 
 // IsKnownErrorCode reports whether code is one of the stable error codes. Codes that arrive
