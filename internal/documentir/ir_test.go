@@ -141,7 +141,7 @@ func TestLimitsRejectGiganticTable(t *testing.T) {
 		t.Fatal("a 20-billion-cell table was accepted")
 	}
 	// Rendering the same table must not allocate the grid.
-	if g := tableGrid(&d.Tables[0]); g != nil {
+	if g := tableGrid(&d.Tables[0], textCell); g != nil {
 		t.Fatalf("renderer allocated a %d-row grid", len(g))
 	}
 	// A realistic document passes.

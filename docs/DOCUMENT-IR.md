@@ -27,7 +27,12 @@ left alone (prose is more likely than a broken table).
   into the contract.
 * Downstream (Chat citations, RAG metadata, audit trails) needs `page`/`bbox`/`sheet` provenance.
 
-Therefore ParseDock stores a structured IR and renders three views:
+Therefore ParseDock stores a structured IR and renders three views. The Markdown view is
+CommonMark + GFM: headings, numbered and bulleted lists (numbers and nesting kept), `>`
+quotes, fenced code with its language, pipe tables (HTML tables when cells are merged) and
+inline formatting from `rich_text`; plain text is escaped only where Markdown would
+otherwise reinterpret it (a literal `*`, a line starting with `1.` or `#`). Page furniture
+is skipped in Markdown and text and kept in JSON.
 
 | View | Endpoint | Content-Type | Use |
 | --- | --- | --- | --- |
@@ -142,8 +147,8 @@ origins. If an engine gives no geometry, `bbox` is absent — never zero-filled.
 ```
 
 Merged cells appear **once, at their anchor** with `row_span`/`col_span`. A pipe table cannot
-express a span, so the Markdown view renders a table that has any `row_span`/`col_span > 1`
-as an HTML `<table>` with `rowspan`/`colspan` (cell text HTML-escaped, the first
+express a span (or more than one header row), so the Markdown view renders a table that has
+any `row_span`/`col_span > 1` or `header_rows > 1` as an HTML `<table>` with `rowspan`/`colspan` (cell text HTML-escaped, the first
 `header_rows` rows as `<th>`); every other table is a GFM pipe table whose cell line breaks
 become `<br>` and whose `|` is escaped. `formula`/`cached_value` are only present when the
 engine exposes them (XLSX via structured engines).

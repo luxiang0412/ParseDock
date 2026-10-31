@@ -81,6 +81,17 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 * When `--heartbeat` is left at its default and `--worker-lease` is not longer than it, the
   heartbeat defaults to a third of the lease instead of letting every lease expire.
 
+### Changed
+
+* **Markdown view fidelity.** Numbered lists keep their numbers (`list_marker`, or
+  numbered per run), nested items are indented to their parent's content column, quotes
+  render as `>`, code fences carry their language, pipe-table cells keep line breaks as
+  `<br>` and escape `|`, and tables with merged cells or several header rows render as an
+  HTML `<table>` with `rowspan`/`colspan` (text HTML-escaped). Plain text is escaped where
+  CommonMark would reinterpret it. Page furniture (`header`/`footer` elements and
+  `content_layer=furniture`) no longer appears in the Markdown **or text** body; it stays
+  in JSON.
+
 ### Added
 
 * **Document IR `rich_text`** (additive, still `doc-ir/0.1`): elements and table cells may
