@@ -109,7 +109,8 @@ Java clients, and measured SLOs.
   configuration; documents with 500+ MiB expanded XLSX sheets fail with
   `expanded_too_large`; encrypted documents fail with `encrypted_file` (password
   support is a product decision).
-* Python and Java clients are **not published** to PyPI/Maven Central yet; install
-  from the repository (see `docs/SDK.md`).
+* Java client: the 0.1.0 bundle is validated in the Central Portal and needs the
+  one-click **Publish** before `com.luxiangs:parsedock-client` resolves from Maven
+  Central; the Python package is live on PyPI (`pip install parsedock`).
 * No multi-host failover: a coordinator restart recovers, but there is no automatic
   promotion.

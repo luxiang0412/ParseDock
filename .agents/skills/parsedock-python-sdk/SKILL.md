@@ -10,11 +10,11 @@ Two things live in one package:
 * `parsedock_sdk` — hand-written lifecycle wrapper, **stdlib only** (`ParseDockClient`).
 * `parsedock` — CLI (`parsedock parse FILE`).
 
-Install from a checkout (not on PyPI yet):
+Install from PyPI:
 
 ```bash
-pip install -e sdk/python      # or: pip install parsedock  once published
-parsedock --version            # JSON: {"version": "...", "api": "..."}
+pip install parsedock==0.1.0      # or: pip install -e sdk/python (repo checkout)
+parsedock --version               # JSON: {"version": "...", "api": "..."}
 ```
 
 ## The five-step lifecycle
