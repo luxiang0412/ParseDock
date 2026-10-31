@@ -104,6 +104,14 @@ def snapshot() -> dict:
     return snap
 
 
+#: Engines whose measured time is dominated by per-invocation model loading. On a shared
+#: 2-vCPU CI runner their p50 moves by 30–80 % between identical runs (observed: docling-rs
+#: 679 ms -> 899 ms -> 1453 ms on the same fixture), so an absolute latency comparison there is
+#: noise, not signal. Their quality/structure/CER stay gated; latency is reported by the
+#: benchmark, and a regression on a controlled host can still be reviewed against the baseline.
+LATENCY_EXEMPT_ENGINES = {"docling-rs", "docling-serve", "mineru"}
+
+
 def rel_drop(base: float, cur: float) -> float:
     """Positive number = how much cur is worse than base, relative to base."""
     if base <= 0:
@@ -174,6 +182,7 @@ def main() -> int:
                                 f"{args.max_quality_drop * 100:.0f} %)")
 
     for eng, files in base.get("samples", {}).items():
+        latency_exempt = eng in LATENCY_EXEMPT_ENGINES
         for f, b in files.items():
             c = cur.get("samples", {}).get(eng, {}).get(f)
             if not c:
@@ -197,6 +206,8 @@ def main() -> int:
                 if d > 0.02:
                     failures.append(f"{eng}/{f}: CER {b['cer']:.4f} → {c['cer']:.4f} (+{d:.4f} points)")
             for key in ("p50_ms", "p95_ms"):
+                if latency_exempt:
+                    continue
                 if key in b and key in c:
                     if b[key] <= 0:
                         # A sub-millisecond baseline rounds to 0; a relative comparison is
