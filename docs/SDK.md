@@ -171,6 +171,19 @@ Known gaps: no PyPI/Maven publication, no `schemathesis` property-based fuzzing,
 no async client, and the Java client is generated (its integration test lives in
 `sdk/java-client-test` so regeneration cannot delete it).
 
+## Publishing status (v0.1.0)
+
+Both clients are installable from this repository and are **not yet published**.
+
+| Registry | Name | State | What publishing needs |
+| --- | --- | --- | --- |
+| PyPI | `parsedock` | name is **free** | an account/API token, `python -m build` + `twine upload` (or Trusted Publishing via OIDC), and a decision on whether the generated `parsedock_client` is published too or stays repo-only |
+| Maven Central | `dev.parsedock:parsedock-client` | not published | **namespace ownership**: `dev.parsedock` requires a DNS TXT record for `parsedock.dev`; the friction-free alternative is `io.github.luxiang0412` (verified through the GitHub account). Then: sources jar, javadoc jar, GPG-signed artifacts, and the full POM metadata (name, description, url, licences, developers, scm) |
+
+The Java client's POM currently carries only groupId/artifactId/version; adding the
+Central-required metadata and the two extra jars is a small change that should be
+made when publishing is actually approved.
+
 ## Not delivered (honest gap)
 
 * **Published artefacts.** Nothing is pushed to PyPI or Maven Central yet; the release
