@@ -44,6 +44,18 @@
   "sha256_png": "3241eca009c2cfb62e08c217e4fc5c099f4a0bab8186bbb2e01dba59f7b04f5b"
  },
  {
+  "fixture": "zh_rot90",
+  "pages": 1,
+  "lines": 30,
+  "chars": 561,
+  "dpi": 300,
+  "png_bytes": 331699,
+  "pdf_bytes": 0,
+  "sha256": "7ecccbe49175de2893450d310ab9690ef8e1109c75266587312f13477885e66e",
+  "sha256_png": "7ecccbe49175de2893450d310ab9690ef8e1109c75266587312f13477885e66e",
+  "rotated_deg": 90
+ },
+ {
   "fixture": "zh_table",
   "pages": 2,
   "lines": 5,

@@ -124,6 +124,13 @@ type xbergOutput struct {
 		Pages   []struct {
 			PageNumber int    `json:"page_number"`
 			Content    string `json:"content"`
+			// Reported for tesseract; null score / 0 words for paddle-ocr, which
+			// is "unknown", not "low".
+			OCRConfidence struct {
+				Score     *float64 `json:"score"`
+				WordCount int      `json:"word_count"`
+				Backend   string   `json:"backend"`
+			} `json:"ocr_confidence"`
 		} `json:"pages"`
 		Tables []struct {
 			Cells       [][]string `json:"cells"`
@@ -142,8 +149,10 @@ type xbergOutput struct {
 				PageCount int  `json:"page_count"`
 				Encrypted bool `json:"is_encrypted"`
 			} `json:"format"`
-			OCRUsed          bool   `json:"ocr_used"`
-			ExtractionMethod string `json:"extraction_method"`
+			OCRUsed           bool    `json:"ocr_used"`
+			ExtractionMethod  string  `json:"extraction_method"`
+			ScannedConfidence float64 `json:"scanned_confidence"`
+			ScannedPages      []int   `json:"scanned_pages"`
 		} `json:"metadata"`
 		Counts struct {
 			Pages  int `json:"pages"`
@@ -256,10 +265,7 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	}
 
 	method := firstNonEmptyStr(out.Result.ExtractionMethod, out.Result.Metadata.ExtractionMethod)
-	if out.Result.Metadata.OCRUsed || method == "ocr" {
-		doc.AddWarning(documentir.WarnOCRLowConfidence,
-			"OCR was used; text accuracy is lower than the native text layer", "info")
-	}
+	ocrUsed := out.Result.Metadata.OCRUsed || method == "ocr"
 	if out.Result.QualityScore > 0 && out.Result.QualityScore < 0.8 {
 		doc.AddWarning(documentir.WarnDegraded,
 			fmt.Sprintf("engine quality score %.2f is below 0.80", out.Result.QualityScore), "warn")
@@ -281,6 +287,8 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	default:
 		return nil, Errf(false, jobs.ErrMalformed, "engine produced no content")
 	}
+
+	x.applyOCRQuality(doc, &out, ocrUsed, req.Format)
 
 	doc.PageCount = out.Result.Metadata.Format.PageCount
 	if doc.PageCount == 0 {

@@ -246,6 +246,30 @@ def main() -> None:
         manifest.append(write_fixture(out, f"{lang}_dense", pages, args.dpi))
         manifest.append(write_fixture(out, f"{lang}_line", [[base[0], base[3]]], args.dpi))
 
+    # A rotated page: the one degradation where tesseract's page confidence does
+    # move (0.26-0.31) and where the accurate engine recovers the text exactly,
+    # which is what the PR-B escalation trigger is calibrated on.
+    base = Image.open(out / "zh_dense.png").convert("RGB")
+    rotated = base.rotate(90, expand=True)
+    rotated.save(out / "zh_rot90.png", format="PNG", optimize=True)
+    # Same page, rotated: the gold is the unrotated page-1 text.
+    (out / "zh_rot90.gold.txt").write_text(
+        (out / "zh_dense.p1.gold.txt").read_text(encoding="utf-8"), encoding="utf-8")
+    (out / "zh_rot90.p1.gold.txt").write_text(
+        (out / "zh_dense.p1.gold.txt").read_text(encoding="utf-8"), encoding="utf-8")
+    manifest.append({
+        "fixture": "zh_rot90",
+        "pages": 1,
+        "lines": 30,
+        "chars": (out / "zh_dense.p1.gold.txt").read_text(encoding="utf-8").__len__(),
+        "dpi": args.dpi,
+        "png_bytes": (out / "zh_rot90.png").stat().st_size,
+        "pdf_bytes": 0,
+        "sha256": hashlib.sha256((out / "zh_rot90.png").read_bytes()).hexdigest(),
+        "sha256_png": hashlib.sha256((out / "zh_rot90.png").read_bytes()).hexdigest(),
+        "rotated_deg": 90,
+    })
+
     # A page with an actual ruled table: the only way to see whether xberg's
     # table bounding boxes are in PDF points or in raster pixels.
     table_pages = [TABLE_ROWS, TABLE_ROWS]

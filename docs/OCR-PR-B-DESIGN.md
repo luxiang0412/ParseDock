@@ -1,14 +1,14 @@
 # PR-B design — OCR escalation, revised
 
-> Status: **design + evidence only**. No production behaviour changed in this
-> round; PR-A (`--xberg-ocr-backend`) is the only code that shipped.
+> Status: **implemented in PR-B** (`feat/ocr-pr-b-escalation`). This document is
+> the revised design; the measured results are in `docs/OCR-PR-B-REPORT.md`.
 >
-> Evidence: `tests/integration/ocr_backend.py` (real processes, real engines),
-> `docs/OCR-BACKEND-RESEARCH.md` §6, `docs/OCR-GPU-BENCHMARK.md` §2.2.
+> Inputs: `docs/OCR-BACKEND-RESEARCH.md`, `internal/engines/{xberg,escalate}.go`,
+> `internal/worker/worker.go`, `tests/integration/ocr_backend.py`.
 
-## 1. What the code does today
+## 1. What was wrong
 
-`internal/engines/xberg.go` (any OCR run):
+`internal/engines/xberg.go` emitted `ocr_low_confidence` for **every** OCR run:
 
 ```go
 if out.Result.Metadata.OCRUsed || method == "ocr" {
@@ -17,176 +17,162 @@ if out.Result.Metadata.OCRUsed || method == "ocr" {
 }
 ```
 
-`internal/engines/escalate.go`:
+`ShouldEscalateToAccurate` consumed that code as evidence of poor quality and
+added `WarnNoTextLayer` as a second trigger. Measured consequences (real
+standalone process, real engines):
 
-```go
-if doc == nil || !hasOCRWarning(doc) { return false }   // WarnOCRLowConfidence | WarnNoTextLayer
-return CJKRatio(doc) >= 0.15
-```
-
-`internal/coordinator/service.go` runs the accurate engine once when
-`mode=auto && ShouldEscalateToAccurate(...)`.
-
-So the warning code means "OCR was used", not "confidence was low", and the
-escalation trigger consumes it as if it meant the latter. Three consequences, all
-measured end to end (§3).
-
-## 2. The three concepts are currently collapsed into one warning
-
-| Concept | What it should mean | What exists today |
-| --- | --- | --- |
-| `ocr_used` | OCR ran on at least one page. **Never** a quality signal. | no distinct code; `WarnOCRLowConfidence` is emitted with severity `info` as a stand-in |
-| `ocr_low_confidence` | the engine **measured** a confidence below a threshold | emitted unconditionally, including for a CER-0.000 paddle-ocr result |
-| `ocr_quality_unknown` | OCR ran but the backend reports **no** confidence | defined in `documentir` and never emitted by any adapter |
-
-Severity cannot carry the distinction either: the note is emitted at severity
-`info`, and nothing downstream reads severity, only the code.
-
-## 3. Evidence
-
-`tests/integration/ocr_backend.py`, 2026-10-31, real standalone process:
-
-| Case | Engine finally used | Text CER | CJK ratio | Warnings in the IR |
+| Scenario | Engine | Text CER | CJK | Warnings |
 | --- | --- | --- | --- | --- |
-| default (`tesseract eng`), `fast`, English scan | xberg | 0.000 | 0.00 | `['ocr_low_confidence']` |
-| default, `auto`, Chinese scan | **xberg (no escalation)** | **0.453** | **0.00** | `['ocr_low_confidence','degraded_conversion']` |
-| `paddle-ocr ch`, `fast`, Chinese scan | xberg | **0.000** | 0.61 | `['ocr_low_confidence']` |
-| `paddle-ocr ch`, `auto`, Chinese scan | **docling-rs (escalated)** | 0.002 | – | `[]` |
+| default `eng`, `fast`, English scan | xberg | 0.000 | 0.00 | `ocr_low_confidence` |
+| default, `auto`, Chinese scan (`eng`!) | xberg, **no escalation** | 0.453 | 0.00 | `ocr_low_confidence`, `degraded_conversion` |
+| `paddle-ocr ch`, `fast`, Chinese scan | xberg | **0.000** | 0.61 | `ocr_low_confidence` |
+| `paddle-ocr ch`, `auto`, Chinese scan | **docling-rs, escalated** | 0.002 | – | – |
 
-Four facts follow.
+So the trigger fired on a perfect result, and stayed silent on the worst one.
+The label also lied to every consumer of the IR, not just the scheduler.
 
-1. **A perfect result is labelled "low confidence"** (row 3). The warning is
-   semantically wrong, and any consumer — including the escalation trigger, a
-   dashboard, or a reviewer — is misled by it.
-2. **A perfect result is re-parsed** (row 4). PP-OCRv6 at CER 0.000 triggers a
-   full docling-rs run (~1.65 s and 1.4 GiB in the benchmark) and returns CER
-   0.002 — *worse* than what it replaced, for double the cost.
-3. **The case that most needs escalation does not get it** (row 2). A Chinese
-   scan read with `eng` yields Latin garbage: 345 substitutions, 84 insertions,
-   `CJKRatio = 0.00`, no escalation. This is G5 in the routing proposal, now
-   confirmed end to end.
-4. **`ocr_quality_unknown` alone cannot fix row 2.** It fires when a backend
-   reports no confidence — which is exactly the paddle-ocr case (row 3/4), the
-   one that should *not* escalate. Emitting it and escalating on it would simply
-   move the redundant re-parse from tesseract to paddle-ocr.
+## 2. Three distinct semantics
 
-### 3.1 Why "no confidence" must not mean "bad"
-
-The whole point of PP-OCRv6 in this stack is that it returns `score = null`
-(`ocr_confidence.word_count = 0`). If unknown ⇒ escalate, then every Chinese
-scan in every `auto` job is parsed twice, forever. That is the opposite of the
-intent.
-
-### 3.2 What can actually detect row 2
-
-Nothing in-band, from a single pass, with certainty:
-
-* the extracted text is plausible Latin — decided *by the wrong model*;
-* `quality_score` stays 1.00 (verified: the wrong-language run scored 1.00);
-* `scanned_confidence` only says "this is a scan", which is true either way.
-
-The honest options are (a) configure the OCR language to match the corpus, or
-(b) make the backend language-agnostic — which is what `paddle-ocr` is (CER 0.000
-on both fixtures with `ch`). Detection is a *second* pass in another language,
-which is exactly what `accurate` escalation gives you, so:
-
-**PR-B triggers escalation on structural evidence, not on `CJKRatio` of
-garbage text, and PR-A's `paddle-ocr` opt-in is the real fix for the language
-trap.** The detection gap is stated, not papered over.
-
-## 4. Revised design
-
-### 4.1 New warning taxonomy (`internal/documentir`)
-
-| Code | Severity | Emitted when | Consumed by escalation? |
+| Code | Severity | Means | Can trigger escalation? |
 | --- | --- | --- | --- |
-| `ocr_used` (new constant, existing string `"ocr_used"`) | `info` | the engine reports `ocr_used`/`extraction_method=ocr` for ≥1 page | **no** |
-| `ocr_quality_unknown` | `info` | OCR ran and the backend reported no usable confidence (`score == null`, `word_count == 0`) | only together with §4.2(c) |
-| `ocr_low_confidence` | `warn` | OCR ran **and** `score != null && score < 0.60` | yes |
-| `ocr_not_run` | `info` | unchanged (already defined) | no |
+| `ocr_used` (**new**) | info | the engine reports that OCR ran on ≥1 page | **no** |
+| `ocr_quality_unknown` | info | OCR ran and the backend reported **no** confidence for any page (`score == null`) | **no** |
+| `ocr_low_confidence` | warn | OCR ran **and** a page reported a score, and the minimum score is **< 0.60** | yes, with §3.2 |
+| `no_text_layer` | warn | extraction produced **< 20 runes** on a PDF/image | yes |
 
-Threshold 0.60: tesseract's page score on the clean Chinese fixture is 0.85 and
-on the English one 0.85; 0.60 leaves room for a real-world dip without firing on
-a good scan. The constant lives in `internal/engines` next to `CJKRatio`.
+`ocr_low_confidence` now carries the measured number in its message, e.g.
+`OCR confidence 0.26 on page 1 (threshold 0.60)`. No adapter may invent a score;
+paddle-ocr keeps returning `null` and is described as *unknown*, not *low*.
 
-**No backend may ever be forced to invent a score.** paddle-ocr keeps returning
-`null`; we just stop calling that "low".
+Severity matters: `info` never implies a defect. Downstream code that used
+`ocr_low_confidence` as "OCR happened" must switch to `ocr_used`
+(`docs/DOCUMENT-IR.md` updated).
 
-### 4.2 Escalation rule
+## 3. The escalation rule
 
-```go
-func ShouldEscalateToAccurate(mode, format string, doc *documentir.Document) bool
+### 3.1 Gates (unchanged)
+
+`mode` must be `auto` (never `fast`, never `accurate`), `format` must be
+`pdf|png|jpeg|webp`, `--escalate-scans` must be on, and the accurate engine must
+differ from the engine that produced the result. At most **one** escalation per
+attempt — there is no loop.
+
+`no_text_layer` is **not** "this is a scan": it is "extraction produced almost
+nothing". A scan whose OCR succeeded does not carry it, so ordinary scans are not
+re-parsed (requirement checked in §3.2).
+
+### 3.2 Triggers
+
+* **A — measured low confidence.** `ocr_low_confidence` (minimum page score
+  below `0.60`), any script.
+* **B — nothing was extracted.** `no_text_layer` (fewer than 20 runes on a
+  PDF/image). Script-independent: a page with a stamp and no text has no language.
+
+The first draft of this design gated trigger A on `CJKRatio >= 0.15`, on the
+theory that docling-rs is only measurably better for CJK. Measurement rejected
+that gate: a 90°-rotated Chinese page comes back as *Latin-looking garbage*
+(CJK ratio 0.00) with a low score, and a rotated English page comes back empty
+with no score at all — docling-rs recovers both exactly (CER 0.984/1.000 →
+0.000). The gate would have created a blind spot in exchange for an unmeasured
+saving, so the script ratio is now recorded in the routing reason for
+auditability but no longer gates anything.
+
+Explicitly **not** triggers: `ocr_used`, `ocr_quality_unknown`, `degraded_conversion`
+(fires on `quality_score < 0.8`, which the wrong-language run also passes at 1.00),
+and CJK ratio alone.
+
+### 3.3 Accepting the retry — evidence, not size
+
+The old rule was `res.TextLength() >= doc.TextLength()`, i.e. "more characters ⇒
+better". That is a heuristic with no measurement behind it and it is removed. The
+retry is now evaluated on each engine's **own quality evidence**:
+
+| Condition | Decision |
+| --- | --- |
+| engine returned error / timeout / cancellation / lease loss | keep fast, record `rejected:error` |
+| accurate result is empty (< 1 rune) | keep fast, record `rejected:empty` |
+| accurate result carries `ocr_low_confidence` while the fast one did not | keep fast, record `rejected:alt_low_confidence(<score>)` |
+| otherwise | accept, record `accepted` |
+
+No claim of better accuracy is made anywhere: the IR records **what happened**
+(trigger, score, engines, attempts, timings, decision), not a quality verdict.
+
+### 3.4 Bookkeeping (requirement 7)
+
+`routing.reason` becomes, e.g.:
+
+```
+ocr_quality_escalation: xberg -> docling-rs (trigger=low_confidence:0.26, attempts=2, decision=accepted, fast_ms=430, accurate_ms=1650)
+ocr_quality_escalation: xberg -> docling-rs (trigger=no_text_layer, attempts=2, decision=rejected:alt_low_confidence(0.41), fast_ms=430, accurate_ms=900)
 ```
 
-escalates when **OCR ran** and any of:
+`metrics.parse_ms` is the sum of both engines (already the case, now asserted by a
+test). `routing.fallback=true` marks the substitution. No new IR field, no schema
+version change: everything fits in the existing `reason` string and `metrics`.
 
-* **(a)** `ocr_low_confidence` — a measured score below 0.60, and
-  `CJKRatio >= 0.15` (language where docling-rs measurably wins) *or* the score is
-  below 0.40 regardless of script (a 40 %-confident page is worth one retry in
-  any language);
-* **(b)** `no_text_layer` on an image-only page (today's behaviour, kept);
-* **(c)** `ocr_quality_unknown` **and** the result is structurally thin — fewer
-  than `40` characters per OCR'd page. This catches the empty/garbage scan
-  (nothing to say after OCR) without touching a good PP-OCRv6 result;
-* **(d)** `mode=accurate` never escalates (it is already the accurate engine) and
-  `mode=fast` never escalates (a `fast` request must stay fast) — unchanged.
+## 4. Threshold: 0.60, calibrated
 
-Explicitly **not** a trigger: `ocr_used` on its own, `ocr_quality_unknown` on its
-own, `CJKRatio` on its own, and any `degraded_conversion` warning (that fires on
-`quality_score < 0.8`, which the wrong-language run also passes at 1.00 — see
-§3.2 — so it is not evidence of OCR trouble).
+Measured with tesseract `chi_sim` on the dense Chinese fixture and three degraded
+variants of the same page (score = xberg's page `ocr_confidence.score`, CER =
+page-1 gold):
 
-### 4.3 The duplicated-parse guard
+| Variant (tesseract `chi_sim`, JSON path) | Score | CER | docling-rs CER | Escalate at 0.60? |
+| --- | --- | --- | --- | --- |
+| clean page | 0.84 | 0.09 | – | no |
+| Gaussian blur | 0.87 | 0.06 | – | no (correct: result is fine) |
+| salt/pepper noise | 0.85 | 0.08 | – | no (correct) |
+| 6× downscale | 0.66 | 0.17 | **0.25** | no — and escalating would be *worse* |
+| rotated 90° | **0.26** | 0.98 | **0.00** | **yes** (the retry fixes it completely) |
+| rotated 180° | **0.31** | 0.93 | – | **yes** |
+| English clean (`eng`) | 0.95 | 0.00 | – | no |
+| English rotated 90° | **none** (no words) | 1.00 | **0.00** | **yes**, via trigger B |
+| Chinese page read with `eng` (dense) | **0.51** | 0.45 | 0.002 | **yes** |
+| Chinese page read with `eng` (sparse) | **0.38** | – | – | **yes** |
+| English page read with `chi_sim` | **0.87** | 0.03 | – | **no** ← residual gap |
 
-Even with a correct trigger, `auto` must not pay twice for the same bytes:
+The pipeline itself confirmed the useful rows end to end: default (`eng`)
+`auto` on a Chinese scan now escalates and lands at CER 0.002 (previously it
+returned 0.453 untried), and a rotated page escalates once and lands at 0.000.
 
-* the escalation gets a `routing.reason` prefix `ocr_quality_escalation:` (already
-  the case) and one escalation maximum (already the case);
-* **new**: if the accurate engine's result is *worse* than the fast one, keep the
-  original. Compare with the same predicates we can afford: (i) both produced
-  text and the accurate result has fewer OCR warnings, or (ii) the accurate
-  result has ≥90 % of the fast result's characters. Otherwise keep fast and
-  record `escalation_rejected` in `routing.reason`. This is the guard that would
-  have prevented row 4 from replacing CER 0.000 with CER 0.002.
+Reading it:
 
-### 4.4 What is *not* in PR-B
+* 0.60 separates "text was recognised" (≥ 0.66) from "the page was garbled"
+  (≤ 0.31) on the only degradation types where the score moves at all.
+* the gap between 0.60 and 0.66 is deliberate: the 6× downscale case is a
+  *moderate* failure where the retry is measurably **worse**, so the threshold
+  must not reach it.
+* **Known blind spots, stated not hidden**: (a) the score is insensitive to blur
+  and noise (0.87 confidence at 0.06 CER, i.e. it cannot certify quality, only
+  flag collapse); (b) **wrong-language OCR is only partly detectable** — a
+  Chinese page read with `eng` loses confidence (0.38–0.51) and is now retried,
+  but the reverse direction (English page read with `chi_sim`) stays at 0.87
+  confidence and 3 % CER, so nothing fires; (c) **paddle-ocr reports no score at
+  all**, so a garbled paddle result (measured: rotated page, CER 0.86) produces
+  no trigger. PR-B narrows the wrong-language gap and does **not** close it; the
+  mitigation stays configuration (`--xberg-ocr-backend paddle-ocr` reads both
+  languages at CER 0.000) or one worker per language.
 
-* No new public API field, no error-code change, no IR schema version bump (the
-  warning constants already exist; `ocr_used` is a new constant with an existing
-  vocabulary string).
-* No change to `mode=fast` or `mode=accurate` routing, ACK/TTL, or the SQLite
-  schema.
-* No confidence thresholds learned from a real corpus — 0.60/0.40 are documented
-  constants to be re-tuned when a real gold set exists.
-
-## 5. Tests for PR-B
+## 5. Tests
 
 | Test | Type | Asserts |
 | --- | --- | --- |
-| `TestXbergWarningOCRUsedNotLowConfidence` | unit | `ocr_used=true, score=null` ⇒ `ocr_used` + `ocr_quality_unknown`, **no** `ocr_low_confidence` |
-| `TestXbergWarningLowConfidenceWhenScored` | unit | `score=0.42` ⇒ `ocr_low_confidence`; `score=0.85` ⇒ not |
-| `TestEscalateOnMeasuredLowScore` | unit | score 0.40 on a CJK doc ⇒ escalate |
-| `TestEscalateLowScoreAnyScriptBelow040` | unit | score 0.30 on a Latin doc ⇒ escalate |
-| `TestNoEscalationOnQualityUnknownWithDenseText` | unit | `ocr_quality_unknown` + 1 200 chars ⇒ **no** escalation (this is today's row 4) |
-| `TestEscalationOnQualityUnknownWithThinText` | unit | `ocr_quality_unknown` + 12 chars on a scanned page ⇒ escalate |
-| `TestNoEscalationOnOCRUsedOnly` | unit | `ocr_used` alone ⇒ no escalation |
-| `TestEscalationKeepsBetterResult` | coordinator | escalation result with fewer chars / more warnings ⇒ original kept, `escalation_rejected` recorded |
-| `TestEscalationSingleShot` | coordinator | at most one escalation per job (existing behaviour preserved) |
-| `OCRB-03` (integration) | real engines | paddle-ocr `auto` on a Chinese scan ⇒ **engine stays xberg**, CER ≤ 0.02, warnings contain `ocr_used` and not `ocr_low_confidence` |
-| `OCRB-04` (integration) | real engines | default `eng` on a Chinese scan ⇒ unchanged: still no escalation (documented gap), but the warnings now describe reality |
+| `TestOCRUsedIsNotLowConfidence` | unit | `ocr_used` + `score=null` ⇒ `ocr_used` + `ocr_quality_unknown`, **no** `ocr_low_confidence` |
+| `TestLowConfidenceNeedsAScore` | unit | score 0.42 ⇒ `ocr_low_confidence` with the number; score 0.85 ⇒ not |
+| `TestNoTextLayerOnlyWhenAlmostEmpty` | unit | 12 runes ⇒ warn; 500 runes on a scan ⇒ not |
+| `TestEscalateOnMeasuredLowScoreCJK` | unit | score 0.30 + CJK ⇒ escalate |
+| `TestNoEscalationOnLowScoreLatin` | unit | score 0.30 + Latin ⇒ **no** escalation (no evidence of benefit) |
+| `TestNoEscalationOnQualityUnknownAlone` | unit | `ocr_quality_unknown` with plenty of text ⇒ no |
+| `TestNoEscalationOnOCRUsedAlone` | unit | `ocr_used` ⇒ no |
+| `TestEscalationOnNoTextLayer` | unit | `no_text_layer` on a PDF ⇒ escalate, any script |
+| `TestScannedPDFWithTextDoesNotEscalate` | unit | `ocr_used` + `ocr_quality_unknown` + 800 CJK runes ⇒ no |
+| `TestEscalationRejectsLowConfidenceRetry` | worker | accurate result warns low confidence ⇒ fast kept, `rejected:alt_low_confidence` |
+| `TestEscalationKeepsFastOnErrorTimeoutCancel` | worker | error/timeout/ctx-cancel ⇒ fast kept, no result mutation |
+| `TestEscalationRecordsTimingAndDecision` | worker | `parse_ms` = fast+accurate, attempts=2, decision text present |
+| `TestFastModeNeverEscalates` | unit | unchanged |
+| `OCRB-03/04/07/08` | integration | paddle `auto` no longer escalates; default `eng` still not escalated (documented gap); rotated page escalates once and ends up correct; escalation failure keeps the fast text |
 
-The two integration cases flip from "record the wrong behaviour" to "assert the
-right one", which is why PR-B must land before anyone recommends `auto` on a
-mixed corpus.
+## 6. Out of scope
 
-## 6. Risk and rollback
-
-| Risk | Mitigation |
-| --- | --- |
-| Fewer escalations ⇒ worse output on real CJK scans | the rule keeps every trigger that has measured evidence; the `ocr_used`-only trigger was never justified by a measurement |
-| The 0.60/0.40 thresholds are guesses | constants in one place, documented as such, re-tuned against a real gold set; a deployment can raise them via config in a follow-up if needed |
-| `escalation_rejected` surprises an operator | it is recorded in the human-readable `routing.reason`; no new API shape |
-| Dashboard/consumers keyed on `ocr_low_confidence` | the code keeps its meaning for genuinely low scores; consumers that used it as "OCR happened" must switch to `ocr_used` — noted in `docs/DOCUMENT-IR.md` |
-
-Rollback is a one-line revert of the trigger predicate; the warning split is
-additive.
+Public API, ACK/TTL, SQLite, IR schema, GPU routing and images are untouched.
+`--xberg-ocr-backend` (PR-A) is the configuration-level mitigation for the
+wrong-language gap.

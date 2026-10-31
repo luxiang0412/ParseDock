@@ -208,6 +208,9 @@ def main() -> int:
     # PDF runs cover both pages, so they are scored against the full gold.
     zh_gold = (FIX / "zh_dense.gold.txt").read_text(encoding="utf-8")
     en_gold = (FIX / "en_dense.gold.txt").read_text(encoding="utf-8")
+    # PNG uploads cover page 1 only.
+    zh_p1 = (FIX / "zh_dense.p1.gold.txt").read_text(encoding="utf-8")
+    en_p1 = (FIX / "en_dense.p1.gold.txt").read_text(encoding="utf-8")
 
     # ---- OCRB-05: unknown backend is rejected at startup
     try:
@@ -227,6 +230,17 @@ def main() -> int:
         srv.stop()
         return 1
     try:
+        # OCRB-07: a rotated page is the degradation where tesseract's measured
+        # confidence really drops (0.26), so PR-B retries it once on the accurate
+        # engine, which recovers the text.
+        st_rot = srv.parse(FIX / "zh_rot90.png", "auto")
+        rot_cer = cer(st_rot["markdown"], zh_p1)
+        reasons = st_rot.get("ir_reason", "")
+        report("OCRB-07", st_rot.get("engine") == "docling-rs" and rot_cer < 0.05
+               and "trigger=low_confidence" in reasons and "attempts=2" in reasons,
+               f"rotated page: engine={st_rot.get('engine')} cer={rot_cer:.3f} "
+               f"warnings={st_rot.get('warnings')} reason={reasons[:140]!r}")
+
         st = srv.parse(FIX / "en_dense.pdf", "fast")
         md = st["markdown"]
         reason = st.get("routing_reason", "")
@@ -237,10 +251,17 @@ def main() -> int:
         # default + auto on a Chinese scan read with eng: what does escalation do?
         st_zh = srv.parse(FIX / "zh_dense.pdf", "auto")
         md_zh = st_zh["markdown"]
-        report("OCRB-04", True,
-               f"default/auto zh: engine={st_zh.get('engine')} cjk={cjk_ratio(md_zh):.2f} "
-               f"cer={cer(md_zh, zh_gold):.3f} warnings={st_zh.get('warnings')} "
+        # Wrong-language OCR: tesseract reports a low score on this page (0.38-0.51
+        # in the benchmark), so PR-B now retries it. This is a *narrowing* of the
+        # gap, not a closure: the reverse direction (Chinese tessdata on English)
+        # stays confident and is not caught - see OCRB-09.
+        zh_cer = cer(md_zh, zh_gold)
+        report("OCRB-04", st_zh.get("engine") == "docling-rs" and zh_cer < 0.05,
+               f"default/auto zh (eng!): engine={st_zh.get('engine')} cjk={cjk_ratio(md_zh):.2f} "
+               f"cer={zh_cer:.3f} warnings={st_zh.get('warnings')} "
                f"reason={st_zh.get('routing_reason','')[:80]!r}")
+
+
     finally:
         srv.stop()
 
@@ -261,13 +282,43 @@ def main() -> int:
         st_auto = srv.parse(FIX / "zh_dense.pdf", "auto")
         md_auto = st_auto["markdown"]
         ca = cer(md_auto, zh_gold)
-        report("OCRB-03", ca < 0.02,
+        # PR-B: a good paddle-ocr result reports no confidence at all, and
+        # "unknown" must not be treated as "bad". The engine must therefore stay
+        # on the fast path and the warnings must describe reality.
+        ok = (ca < 0.02 and st_auto.get("engine") == "xberg"
+              and "ocr_used" in (st_auto.get("warnings") or [])
+              and "ocr_low_confidence" not in (st_auto.get("warnings") or []))
+        report("OCRB-03", ok,
                f"auto: engine={st_auto.get('engine')} cer={ca:.3f} "
                f"escalated={st_auto.get('engine') != 'xberg'} "
                f"warnings={st_auto.get('warnings')} "
                f"reason={st_auto.get('routing_reason','')[:100]!r}")
+
+        # OCRB-08 (observation, deliberately not an assertion of correctness):
+        # paddle-ocr reports no confidence, so a rotated page produces no trigger
+        # and stays on the fast path. Recorded as a known gap in the report.
+        st_rot2 = srv.parse(FIX / "zh_rot90.png", "auto")
+        report("OCRB-08", True,
+               f"rotated page on paddle-ocr: engine={st_rot2.get('engine')} "
+               f"cer={cer(st_rot2['markdown'], zh_p1):.3f} "
+               f"warnings={st_rot2.get('warnings')} (known gap: no score => no trigger)")
     finally:
         srv.stop()
+
+    # ---- OCRB-09: the residual gap. Chinese tessdata on an English page stays
+    # confident (0.87) and loses only ~3% CER, so no trigger fires. Needs its own
+    # worker because the OCR language is a worker (deployment) setting, not a
+    # per-request one.
+    srv = Server(["--xberg-ocr-lang", "chi_sim"], "chi_sim")
+    if srv.wait():
+        try:
+            st_rev = srv.parse(FIX / "en_dense.pdf", "auto")
+            report("OCRB-09", True,
+                   f"chi_sim on English: engine={st_rev.get('engine')} "
+                   f"cer={cer(st_rev['markdown'], en_gold):.3f} "
+                   f"warnings={st_rev.get('warnings')} (residual gap: confident, not escalated)")
+        finally:
+            srv.stop()
 
     # ---- OCRB-06: nothing was downloaded at runtime
     extra = [p for p in WORK.rglob("*") if p.is_file() and p.suffix in (".onnx", ".traineddata")]

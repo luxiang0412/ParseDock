@@ -487,23 +487,32 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	return nil
 }
 
-// maybeEscalate retries a poor OCR result once with an accurate engine. The
-// replacement is only accepted when it yields at least as much text, and the
-// fallback is recorded in the IR routing so downstream quality checks can see it.
+// maybeEscalate retries a poor OCR result once with an accurate engine.
+//
+// The retry is justified only by evidence (a measured low confidence on a CJK
+// document, or an extraction that produced almost nothing), and it is accepted
+// only when the accurate engine does not itself report a worse signal. Nothing
+// here claims the retry is "more accurate": the routing reason records the
+// trigger, the attempt count, both engines, both durations and the decision.
 func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engines.Engine,
 	doc *documentir.Document, workDir, inputPath string) (*documentir.Document, engines.Engine) {
 	if !w.Cfg.EscalateScans || doc == nil {
 		return doc, used
 	}
-	if !engines.ShouldEscalateToAccurate(task.Mode, task.Format, doc) {
+	trigger, ok := engines.EscalationTriggerFor(task.Mode, task.Format, doc)
+	if !ok {
 		return doc, used
 	}
 	alt, err := w.Reg.Pick("", task.Format, "accurate")
 	if err != nil || alt.Name() == used.Name() {
 		return doc, used
 	}
+	decision := engines.EscalationDecision{
+		Trigger: trigger, Attempts: 2, FastMs: doc.Metrics.ParseMs, AccurateName: alt.Name(),
+	}
 	w.Log.Info("escalating OCR result to accurate engine", "job", task.JobID,
-		"from", used.Name(), "to", alt.Name())
+		"from", used.Name(), "to", alt.Name(), "trigger", trigger.String())
+
 	res, perr := alt.Parse(ctx, engines.Request{
 		// Always retry from the worker's own input copy, never from an engine's
 		// scratch copy (which the first engine may have already overwritten).
@@ -512,22 +521,60 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 		Device: w.Cfg.DeviceType, WorkDir: workDir, Timeout: 0,
 		Progress: func(int, string) {},
 	})
-	if perr != nil || res == nil {
-		w.Log.Warn("escalation failed; keeping the fast result", "job", task.JobID, "err", perr)
+	if res != nil {
+		decision.AccurateMs = res.Metrics.ParseMs
+	}
+	reject := func(reason string) (*documentir.Document, engines.Engine) {
+		decision.Reason = reason
+		// The retry cost real time even when its result is discarded, so it is
+		// charged to the result that is actually published.
+		if decision.AccurateMs > 0 {
+			doc.Metrics.ParseMs += decision.AccurateMs
+		} else if res == nil && perr != nil {
+			// The engine failed before reporting metrics; nothing measurable.
+			doc.Metrics.ParseMs += 0
+		}
+		doc.Routing.Reason = strings.TrimSuffix(doc.Routing.Reason, "; ") + "; " + engines.EscalationReason(used.Name(), decision)
+		w.Log.Info("escalation rejected; keeping the fast result", "job", task.JobID,
+			"reason", reason, "fast", used.Name(), "accurate", alt.Name())
 		return doc, used
 	}
-	if res.TextLength() < doc.TextLength() {
-		w.Log.Info("escalation produced less text; keeping the fast result", "job", task.JobID)
-		return doc, used
+	switch {
+	case perr != nil:
+		// Timeout, cancellation and lease loss all land here: the fast result is
+		// already valid, so it is kept rather than failed.
+		return reject("rejected:error")
+	case res == nil:
+		return reject("rejected:empty")
+	case res.TextLength() == 0:
+		return reject("rejected:empty")
+	case hasLowConfidence(res):
+		// The retry did not clear the bar the fast result failed: it still reports
+		// a confidence below the threshold, so there is no measured evidence that
+		// swapping improves anything. Keep what we have.
+		return reject(fmt.Sprintf("rejected:alt_low_confidence(%.2f)", res.OCR.MinScore))
 	}
+
+	decision.Accepted = true
 	res.Routing.Fallback = true
-	res.Routing.Reason = engines.EscalationReason(used.Name(), alt.Name(), engines.CJKRatio(doc))
+	res.Routing.Reason = engines.EscalationReason(used.Name(), decision)
 	res.Routing.RequestedMode = task.Mode
 	res.Routing.RequestedDevice = task.Device
 	res.Routing.ActualDevice = alt.Device()
 	res.Routing.Engine = alt.Name()
+	// Both engines ran inside this attempt: the published metrics must include
+	// the time spent on the rejected-then-replaced result.
 	res.Metrics.ParseMs += doc.Metrics.ParseMs
+	w.Log.Info("escalation accepted", "job", task.JobID,
+		"trigger", trigger.String(), "fast", used.Name(), "accurate", alt.Name(),
+		"total_ms", res.Metrics.ParseMs)
 	return res, alt
+}
+
+// hasLowConfidence reports whether the engine measured a confidence below the
+// threshold. "No confidence reported" is not low confidence.
+func hasLowConfidence(doc *documentir.Document) bool {
+	return doc != nil && doc.OCR != nil && doc.OCR.Scored && doc.OCR.MinScore < engines.LowConfidenceThreshold
 }
 
 func isLegacyFormat(format string) bool {

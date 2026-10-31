@@ -44,6 +44,10 @@ type Document struct {
 	Tables        []Table   `json:"tables,omitempty"`
 	Warnings      []Warning `json:"warnings"`
 	Metrics       Metrics   `json:"metrics"`
+
+	// OCR is the engine's own OCR quality evidence, kept in memory only (see
+	// OCRQuality). Adapters that report no confidence leave it nil.
+	OCR *OCRQuality `json:"-"`
 }
 
 // Source identifies the input without leaking its bytes.
@@ -133,7 +137,14 @@ type Cell struct {
 
 // Warning codes are stable strings; the message is human-readable.
 const (
-	WarnOCRNotRun        = "ocr_not_run"
+	WarnOCRNotRun = "ocr_not_run"
+	// WarnOCRUsed says only that OCR ran. It is informational: OCR on a clean
+	// scan is the normal path, not a defect, so nothing may treat it as a
+	// quality signal.
+	WarnOCRUsed = "ocr_used"
+	// WarnOCRLowConfidence is reserved for a *measured* confidence below the
+	// engine's threshold. It must never be emitted because a backend declined to
+	// report a score - that is WarnOCRUsedUnknown.
 	WarnOCRLowConfidence = "ocr_low_confidence"
 	WarnNoTextLayer      = "no_text_layer"
 	WarnTruncated        = "truncated"
@@ -148,6 +159,17 @@ const (
 	WarnFormulaMissing   = "formula_text_unavailable"
 	WarnOCRUsedUnknown   = "ocr_quality_unknown"
 )
+
+// OCRQuality carries the OCR quality evidence an engine actually reported. It is
+// deliberately not serialised: consumers read the warnings, while the scheduler
+// needs the numbers while the document is still in memory to decide whether a
+// retry is justified. Nil means "the engine said nothing about OCR quality".
+type OCRQuality struct {
+	Used         bool    `json:"-"`
+	Scored       bool    `json:"-"` // at least one page reported a confidence
+	MinScore     float64 `json:"-"` // valid only when Scored
+	MinScorePage int     `json:"-"`
+}
 
 // Warning is a non-fatal observation about the parse.
 type Warning struct {
