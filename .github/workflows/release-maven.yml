@@ -25,6 +25,13 @@ jobs:
     name: build, sign and deploy
     runs-on: ubuntu-24.04
     timeout-minutes: 20
+    # setup-java writes ${env.MAVEN_CENTRAL_USERNAME} / ${env.MAVEN_CENTRAL_TOKEN}
+    # into settings.xml; Maven resolves those placeholders from the process
+    # environment, so the secrets have to be exported here (an environment secret
+    # is not an env var by itself — that was the 401 on the first run).
+    env:
+      MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+      MAVEN_CENTRAL_TOKEN: ${{ secrets.MAVEN_CENTRAL_TOKEN }}
     # The repository keeps its release secrets in the `pypi` environment (PyPI and
     # Maven together). Pointing both workflows at it means one approval gate and
     # no duplicated secrets; split into a dedicated `central` environment by
