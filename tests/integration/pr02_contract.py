@@ -23,9 +23,9 @@ from acceptance import (  # noqa: E402
 RAW = ROOT / "benchmark" / "results" / "raw"
 results: list[dict] = []
 
-READ_TOKEN = "read-only-token"
+READ_TOKEN = "read-only-token-01"
 WRITE_TOKEN = "write-only-token"
-ACK_TOKEN = "ack-only-token"
+ACK_TOKEN = "ack-only-token-01"
 OTHER_TOKEN = "other-owner-token"
 import hashlib
 HASHED_TOKEN = "hashed-token-abc"

@@ -48,7 +48,7 @@ BAD = ROOT / "benchmark" / "fixtures" / "invalid"
 RAW_DIR = ROOT / "benchmark" / "results" / "raw"
 SUMFILE = ROOT / "benchmark" / "results" / "summary" / "acceptance.json"
 
-API_TOKEN = "itest-api-token"
+API_TOKEN = "itest-api-token-0001"
 OWNER = "itest-owner"
 INTERNAL_TOKEN = "itest-internal"
 
