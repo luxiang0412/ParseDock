@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from acceptance import (  # noqa: E402
-    API_TOKEN, FIX, INTERNAL_TOKEN, ROOT, Stack, http_request, multipart,
+    FIX, INTERNAL_TOKEN, ROOT, Stack, http_request, multipart,
 )
 
 RAW = ROOT / "benchmark" / "results" / "raw"

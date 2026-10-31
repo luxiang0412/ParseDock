@@ -26,7 +26,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 import urllib.request
 from pathlib import Path

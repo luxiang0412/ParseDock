@@ -27,8 +27,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import re
 import shutil
 import socket
 import subprocess
@@ -210,7 +208,6 @@ def main() -> int:
     en_gold = (FIX / "en_dense.gold.txt").read_text(encoding="utf-8")
     # PNG uploads cover page 1 only.
     zh_p1 = (FIX / "zh_dense.p1.gold.txt").read_text(encoding="utf-8")
-    en_p1 = (FIX / "en_dense.p1.gold.txt").read_text(encoding="utf-8")
 
     # ---- OCRB-05: unknown backend is rejected at startup
     try:
@@ -243,7 +240,6 @@ def main() -> int:
 
         st = srv.parse(FIX / "en_dense.pdf", "fast")
         md = st["markdown"]
-        reason = st.get("routing_reason", "")
         report("OCRB-01", cer(md, en_gold) < 0.02 and "ocr_backend=" not in st.get("ir_reason", ""),
                f"engine={st.get('engine')} cer={cer(md, en_gold):.3f} "
                f"ir_reason={st.get('ir_reason','')!r} warnings={st.get('warnings')}")

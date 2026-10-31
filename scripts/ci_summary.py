@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from pathlib import Path
 
 # The aggregator cannot report on itself: these are the jobs it gates.
 REQUIRED = ("static", "unit", "contract", "lifecycle", "image", "web", "sdk")
