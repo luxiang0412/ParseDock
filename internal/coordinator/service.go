@@ -1242,37 +1242,69 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID string) (*jobs.Job,
 	if err != nil {
 		return nil, err
 	}
-	now := nowUTC()
 	switch job.ProcessingStatus {
 	case jobs.StatusQueued, jobs.StatusRunning:
-		res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'cancelled',
-			cancel_requested_at = COALESCE(cancel_requested_at, ?), completed_at = ?,
-			retention_status = 'release_pending', progress_stage = 'cancelled', updated_at = ?
-			WHERE id = ? AND processing_status IN ('queued','running')`, ts(now), ts(now), ts(now), jobID)
-		if err != nil {
-			return nil, NewError(500, jobs.ErrInternal, err.Error())
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			// Lost a race with completion: re-read and fall through to the
-			// completed branch so the caller gets the real state.
-			if latest, gerr := s.GetJob(ctx, jobID, ownerID); gerr == nil {
-				return latest, nil
-			}
-		}
-		_, _ = s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`, jobID)
-		_ = appendEvent(ctx, s.DB, jobID, "cancelled", map[string]any{"reason": "client_request"})
-		s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
-	case jobs.StatusCompleted:
-		// A finished job cannot be cancelled, and cancel must never release its
-		// result: releasing is ACK's job and only ACK carries the "I stored these
-		// bytes" claim. Two release paths made the outcome depend on a race
-		// between cancel and ACK.
-		if job.RetentionStatus == jobs.RetentionActive {
-			return nil, NewError(409, jobs.ErrConflict,
-				"job already completed: cancel has no effect; release the result with POST /v1/jobs/{id}/ack and its result_version")
-		}
+		return s.cancelActive(ctx, job)
 	}
-	return s.GetJob(ctx, jobID, ownerID)
+	return cancelSettled(job)
+}
+
+// cancelSettled answers a cancel for a job that is no longer queued/running.
+func cancelSettled(job *jobs.Job) (*jobs.Job, error) {
+	// A finished job cannot be cancelled, and cancel must never release its result:
+	// releasing is ACK's job and only ACK carries the "I stored these bytes" claim. Two
+	// release paths made the outcome depend on a race between cancel and ACK.
+	if job.ProcessingStatus == jobs.StatusCompleted && job.RetentionStatus == jobs.RetentionActive {
+		return nil, NewError(409, jobs.ErrConflict,
+			"job already completed: cancel has no effect; release the result with POST /v1/jobs/{id}/ack and its result_version")
+	}
+	// Already cancelled or failed, or a completed result already being released: idempotent.
+	return job, nil
+}
+
+// cancelActive cancels a job that an earlier (possibly stale) read saw as queued/running.
+func (s *Service) cancelActive(ctx context.Context, job *jobs.Job) (*jobs.Job, error) {
+	now := nowUTC()
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'cancelled',
+		cancel_requested_at = COALESCE(cancel_requested_at, ?), completed_at = ?,
+		retention_status = 'release_pending', progress_stage = 'cancelled', updated_at = ?
+		WHERE id = ? AND processing_status IN ('queued','running')`, ts(now), ts(now), ts(now), job.ID)
+	if err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if n == 0 {
+		// The job left queued/running after it was read (a completion or failure won the
+		// race). Answer from its real state: a completed job gets the same 409 as a cancel
+		// that arrived a moment later, and nothing is recorded as cancelled.
+		_ = tx.Rollback()
+		latest, gerr := s.GetJob(ctx, job.ID, job.OwnerID)
+		if gerr != nil {
+			return nil, gerr
+		}
+		return cancelSettled(latest)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`,
+		job.ID); err != nil {
+		// Committing without it would leave the running attempt able to heartbeat and publish.
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if err := appendEvent(ctx, tx, job.ID, "cancelled", map[string]any{"reason": "client_request"}); err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
+	s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
+	return s.GetJob(ctx, job.ID, job.OwnerID)
 }
 
 // ---------------------------------------------------------------- download leases

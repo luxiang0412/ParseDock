@@ -160,6 +160,56 @@ func TestSSEProcessingScopeSkipsRetentionEvents(t *testing.T) {
 	}
 }
 
+// Review finding 4: a cancel whose UPDATE lost the race against a completion answered 202
+// with the completed job; JOB-LIFECYCLE §4 says a completed job's cancel is a 409.
+func TestCancelLosingRaceToCompletionIsConflict(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	stale, err := s.GetJob(ctx, job.ID, "owner-1") // what Cancel read: still queued
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := claimNative(t, s)
+	completeTask(t, s, job.ID, task.LeaseToken) // the completion wins before the UPDATE
+
+	if _, err := s.cancelActive(ctx, stale); AsError(err).Status != 409 || AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("cancel after completion: want 409 conflict, got %v", err)
+	}
+	evs, err := s.Events(ctx, job.ID, 0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range evs {
+		if e.Type == "cancelled" {
+			t.Fatal("a cancel that lost the race recorded a cancelled event")
+		}
+	}
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.ProcessingStatus != jobs.StatusCompleted || got.RetentionStatus != jobs.RetentionActive {
+		t.Fatalf("job changed: %s/%s", got.ProcessingStatus, got.RetentionStatus)
+	}
+}
+
+// Review finding 4: the attempt update is part of the cancel; if it fails, nothing commits.
+func TestCancelRollsBackWhenAttemptUpdateFails(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	claimNative(t, s)
+	if _, err := s.DB.ExecContext(ctx, `CREATE TRIGGER no_attempt_cancel BEFORE UPDATE OF state ON attempts
+		WHEN NEW.state = 'cancelled' BEGIN SELECT RAISE(ABORT, 'attempts unavailable'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Cancel(ctx, job.ID, "owner-1"); AsError(err).Status != 500 {
+		t.Fatalf("want 500 when the attempt cannot be cancelled, got %v", err)
+	}
+	got, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if got.ProcessingStatus != jobs.StatusRunning {
+		t.Fatalf("job was cancelled while its attempt kept running: %s", got.ProcessingStatus)
+	}
+}
+
 // Review finding 1: the terminal event is written in the completion's transaction, so a
 // failure to record it leaves the job untouched instead of completed-without-event.
 func TestCompletionEventIsAtomicWithStatus(t *testing.T) {

@@ -143,6 +143,12 @@ copy), so the result follows the normal TTL and the caller releases it with
    cleanup;
 5. input and partial work are removed by the retention path.
 
+Steps 1–2 and the `cancelled` event are one transaction: if the attempt cannot be marked
+cancelled, nothing is (`500`, retry the cancel). A cancel that races a completion and loses —
+the job left `queued`/`running` between the read and the update — answers from the real state,
+so a just-completed job gets the same `409` as a late cancel and no `cancelled` event or audit
+line is written (`TestCancelLosingRaceToCompletionIsConflict`).
+
 Measured: cancellation is observed and the worker stopped **within one heartbeat
 interval** (T17 asserts < 12 s with a 1 s test interval; the mock engine runs 40 s
 so the job is genuinely mid-parse). Per-engine ceilings (`--xberg-timeout`,
