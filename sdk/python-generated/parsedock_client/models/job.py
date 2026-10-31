@@ -69,15 +69,15 @@ class Job(BaseModel):
     @field_validator('status')
     def status_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in set(['queued', 'running', 'completed', 'failed', 'cancelled']):
-            raise ValueError("must be one of enum values ('queued', 'running', 'completed', 'failed', 'cancelled')")
+        if value not in set(['queued', 'running', 'completed', 'failed', 'cancelled', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('queued', 'running', 'completed', 'failed', 'cancelled', 'unknown_default_open_api')")
         return value
 
     @field_validator('retention_status')
     def retention_status_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in set(['active', 'release_pending', 'expiry_pending', 'deleting', 'released', 'expired']):
-            raise ValueError("must be one of enum values ('active', 'release_pending', 'expiry_pending', 'deleting', 'released', 'expired')")
+        if value not in set(['active', 'release_pending', 'expiry_pending', 'deleting', 'released', 'expired', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('active', 'release_pending', 'expiry_pending', 'deleting', 'released', 'expired', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

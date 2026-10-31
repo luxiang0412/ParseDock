@@ -37,7 +37,7 @@ public class SyncApiTest {
     /**
      * Bounded synchronous parse (small documents)
      *
-     * Same validation and pipeline as &#x60;POST /v1/jobs&#x60;, but waits up to &#x60;timeout_ms&#x60; (default 30 s, max 2 min) for completion. * finished → &#x60;200&#x60; with the Document IR and the result is released immediately   (the body was fully written, so no retention window is needed); * deadline reached → &#x60;202&#x60; with the job resource; it keeps running asynchronously; * failure → &#x60;422&#x60; with the stable error code. Intended for interactive callers; prefer &#x60;/v1/jobs&#x60; for anything large. 
+     * Same validation and pipeline as &#x60;POST /v1/jobs&#x60;, but waits up to &#x60;timeout_ms&#x60; (default 30 s, max 2 min) for completion. * finished → &#x60;200&#x60; with the Document IR; * deadline reached → &#x60;202&#x60; with the job resource; it keeps running asynchronously; * failure → &#x60;422&#x60; with the stable error code.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries &#x60;X-Job-Id&#x60; and &#x60;X-Result-Version&#x60;; release with &#x60;POST /v1/jobs/{id}/ack&#x60; when your sink has the bytes. Intended for interactive callers; prefer &#x60;/v1/jobs&#x60; for anything large. 
      *
      * @throws ApiException if the Api call fails
      */

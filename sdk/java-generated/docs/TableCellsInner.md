@@ -27,6 +27,7 @@
 | NUMBER | &quot;number&quot; |
 | DATE | &quot;date&quot; |
 | BOOL | &quot;bool&quot; |
+| UNKNOWN_DEFAULT_OPEN_API | &quot;unknown_default_open_api&quot; |
 
 
 

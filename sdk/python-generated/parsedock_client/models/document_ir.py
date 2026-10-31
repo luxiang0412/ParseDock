@@ -49,8 +49,8 @@ class DocumentIR(BaseModel):
     @field_validator('schema_version')
     def schema_version_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in set(['doc-ir/0.1']):
-            raise ValueError("must be one of enum values ('doc-ir/0.1')")
+        if value not in set(['doc-ir/0.1', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('doc-ir/0.1', 'unknown_default_open_api')")
         return value
 
     @field_validator('page_kind')
@@ -59,8 +59,8 @@ class DocumentIR(BaseModel):
         if value is None:
             return value
 
-        if value not in set(['pdf', 'sheet', 'slide', 'none']):
-            raise ValueError("must be one of enum values ('pdf', 'sheet', 'slide', 'none')")
+        if value not in set(['pdf', 'sheet', 'slide', 'none', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('pdf', 'sheet', 'slide', 'none', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

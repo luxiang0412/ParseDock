@@ -60,7 +60,7 @@ class SyncApi:
     ) -> DocumentIR:
         """Bounded synchronous parse (small documents)
 
-        Same validation and pipeline as `POST /v1/jobs`, but waits up to `timeout_ms` (default 30 s, max 2 min) for completion. * finished → `200` with the Document IR and the result is released immediately   (the body was fully written, so no retention window is needed); * deadline reached → `202` with the job resource; it keeps running asynchronously; * failure → `422` with the stable error code. Intended for interactive callers; prefer `/v1/jobs` for anything large. 
+        Same validation and pipeline as `POST /v1/jobs`, but waits up to `timeout_ms` (default 30 s, max 2 min) for completion. * finished → `200` with the Document IR; * deadline reached → `202` with the job resource; it keeps running asynchronously; * failure → `422` with the stable error code.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries `X-Job-Id` and `X-Result-Version`; release with `POST /v1/jobs/{id}/ack` when your sink has the bytes. Intended for interactive callers; prefer `/v1/jobs` for anything large. 
 
         :param file: (required)
         :type file: bytes
@@ -111,6 +111,7 @@ class SyncApi:
             '403': "Error",
             '413': "Error",
             '422': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -145,7 +146,7 @@ class SyncApi:
     ) -> ApiResponse[DocumentIR]:
         """Bounded synchronous parse (small documents)
 
-        Same validation and pipeline as `POST /v1/jobs`, but waits up to `timeout_ms` (default 30 s, max 2 min) for completion. * finished → `200` with the Document IR and the result is released immediately   (the body was fully written, so no retention window is needed); * deadline reached → `202` with the job resource; it keeps running asynchronously; * failure → `422` with the stable error code. Intended for interactive callers; prefer `/v1/jobs` for anything large. 
+        Same validation and pipeline as `POST /v1/jobs`, but waits up to `timeout_ms` (default 30 s, max 2 min) for completion. * finished → `200` with the Document IR; * deadline reached → `202` with the job resource; it keeps running asynchronously; * failure → `422` with the stable error code.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries `X-Job-Id` and `X-Result-Version`; release with `POST /v1/jobs/{id}/ack` when your sink has the bytes. Intended for interactive callers; prefer `/v1/jobs` for anything large. 
 
         :param file: (required)
         :type file: bytes
@@ -196,6 +197,7 @@ class SyncApi:
             '403': "Error",
             '413': "Error",
             '422': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -230,7 +232,7 @@ class SyncApi:
     ) -> RESTResponseType:
         """Bounded synchronous parse (small documents)
 
-        Same validation and pipeline as `POST /v1/jobs`, but waits up to `timeout_ms` (default 30 s, max 2 min) for completion. * finished → `200` with the Document IR and the result is released immediately   (the body was fully written, so no retention window is needed); * deadline reached → `202` with the job resource; it keeps running asynchronously; * failure → `422` with the stable error code. Intended for interactive callers; prefer `/v1/jobs` for anything large. 
+        Same validation and pipeline as `POST /v1/jobs`, but waits up to `timeout_ms` (default 30 s, max 2 min) for completion. * finished → `200` with the Document IR; * deadline reached → `202` with the job resource; it keeps running asynchronously; * failure → `422` with the stable error code.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries `X-Job-Id` and `X-Result-Version`; release with `POST /v1/jobs/{id}/ack` when your sink has the bytes. Intended for interactive callers; prefer `/v1/jobs` for anything large. 
 
         :param file: (required)
         :type file: bytes
@@ -281,6 +283,7 @@ class SyncApi:
             '403': "Error",
             '413': "Error",
             '422': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,

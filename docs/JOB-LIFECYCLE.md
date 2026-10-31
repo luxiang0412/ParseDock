@@ -90,10 +90,10 @@ Content-Type: application/json
 
 * `result_version` is mandatory for the first ACK and must equal the current
   manifest version; a mismatch is `409 conflict` and releases nothing.
-* **Cancel does not bypass this.** `POST /cancel` on an already-completed job is a
-  release, so it requires the same `result_version`; without it the call returns
-  `409` and nothing changes (PR-00 / F03). Cancel remains a cancellation for
-  `queued`/`running` jobs only.
+* **Cancel never releases.** `POST /cancel` on an already-completed job returns
+  `409` and nothing changes (PR-00 / F03): releasing is ACK's job, and a second
+  release path made the outcome depend on a race between cancel and ACK. Cancel
+  is a cancellation for `queued`/`running` jobs only.
 * Response `202` with `retention_status=release_pending` means **intent accepted**,
   not "deleted". Poll `GET /v1/jobs/{id}` for `released`.
 * Repeat ACK → `202` again, no state change, no other job touched (T06).
@@ -112,6 +112,12 @@ Content-Type: application/json
 Why no automatic ACK: an HTTP 200 means the bytes left the server, not that the
 client consumed them. SDKs expose `ack()` and an opt-in `download_and_ack()` that
 only fires after the caller's own sink reports success.
+
+The same rule applies to the synchronous endpoint: `POST /v1/parse` returns the
+Document IR but **does not release** it. A written response is not proof of
+receipt (a dropped connection would lose both the body and the only recoverable
+copy), so the result follows the normal TTL and the caller releases it with
+`POST /v1/jobs/{id}/ack` using `X-Result-Version` from that response.
 
 ### Cancellation
 

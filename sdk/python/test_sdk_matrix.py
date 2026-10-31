@@ -18,6 +18,7 @@ Exit code 0 = all assertions passed.
 """
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import signal
@@ -147,11 +148,24 @@ def test_validation_errors(stack: Stack) -> None:
 
 
 def test_quota(stack: Stack) -> None:
-    with ParseDockClient(stack.base, token=TOKEN, max_retries=0) as c:
-        c.create_job(FIXTURE)
-        # 429 like rate_limited, but the quota does not clear by waiting out a
-        # backoff: the client must not retry it.
+    # Retries are ON: the point is that a 429 quota_exceeded is not retried even
+    # though rate_limited (same status) is. Counting the attempts proves it.
+    class Counting(ParseDockClient):
+        attempts = 0
+
+        def _request(self, method, path, body=None, headers=None, *, timeout=None, retry=True):
+            type(self).attempts += 1
+            return super()._request(method, path, body, headers, timeout=timeout, retry=retry)
+
+    with Counting(stack.base, token=TOKEN, max_retries=3) as c:
+        c.create_job(FIXTURE)                       # consumes the daily quota
+        before = Counting.attempts
         expect_error("quota", lambda: c.create_job(FIXTURE), 429, "quota_exceeded", retryable=False)
+        if Counting.attempts - before != 1:
+            failures.append(f"quota was retried {Counting.attempts - before} times")
+        else:
+            print("[ok] quota_exceeded was attempted exactly once (no retry)")
+
 
 
 def test_sse_resume(stack: Stack) -> None:
@@ -192,6 +206,36 @@ def test_sse_resume(stack: Stack) -> None:
         c.wait(job["job_id"], timeout=60)
 
 
+def test_generated_idempotency_key(stack: Stack) -> None:
+    """create_job always sends a key, so a retried upload cannot duplicate."""
+    import urllib.request as u
+
+    sent: list[tuple[bytes, dict]] = []
+
+    class Recording(ParseDockClient):
+        def _request(self, method, path, body=None, headers=None, *, timeout=None, retry=True):
+            if method == "POST" and path == "/v1/jobs":
+                sent.append((body or b"", dict(headers or {})))
+            return super()._request(method, path, body, headers, timeout=timeout, retry=retry)
+
+    with Recording(stack.base, token=TOKEN) as c:
+        job = c.create_job(FIXTURE)
+    body, headers = sent[0]
+    if b'name="idempotency_key"' not in body:
+        failures.append("create_job sent no idempotency_key")
+        return
+    # Replaying the identical request (what a retry does) must return the same job.
+    req = u.Request(stack.base + "/v1/jobs", data=body, method="POST",
+                    headers={"Authorization": f"Bearer {TOKEN}",
+                             "Content-Type": headers.get("Content-Type", "")})
+    with u.urlopen(req, timeout=30) as resp:
+        replay = json.loads(resp.read())
+    if replay.get("job_id") != job["job_id"]:
+        failures.append(f"replayed upload created a second job: {job['job_id']} vs {replay.get('job_id')}")
+        return
+    print("[ok] generated idempotency key is sent and a replay returns the same job")
+
+
 def main() -> int:
     if not BIN.exists():
         raise SystemExit("build the binary first: make build")
@@ -209,6 +253,7 @@ def main() -> int:
     try:
         test_validation_errors(stack)
         test_sse_resume(stack)
+        test_generated_idempotency_key(stack)
     finally:
         stack.stop()
 

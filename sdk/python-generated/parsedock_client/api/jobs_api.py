@@ -21,7 +21,6 @@ from typing_extensions import Annotated
 from parsedock_client.models.ack_job202_response import AckJob202Response
 from parsedock_client.models.ack_job_request import AckJobRequest
 from parsedock_client.models.cancel_job202_response import CancelJob202Response
-from parsedock_client.models.cancel_job_request import CancelJobRequest
 from parsedock_client.models.job import Job
 
 from parsedock_client.api_client import ApiClient, RequestSerialized
@@ -109,6 +108,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '409': "Error",
         }
         response_data = self.api_client.call_api(
@@ -189,6 +189,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '409': "Error",
         }
         response_data = self.api_client.call_api(
@@ -269,6 +270,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '409': "Error",
         }
         response_data = self.api_client.call_api(
@@ -366,7 +368,6 @@ class JobsApi:
         self,
         id: Annotated[str, Field(strict=True)],
         idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
-        cancel_job_request: Optional[CancelJobRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -382,14 +383,12 @@ class JobsApi:
     ) -> CancelJob202Response:
         """Stop a queued/running job (completed results must be ACKed)
 
-        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled` immediately and `cancel_requested_at` is recorded; the worker sees `cancelled` on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires `result_version`; without it the call returns `409` and nothing is released. Use `POST /ack`. 
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled` immediately and `cancel_requested_at` is recorded; the worker sees `cancelled` on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns `409` and nothing is released. Releasing a result is ACK's job and only ACK carries the \"I stored these bytes\" claim - a second release path made the outcome depend on a race between cancel and ACK. 
 
         :param id: (required)
         :type id: str
         :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
         :type idempotency_key: str
-        :param cancel_job_request:
-        :type cancel_job_request: CancelJobRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -415,7 +414,6 @@ class JobsApi:
         _param = self._cancel_job_serialize(
             id=id,
             idempotency_key=idempotency_key,
-            cancel_job_request=cancel_job_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -428,6 +426,7 @@ class JobsApi:
             '403': "Error",
             '404': "Error",
             '409': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -445,7 +444,6 @@ class JobsApi:
         self,
         id: Annotated[str, Field(strict=True)],
         idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
-        cancel_job_request: Optional[CancelJobRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -461,14 +459,12 @@ class JobsApi:
     ) -> ApiResponse[CancelJob202Response]:
         """Stop a queued/running job (completed results must be ACKed)
 
-        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled` immediately and `cancel_requested_at` is recorded; the worker sees `cancelled` on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires `result_version`; without it the call returns `409` and nothing is released. Use `POST /ack`. 
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled` immediately and `cancel_requested_at` is recorded; the worker sees `cancelled` on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns `409` and nothing is released. Releasing a result is ACK's job and only ACK carries the \"I stored these bytes\" claim - a second release path made the outcome depend on a race between cancel and ACK. 
 
         :param id: (required)
         :type id: str
         :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
         :type idempotency_key: str
-        :param cancel_job_request:
-        :type cancel_job_request: CancelJobRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -494,7 +490,6 @@ class JobsApi:
         _param = self._cancel_job_serialize(
             id=id,
             idempotency_key=idempotency_key,
-            cancel_job_request=cancel_job_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -507,6 +502,7 @@ class JobsApi:
             '403': "Error",
             '404': "Error",
             '409': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -524,7 +520,6 @@ class JobsApi:
         self,
         id: Annotated[str, Field(strict=True)],
         idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
-        cancel_job_request: Optional[CancelJobRequest] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -540,14 +535,12 @@ class JobsApi:
     ) -> RESTResponseType:
         """Stop a queued/running job (completed results must be ACKed)
 
-        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled` immediately and `cancel_requested_at` is recorded; the worker sees `cancelled` on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires `result_version`; without it the call returns `409` and nothing is released. Use `POST /ack`. 
+        Best effort and idempotent for `queued`/`running` jobs: the job becomes `cancelled` immediately and `cancel_requested_at` is recorded; the worker sees `cancelled` on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns `409` and nothing is released. Releasing a result is ACK's job and only ACK carries the \"I stored these bytes\" claim - a second release path made the outcome depend on a race between cancel and ACK. 
 
         :param id: (required)
         :type id: str
         :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
         :type idempotency_key: str
-        :param cancel_job_request:
-        :type cancel_job_request: CancelJobRequest
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
                                  timeout. It can also be a pair (tuple) of
@@ -573,7 +566,6 @@ class JobsApi:
         _param = self._cancel_job_serialize(
             id=id,
             idempotency_key=idempotency_key,
-            cancel_job_request=cancel_job_request,
             _request_auth=_request_auth,
             _content_type=_content_type,
             _headers=_headers,
@@ -586,6 +578,7 @@ class JobsApi:
             '403': "Error",
             '404': "Error",
             '409': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -598,7 +591,6 @@ class JobsApi:
         self,
         id,
         idempotency_key,
-        cancel_job_request,
         _request_auth,
         _content_type,
         _headers,
@@ -628,8 +620,6 @@ class JobsApi:
             self.api_client._set_header(_header_params, 'Idempotency-Key', idempotency_key)
         # process the form parameters
         # process the body parameter
-        if cancel_job_request is not None:
-            _body_params = cancel_job_request
 
 
         # set the HTTP header `Accept`
@@ -640,19 +630,6 @@ class JobsApi:
                 ]
             )
 
-        # set the HTTP header `Content-Type`
-        if _content_type:
-            self.api_client._set_header(_header_params, 'Content-Type', _content_type)
-        else:
-            _default_content_type = (
-                self.api_client.select_header_content_type(
-                    [
-                        'application/json'
-                    ]
-                )
-            )
-            if _default_content_type is not None:
-                self.api_client._set_header(_header_params, 'Content-Type', _default_content_type)
 
         # authentication setting
         _auth_settings: List[str] = [
@@ -1187,6 +1164,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '409': "Error",
             '410': "Error",
         }
@@ -1264,6 +1242,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '409': "Error",
             '410': "Error",
         }
@@ -1341,6 +1320,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '409': "Error",
             '410': "Error",
         }
@@ -1480,6 +1460,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '503': "Error",
         }
         response_data = self.api_client.call_api(
@@ -1551,6 +1532,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '503': "Error",
         }
         response_data = self.api_client.call_api(
@@ -1622,6 +1604,7 @@ class JobsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
             '503': "Error",
         }
         response_data = self.api_client.call_api(

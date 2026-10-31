@@ -9,7 +9,6 @@ build.sbt
 docs/AckJob202Response.md
 docs/AckJobRequest.md
 docs/CancelJob202Response.md
-docs/CancelJobRequest.md
 docs/DocumentIR.md
 docs/DocumentIRMetrics.md
 docs/DocumentIRRouting.md
@@ -64,7 +63,6 @@ src/main/java/org/openapitools/client/model/AbstractOpenApiSchema.java
 src/main/java/org/openapitools/client/model/AckJob202Response.java
 src/main/java/org/openapitools/client/model/AckJobRequest.java
 src/main/java/org/openapitools/client/model/CancelJob202Response.java
-src/main/java/org/openapitools/client/model/CancelJobRequest.java
 src/main/java/org/openapitools/client/model/DocumentIR.java
 src/main/java/org/openapitools/client/model/DocumentIRMetrics.java
 src/main/java/org/openapitools/client/model/DocumentIRRouting.java
@@ -88,7 +86,6 @@ src/test/java/org/openapitools/client/api/SyncApiTest.java
 src/test/java/org/openapitools/client/model/AckJob202ResponseTest.java
 src/test/java/org/openapitools/client/model/AckJobRequestTest.java
 src/test/java/org/openapitools/client/model/CancelJob202ResponseTest.java
-src/test/java/org/openapitools/client/model/CancelJobRequestTest.java
 src/test/java/org/openapitools/client/model/DocumentIRMetricsTest.java
 src/test/java/org/openapitools/client/model/DocumentIRRoutingTest.java
 src/test/java/org/openapitools/client/model/DocumentIRSourceTest.java

@@ -1,0 +1,117 @@
+{
+  "profile": "real",
+  "engines": "native,xberg",
+  "started_at": "2026-10-31T14:02:42.902157+00:00",
+  "finished_at": "2026-10-31T14:02:46.274887+00:00",
+  "host": {
+    "cpu_cores": 24,
+    "uname": "7.0.0-42-generic"
+  },
+  "binary": "runtime/bin/docparse",
+  "binary_sha256": "16c8db7615260fc6a9b5b351852e2daafb12ea5b7b75618459c6822190700e28",
+  "cases": [
+    {
+      "id": "T01",
+      "name": "real upload+parse of a PDF produces a correct, readable result",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GS4H8M4EH67MNE2W4G4E34G4",
+        "engine": "xberg",
+        "result_version": "sha256:47625d26405dad8a7dfbe4170b7675d10a720067c52aae3dd7797be844454edc",
+        "markdown_bytes": 2584,
+        "elements": 11,
+        "tables": 1,
+        "table_recovered": true,
+        "warnings": 0,
+        "etag": "\"sha256:8838e7249a434da10c5ef34f52f9379426cc0f563c25f523ed0241235192926d\"",
+        "content_length_matches": true,
+        "markdown_head": "Quarterly Logistics Review\n\nSection 1: Operational detail\n\nPage marker 1. The pilot program moved 128,400 pallets across three regional hubs in the second\nquarter, a 12.5 percent increase over the sam",
+        "elapsed_s": 0.53
+      },
+      "error": ""
+    },
+    {
+      "id": "T02",
+      "name": "core formats parse or fail with an explicit unsupported error",
+      "status": "PASS",
+      "detail": {
+        "docx": {
+          "job_id": "job_06GS4H8NCX5H74JNX728A9BBEM",
+          "status": "completed",
+          "engine": "xberg",
+          "error_code": null,
+          "markdown_bytes": 1199,
+          "has_text": true
+        },
+        "xlsx": {
+          "job_id": "job_06GS4H8PKW7RXKKGK5Q9B7R990",
+          "status": "completed",
+          "engine": "xberg",
+          "error_code": null,
+          "markdown_bytes": 540,
+          "has_text": true
+        },
+        "csv": {
+          "job_id": "job_06GS4H8QVEQMZQ0YB2CKZPDJV8",
+          "status": "completed",
+          "engine": "native",
+          "error_code": null,
+          "markdown_bytes": 210,
+          "has_text": true
+        },
+        "md": {
+          "job_id": "job_06GS4H8S3FN1NMHZ3RFP8NT1PW",
+          "status": "completed",
+          "engine": "native",
+          "error_code": null,
+          "markdown_bytes": 557,
+          "has_text": true
+        },
+        "doc": {
+          "job_id": "job_06GS4H8SR2ZSFZ4MBP4ZANKEX8",
+          "status": "completed",
+          "engine": "xberg",
+          "error_code": null,
+          "markdown_bytes": 44,
+          "has_text": true
+        },
+        "xls": {
+          "job_id": "job_06GS4H8VHWS8EWZBTF44QJ1684",
+          "status": "completed",
+          "engine": "xberg",
+          "error_code": null,
+          "markdown_bytes": 66,
+          "has_text": true
+        },
+        "png": {
+          "job_id": "job_06GS4H8WSH8C2K6VPQ0WC8ABS8",
+          "status": "completed",
+          "engine": "xberg",
+          "error_code": null,
+          "markdown_bytes": 62,
+          "has_text": true
+        },
+        "unsupported": {
+          "create_status": 422,
+          "code": "malformed_file"
+        },
+        "elapsed_s": 2.37
+      },
+      "error": ""
+    },
+    {
+      "id": "T11",
+      "name": "CPU-only node: no GPU/CUDA dependency in the parse path",
+      "status": "PASS",
+      "detail": {
+        "job_id": "job_06GS4H8YMXQ3QHHJ5JXHKNDF3C",
+        "engine": "xberg",
+        "requested_device": "cpu",
+        "actual_device": "cpu",
+        "status": "completed",
+        "elapsed_s": 0.47
+      },
+      "error": ""
+    }
+  ]
+}

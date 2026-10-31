@@ -65,7 +65,7 @@ browser ──GET /              ──▶ nginx: static SPA (dist/)
 | Decision | Why |
 | --- | --- |
 | **Same-origin proxy instead of CORS** | no backend change, no key in the page, SSE works. CORS would still leave the key in the browser. |
-| **`/v1/parse` is not used** | it ACKs the result after writing the body (verified in `handleSyncParse`), so it would break the explicit-release model, and it returns the IR only. |
+| **`/v1/parse` is not used** | it returns the IR only (no `format` choice, no SSE) and leaves the result to the TTL, so the Playground would still need an explicit release path — the job API gives both. |
 | **pdf.js instead of the browser's PDF plugin** | the E2E runner (headless Chromium) has no plugin, and the built-in viewer gives no control over scale. Pages render lazily, capped at 60. |
 | **`react-markdown` + `remark-gfm` + `rehype-sanitize`, no `rehype-raw`** | untrusted documents; raw HTML is escaped, not executed. Remote images are replaced by a placeholder so reading a document never calls a third party. |
 | **TanStack Query only for the health probe** | job state needs ordering guarantees (SSE + a late response must not overwrite a newer job); that is a reducer, not a query cache. `QueryClient` is still the provider for the app. |

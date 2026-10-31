@@ -149,6 +149,34 @@ class ParseDockClientIT {
 
     @Test
     @Order(5)
+    void cancelOnACompletedJobIsRefused() throws Exception {
+        // Cancelling finished work must not release it: that is ACK's job, and a
+        // second release path would make the outcome depend on a race. Uses its own
+        // job so the ACK assertions above keep their meaning.
+        Job job = api.createJob(fixture, "fast", "auto", null, null, null,
+                null, null, null, null);
+        Job done = job;
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+        while (done.getStatus() == Job.StatusEnum.QUEUED || done.getStatus() == Job.StatusEnum.RUNNING) {
+            assertTrue(System.nanoTime() < deadline, "job did not finish in 120s");
+            Thread.sleep(300);
+            done = api.getJob(job.getJobId());
+        }
+        assertEquals("completed", done.getStatus().getValue(), "job failed before the cancel check");
+
+        final String cancelTarget = done.getJobId();
+        ApiException e = assertThrows(ApiException.class,
+                () -> api.cancelJob(cancelTarget, null));
+        assertEquals(409, e.getCode(), "cancel on a completed job must be 409: " + e.getMessage());
+
+        // The result is still there: only ACK releases it.
+        assertNotNull(api.downloadResult(done.getJobId(), "markdown"));
+        api.ackJob(done.getJobId(),
+                new AckJobRequest().resultVersion(done.getResultVersion()), null);
+    }
+
+    @Test
+    @Order(6)
     void unknownJobIs404() {
         ApiException e = assertThrows(ApiException.class,
                 () -> api.getJob("job_00000000000000000000000000"));

@@ -72,7 +72,9 @@ public class Job {
     
     FAILED("failed"),
     
-    CANCELLED("cancelled");
+    CANCELLED("cancelled"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -95,7 +97,7 @@ public class Job {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<StatusEnum> {
@@ -123,6 +125,7 @@ public class Job {
   private StatusEnum status;
 
   public static final String SERIALIZED_NAME_PROCESSING_STATUS = "processing_status";
+  @Deprecated
   @SerializedName(SERIALIZED_NAME_PROCESSING_STATUS)
   @javax.annotation.Nullable
   private String processingStatus;
@@ -142,7 +145,9 @@ public class Job {
     
     RELEASED("released"),
     
-    EXPIRED("expired");
+    EXPIRED("expired"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -165,7 +170,7 @@ public class Job {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<RetentionStatusEnum> {
@@ -384,6 +389,7 @@ public class Job {
   }
 
 
+  @Deprecated
   public Job processingStatus(@javax.annotation.Nullable String processingStatus) {
     this.processingStatus = processingStatus;
     return this;
@@ -392,12 +398,15 @@ public class Job {
   /**
    * Alias of &#x60;status&#x60; (both are returned).
    * @return processingStatus
+   * @deprecated
    */
+  @Deprecated
   @javax.annotation.Nullable
   public String getProcessingStatus() {
     return processingStatus;
   }
 
+  @Deprecated
   public void setProcessingStatus(@javax.annotation.Nullable String processingStatus) {
     this.processingStatus = processingStatus;
   }

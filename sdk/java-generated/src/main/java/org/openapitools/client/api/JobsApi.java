@@ -30,7 +30,6 @@ import java.io.IOException;
 import org.openapitools.client.model.AckJob202Response;
 import org.openapitools.client.model.AckJobRequest;
 import org.openapitools.client.model.CancelJob202Response;
-import org.openapitools.client.model.CancelJobRequest;
 import org.openapitools.client.model.DocumentIR;
 import org.openapitools.client.model.Error;
 import java.io.File;
@@ -96,6 +95,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
      */
@@ -183,6 +183,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
      */
@@ -208,6 +209,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
      */
@@ -235,6 +237,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> result_version does not match the current result. </td><td>  -  </td></tr>
      </table>
      */
@@ -249,7 +252,6 @@ public class JobsApi {
      * Build call for cancelJob
      * @param id  (required)
      * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
-     * @param cancelJobRequest  (optional)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
@@ -257,14 +259,15 @@ public class JobsApi {
      <table border="1">
        <caption>Response Details</caption>
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
-        <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
+        <tr><td> 202 </td><td> Cancellation accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> Job already completed - use &#x60;POST /v1/jobs/{id}/ack&#x60; to release the result. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
-    public okhttp3.Call cancelJobCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable CancelJobRequest cancelJobRequest, final ApiCallback _callback) throws ApiException {
+    public okhttp3.Call cancelJobCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, final ApiCallback _callback) throws ApiException {
         String basePath = null;
         // Operation Servers
         String[] localBasePaths = new String[] {  };
@@ -278,7 +281,7 @@ public class JobsApi {
             basePath = null;
         }
 
-        Object localVarPostBody = cancelJobRequest;
+        Object localVarPostBody = null;
 
         // create path and map variables
         String localVarPath = "/v1/jobs/{id}/cancel"
@@ -299,7 +302,6 @@ public class JobsApi {
         }
 
         final String[] localVarContentTypes = {
-            "application/json"
         };
         final String localVarContentType = localVarApiClient.selectHeaderContentType(localVarContentTypes);
         if (localVarContentType != null) {
@@ -316,71 +318,70 @@ public class JobsApi {
     }
 
     @SuppressWarnings("rawtypes")
-    private okhttp3.Call cancelJobValidateBeforeCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable CancelJobRequest cancelJobRequest, final ApiCallback _callback) throws ApiException {
+    private okhttp3.Call cancelJobValidateBeforeCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, final ApiCallback _callback) throws ApiException {
         // verify the required parameter 'id' is set
         if (id == null) {
             throw new ApiException("Missing the required parameter 'id' when calling cancelJob(Async)");
         }
 
-        return cancelJobCall(id, idempotencyKey, cancelJobRequest, _callback);
+        return cancelJobCall(id, idempotencyKey, _callback);
 
     }
 
     /**
      * Stop a queued/running job (completed results must be ACKed)
-     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
+     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
      * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
-     * @param cancelJobRequest  (optional)
      * @return CancelJob202Response
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
      <table border="1">
        <caption>Response Details</caption>
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
-        <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
+        <tr><td> 202 </td><td> Cancellation accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> Job already completed - use &#x60;POST /v1/jobs/{id}/ack&#x60; to release the result. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
-    public CancelJob202Response cancelJob(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable CancelJobRequest cancelJobRequest) throws ApiException {
-        ApiResponse<CancelJob202Response> localVarResp = cancelJobWithHttpInfo(id, idempotencyKey, cancelJobRequest);
+    public CancelJob202Response cancelJob(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey) throws ApiException {
+        ApiResponse<CancelJob202Response> localVarResp = cancelJobWithHttpInfo(id, idempotencyKey);
         return localVarResp.getData();
     }
 
     /**
      * Stop a queued/running job (completed results must be ACKed)
-     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
+     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
      * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
-     * @param cancelJobRequest  (optional)
      * @return ApiResponse&lt;CancelJob202Response&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
      <table border="1">
        <caption>Response Details</caption>
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
-        <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
+        <tr><td> 202 </td><td> Cancellation accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> Job already completed - use &#x60;POST /v1/jobs/{id}/ack&#x60; to release the result. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
-    public ApiResponse<CancelJob202Response> cancelJobWithHttpInfo(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable CancelJobRequest cancelJobRequest) throws ApiException {
-        okhttp3.Call localVarCall = cancelJobValidateBeforeCall(id, idempotencyKey, cancelJobRequest, null);
+    public ApiResponse<CancelJob202Response> cancelJobWithHttpInfo(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey) throws ApiException {
+        okhttp3.Call localVarCall = cancelJobValidateBeforeCall(id, idempotencyKey, null);
         Type localVarReturnType = new TypeToken<CancelJob202Response>(){}.getType();
         return localVarApiClient.execute(localVarCall, localVarReturnType);
     }
 
     /**
      * Stop a queued/running job (completed results must be ACKed) (asynchronously)
-     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
+     * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
      * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
-     * @param cancelJobRequest  (optional)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -388,16 +389,17 @@ public class JobsApi {
      <table border="1">
        <caption>Response Details</caption>
         <tr><td> Status Code </td><td> Description </td><td> Response Headers </td></tr>
-        <tr><td> 202 </td><td> Cancellation (or release) accepted. </td><td>  -  </td></tr>
+        <tr><td> 202 </td><td> Cancellation accepted. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> Job already completed — cancel needs &#x60;result_version&#x60;. </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> Job already completed - use &#x60;POST /v1/jobs/{id}/ack&#x60; to release the result. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
-    public okhttp3.Call cancelJobAsync(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable CancelJobRequest cancelJobRequest, final ApiCallback<CancelJob202Response> _callback) throws ApiException {
+    public okhttp3.Call cancelJobAsync(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String idempotencyKey, final ApiCallback<CancelJob202Response> _callback) throws ApiException {
 
-        okhttp3.Call localVarCall = cancelJobValidateBeforeCall(id, idempotencyKey, cancelJobRequest, _callback);
+        okhttp3.Call localVarCall = cancelJobValidateBeforeCall(id, idempotencyKey, _callback);
         Type localVarReturnType = new TypeToken<CancelJob202Response>(){}.getType();
         localVarApiClient.executeAsync(localVarCall, localVarReturnType, _callback);
         return localVarCall;
@@ -430,7 +432,7 @@ public class JobsApi {
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -559,7 +561,7 @@ public class JobsApi {
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -596,7 +598,7 @@ public class JobsApi {
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -635,7 +637,7 @@ public class JobsApi {
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
         <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
-        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  </td><td>  * Retry-After -  <br>  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
      */
@@ -662,6 +664,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
      </table>
@@ -744,6 +747,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
      </table>
@@ -769,6 +773,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
      </table>
@@ -796,6 +801,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 409 </td><td> The result is not ready yet (job queued/running/failed). </td><td>  -  </td></tr>
         <tr><td> 410 </td><td> The result was released or expired (tombstone window). </td><td>  -  </td></tr>
      </table>
@@ -821,6 +827,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
      */
@@ -894,6 +901,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
      */
@@ -916,6 +924,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
      */
@@ -940,6 +949,7 @@ public class JobsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 503 </td><td> The coordinator is unreachable (API replicas stay healthy). </td><td>  -  </td></tr>
      </table>
      */

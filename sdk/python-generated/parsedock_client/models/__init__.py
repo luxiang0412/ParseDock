@@ -16,7 +16,6 @@
 from parsedock_client.models.ack_job202_response import AckJob202Response
 from parsedock_client.models.ack_job_request import AckJobRequest
 from parsedock_client.models.cancel_job202_response import CancelJob202Response
-from parsedock_client.models.cancel_job_request import CancelJobRequest
 from parsedock_client.models.document_ir import DocumentIR
 from parsedock_client.models.document_ir_metrics import DocumentIRMetrics
 from parsedock_client.models.document_ir_routing import DocumentIRRouting

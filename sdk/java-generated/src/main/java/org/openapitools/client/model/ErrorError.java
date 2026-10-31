@@ -100,7 +100,9 @@ public class ErrorError {
     
     RATE_LIMITED("rate_limited"),
     
-    COORDINATOR_UNAVAILABLE("coordinator_unavailable");
+    COORDINATOR_UNAVAILABLE("coordinator_unavailable"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -123,7 +125,7 @@ public class ErrorError {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<CodeEnum> {

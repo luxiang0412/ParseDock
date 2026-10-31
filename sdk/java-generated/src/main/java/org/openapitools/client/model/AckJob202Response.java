@@ -68,7 +68,9 @@ public class AckJob202Response {
     
     RELEASED("released"),
     
-    EXPIRED("expired");
+    EXPIRED("expired"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -91,7 +93,7 @@ public class AckJob202Response {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<RetentionStatusEnum> {

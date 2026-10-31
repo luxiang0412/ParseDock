@@ -72,6 +72,8 @@ api.ackJob(done.getJobId(),
   `result_version` you downloaded (`Job#getResultVersion()`, or the
   `X-Result-Version` header). A stale value → `409`, nothing released.
 * Without an ACK the result expires at `result_expires_at` (TTL).
+* `cancelJob(id, null)` only stops queued/running work: on a completed job it returns
+  `409` and never releases the result.
 * After release: `410` during the tombstone window, then `404`.
 * `downloadResult` returns the body as a `String`; for large documents write it
   through `downloadResultWithHttpInfo`/streams rather than holding it in memory.
@@ -90,7 +92,7 @@ server sent one, `e.getResponseBody()` for the stable `{"error":{"code":...}}`.
 | 413 | `file_too_large` | over the deployment's upload cap |
 | 415 | `unsupported_type` | format not enabled |
 | 422 | `encrypted_file` | password-protected document |
-| 429 | `rate_limited` | retry with backoff |
+| 429 | `rate_limited` | retry with backoff; honour `Retry-After` |
 | 429 | `quota_exceeded` | do **not** retry: the owner's rolling quota is spent |
 | 409 | `gpu_unavailable` | `gpu_required` without a proven GPU worker |
 

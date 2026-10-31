@@ -42,8 +42,8 @@ class SourceLocation(BaseModel):
         if value is None:
             return value
 
-        if value not in set(['pdf', 'sheet', 'slide', 'none']):
-            raise ValueError("must be one of enum values ('pdf', 'sheet', 'slide', 'none')")
+        if value not in set(['pdf', 'sheet', 'slide', 'none', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('pdf', 'sheet', 'slide', 'none', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

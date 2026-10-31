@@ -350,21 +350,23 @@ func TestCancelIsIdempotent(t *testing.T) {
 	s := testService(t, nil)
 	ctx := context.Background()
 	job := create(t, s, "a.txt", []byte("hello world"), CreateParams{})
-	first, err := s.Cancel(ctx, job.ID, "owner-1", "")
+	first, err := s.Cancel(ctx, job.ID, "owner-1")
 	if err != nil || first.ProcessingStatus != jobs.StatusCancelled {
 		t.Fatalf("cancel: %v %+v", err, first)
 	}
-	second, err := s.Cancel(ctx, job.ID, "owner-1", "")
+	second, err := s.Cancel(ctx, job.ID, "owner-1")
 	if err != nil || second.ProcessingStatus != jobs.StatusCancelled {
 		t.Fatalf("repeat cancel: %v %+v", err, second)
 	}
-	if _, err := s.Cancel(ctx, job.ID, "owner-2", ""); AsError(err).Code != jobs.ErrNotFound {
+	if _, err := s.Cancel(ctx, job.ID, "owner-2"); AsError(err).Code != jobs.ErrNotFound {
 		t.Fatalf("cross-owner cancel: %v", err)
 	}
 }
 
-// F03: cancelling a completed job must not bypass the ACK version check.
-func TestCancelCompletedRequiresResultVersion(t *testing.T) {
+// F03 / PR-D1 hardening: a completed job cannot be cancelled and cancel must not
+// release its result - releasing is ACK's job and only ACK carries the "I stored
+// these bytes" claim. Two release paths made the outcome depend on a race.
+func TestCancelCompletedNeverReleases(t *testing.T) {
 	s := testService(t, nil)
 	ctx := context.Background()
 	job := create(t, s, "a.txt", []byte("hello world"), CreateParams{})
@@ -375,20 +377,20 @@ func TestCancelCompletedRequiresResultVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := s.Cancel(ctx, job.ID, "owner-1", ""); AsError(err).Code != jobs.ErrConflict {
-		t.Fatalf("cancel without result_version = %v, want conflict", err)
-	}
-	if _, err := s.Cancel(ctx, job.ID, "owner-1", "sha256:nope"); AsError(err).Code != jobs.ErrConflict {
-		t.Fatalf("cancel with stale result_version = %v, want conflict", err)
+	if _, err := s.Cancel(ctx, job.ID, "owner-1"); AsError(err).Code != jobs.ErrConflict {
+		t.Fatalf("cancel on a completed job = %v, want conflict", err)
 	}
 	still, _ := s.GetJob(ctx, job.ID, "owner-1")
 	if still.RetentionStatus != jobs.RetentionActive {
-		t.Fatalf("failed cancel changed retention to %s", still.RetentionStatus)
+		t.Fatalf("cancel changed retention to %s", still.RetentionStatus)
 	}
-	// With the correct version it releases exactly like ACK.
-	released, err := s.Cancel(ctx, job.ID, "owner-1", done.ResultVersion)
-	if err != nil || released.RetentionStatus != jobs.RetentionReleasePending {
-		t.Fatalf("cancel with version: %v %+v", err, released)
+	// ACK still releases it.
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatalf("ack after refused cancel: %v", err)
+	}
+	released, _ := s.GetJob(ctx, job.ID, "owner-1")
+	if released.RetentionStatus != jobs.RetentionReleasePending {
+		t.Fatalf("ack did not release: %s", released.RetentionStatus)
 	}
 }
 
@@ -402,7 +404,7 @@ func TestCancelledAttemptFinalisation(t *testing.T) {
 	if err != nil || task == nil {
 		t.Fatalf("claim: %v", err)
 	}
-	if _, err := s.Cancel(ctx, job.ID, "owner-1", ""); err != nil {
+	if _, err := s.Cancel(ctx, job.ID, "owner-1"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Heartbeat(ctx, job.ID, task.LeaseToken, 10, "x"); AsError(err).Code != jobs.ErrCancelled {
@@ -797,7 +799,7 @@ func TestCancelRecordsRequestTime(t *testing.T) {
 	s := testService(t, nil)
 	ctx := context.Background()
 	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
-	cancelled, err := s.Cancel(ctx, job.ID, "owner-1", "")
+	cancelled, err := s.Cancel(ctx, job.ID, "owner-1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -813,7 +815,7 @@ func TestCancelRecordsRequestTime(t *testing.T) {
 	}
 	// A repeated cancel keeps the original timestamp (idempotent).
 	first := *read.CancelRequestedAt
-	again, err := s.Cancel(ctx, job.ID, "owner-1", "")
+	again, err := s.Cancel(ctx, job.ID, "owner-1")
 	if err != nil {
 		t.Fatal(err)
 	}

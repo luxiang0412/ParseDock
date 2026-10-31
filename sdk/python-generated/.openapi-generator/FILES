@@ -7,7 +7,6 @@ README.md
 docs/AckJob202Response.md
 docs/AckJobRequest.md
 docs/CancelJob202Response.md
-docs/CancelJobRequest.md
 docs/DocumentIR.md
 docs/DocumentIRMetrics.md
 docs/DocumentIRRouting.md
@@ -43,7 +42,6 @@ parsedock_client/models/__init__.py
 parsedock_client/models/ack_job202_response.py
 parsedock_client/models/ack_job_request.py
 parsedock_client/models/cancel_job202_response.py
-parsedock_client/models/cancel_job_request.py
 parsedock_client/models/document_ir.py
 parsedock_client/models/document_ir_metrics.py
 parsedock_client/models/document_ir_routing.py
@@ -71,7 +69,6 @@ test/__init__.py
 test/test_ack_job202_response.py
 test/test_ack_job_request.py
 test/test_cancel_job202_response.py
-test/test_cancel_job_request.py
 test/test_document_ir.py
 test/test_document_ir_metrics.py
 test/test_document_ir_routing.py

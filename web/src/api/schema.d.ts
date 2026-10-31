@@ -134,9 +134,10 @@ export interface paths {
          *     path. A cancelled job never publishes a result, even if the engine finished
          *     in the meantime.
          *
-         *     A **completed** result is not cancelled. It is released, which is the same
-         *     operation as ACK and therefore requires `result_version`; without it the
-         *     call returns `409` and nothing is released. Use `POST /ack`.
+         *     A **completed** job cannot be cancelled: the call returns `409` and nothing
+         *     is released. Releasing a result is ACK's job and only ACK carries the
+         *     "I stored these bytes" claim - a second release path made the outcome
+         *     depend on a race between cancel and ACK.
          */
         post: operations["cancelJob"];
         delete?: never;
@@ -194,11 +195,15 @@ export interface paths {
          * Bounded synchronous parse (small documents)
          * @description Same validation and pipeline as `POST /v1/jobs`, but waits up to
          *     `timeout_ms` (default 30 s, max 2 min) for completion.
-         *     * finished → `200` with the Document IR and the result is released immediately
-         *       (the body was fully written, so no retention window is needed);
+         *     * finished → `200` with the Document IR;
          *     * deadline reached → `202` with the job resource; it keeps running asynchronously;
          *     * failure → `422` with the stable error code.
-         *     Intended for interactive callers; prefer `/v1/jobs` for anything large.
+         *
+         *     The result is **not released** by this call: a written response does not
+         *     prove the caller received it, so the normal TTL applies. The response
+         *     carries `X-Job-Id` and `X-Result-Version`; release with
+         *     `POST /v1/jobs/{id}/ack` when your sink has the bytes. Intended for
+         *     interactive callers; prefer `/v1/jobs` for anything large.
          */
         post: operations["parseSync"];
         delete?: never;
@@ -311,7 +316,10 @@ export interface components {
              * @enum {string}
              */
             status: "queued" | "running" | "completed" | "failed" | "cancelled";
-            /** @description Alias of `status` (both are returned). */
+            /**
+             * @deprecated
+             * @description Alias of `status` (both are returned).
+             */
             processing_status?: string;
             /**
              * @description Retention dimension, independent of `status`.
@@ -512,6 +520,22 @@ export interface components {
         };
     };
     responses: {
+        /**
+         * @description Per-owner limits. `rate_limited` = request-rate budget (all requests,
+         *     including status polling and event streams); `quota_exceeded` = concurrent
+         *     jobs, jobs/day or bytes/day for this owner. Both carry `Retry-After` in
+         *     seconds. Retrying `rate_limited` after that delay is expected; retrying
+         *     `quota_exceeded` is not - the quota only resets when its window passes.
+         */
+        RateLimited: {
+            headers: {
+                "Retry-After"?: number;
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /** @description Invalid parameters. */
         BadRequest: {
             headers: {
@@ -551,16 +575,6 @@ export interface components {
         /** @description Upload exceeds the configured limit. */
         TooLarge: {
             headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/json": components["schemas"]["Error"];
-            };
-        };
-        /** @description Per-owner rate limit exceeded. */
-        RateLimited: {
-            headers: {
-                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {
@@ -727,20 +741,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /**
-             * @description Per-owner limits. `rate_limited` = request-rate budget (all requests,
-             *     including status polling); `quota_exceeded` = concurrent jobs, jobs/day
-             *     or bytes/day for this owner. Both carry `Retry-After` in seconds.
-             */
-            429: {
-                headers: {
-                    "Retry-After"?: number;
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
+            429: components["responses"]["RateLimited"];
             /** @description Storage below the safety watermark; retry later (existing results stay readable). */
             507: {
                 headers: {
@@ -776,6 +777,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["InsufficientScope"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
             503: components["responses"]["CoordinatorDown"];
         };
     };
@@ -844,6 +846,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     ackJob: {
@@ -906,6 +909,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     cancelJob: {
@@ -921,16 +925,9 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
-            content: {
-                "application/json": {
-                    /** @description Required when the job is already completed. */
-                    result_version?: string;
-                };
-            };
-        };
+        requestBody?: never;
         responses: {
-            /** @description Cancellation (or release) accepted. */
+            /** @description Cancellation accepted. */
             202: {
                 headers: {
                     [name: string]: unknown;
@@ -950,7 +947,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["InsufficientScope"];
             404: components["responses"]["NotFound"];
-            /** @description Job already completed — cancel needs `result_version`. */
+            /** @description Job already completed - use `POST /v1/jobs/{id}/ack` to release the result. */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -959,6 +956,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     jobEvents: {
@@ -991,6 +989,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["InsufficientScope"];
             404: components["responses"]["NotFound"];
+            429: components["responses"]["RateLimited"];
         };
     };
     parseSync: {
@@ -1064,6 +1063,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+            429: components["responses"]["RateLimited"];
         };
     };
     healthz: {
