@@ -5,7 +5,8 @@
 #
 # Phases (one per CI job, so the workflow and a local run execute the *same*
 # commands):
-#   static      pinned-input verification, gofmt, go vet, build
+#   static      pinned-input verification, gofmt, go vet, golangci-lint, govulncheck,
+#               ruff, build, actionlint, go mod tidy drift
 #   unit        go test (cmd, internal, migrations) + scoring unit tests
 #   contract    OpenAPI validation, spec/SDK/router drift, SDK regeneration drift
 #   lifecycle   mock acceptance (T03-T16), PR-00/PR-02/PR-07 runtime contracts, backup/restore
@@ -63,6 +64,12 @@ phase_static() {
   step "verify pins" python3 "$ROOT/scripts/verify_pins.py" || return 1
   step "gofmt" make -C "$ROOT" fmt-check || return 1
   step "go vet" bash -c "cd '$ROOT' && go vet $GO_PKGS" || return 1
+  # Pinned linters and scanners (versions in images.lock.json, checked by verify_pins.py).
+  step "golangci-lint (pinned)" bash -c "bash '$ROOT/scripts/install-golangci-lint.sh' >/dev/null && cd '$ROOT' && runtime/bin/golangci-lint run $GO_PKGS" || return 1
+  # Refuses to run unless `go` is the pinned toolchain: an auto-switched toolchain
+  # would scan a different standard library and can report a false clean result.
+  step "govulncheck (pinned toolchain)" bash "$ROOT/scripts/govulncheck.sh" || return 1
+  step "python lint (ruff, pinned)" bash -c "bash '$ROOT/scripts/install-ruff.sh' >/dev/null && cd '$ROOT' && runtime/ci-venv/bin/ruff check tests scripts benchmark sdk/python examples" || return 1
   step "go build" make -C "$ROOT" build || return 1
   # Workflow linting uses the pinned actionlint and no external shellcheck so the
   # result does not depend on the runner image.

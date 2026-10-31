@@ -69,6 +69,8 @@ client → api replica (auth, scopes, rate limit, quota pre-check) → coordinat
 ```bash
 make build          # → runtime/bin/docparse (bin/ is a gitignored stray; use runtime/bin)
 make test           # go vet + go test on ./cmd/... ./internal/... ./migrations/... + scoring unit tests (the rest run in `ci-local.sh unit`)
+make lint           # golangci-lint (.golangci.yml) + ruff (ruff.toml), pinned via images.lock.json
+make vulncheck      # govulncheck; needs the pinned go (images.lock.json) on PATH, refuses any other
 bash scripts/ci-local.sh all      # exactly what CI runs: static, unit, contract, lifecycle, image (~3.5 min)
 bash scripts/ci-local.sh lifecycle   # T03–T17 + PR-00/02/07/09/12 runtime contracts (fast feedback)
 bash scripts/ci-local.sh engines     # real engines + bench + quality gate (needs installed engines)

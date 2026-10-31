@@ -1,0 +1,24 @@
+# golangci-lint v2 configuration (version pinned in scripts/install-golangci-lint.sh and
+# images.lock.json). Deliberately conservative: the "standard" set only — errcheck, govet,
+# ineffassign, staticcheck (which includes the former gosimple/stylecheck checks in v2)
+# and unused. Add linters one at a time, in their own PR, with the findings fixed.
+version: "2"
+
+run:
+  # Lint with the pinned toolchain; never download another one.
+  go: "1.27"
+  tests: true
+
+linters:
+  default: standard
+  exclusions:
+    # Upstream presets: unchecked Close/Flush/os.Remove* and print-family errors
+    # (std-error-handling) are idiomatic in defers and cleanup paths.
+    presets:
+      - std-error-handling
+      - common-false-positives
+
+issues:
+  # Report everything, not just the first few per linter, so a CI log is complete.
+  max-issues-per-linter: 0
+  max-same-issues: 0

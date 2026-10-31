@@ -34,6 +34,9 @@
     "ci_requirements": "requirements-ci.txt"
   },
   "tools": {
-    "actionlint": "1.7.7"
+    "actionlint": "1.7.7",
+    "golangci_lint": "2.15.0",
+    "govulncheck": "v1.9.0",
+    "ruff": "0.17.1"
   }
 }

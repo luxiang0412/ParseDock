@@ -126,6 +126,9 @@ subprocess or over HTTP. Attribution is still recommended in `NOTICE`.
 
 ## 6. Container and SDK licenses
 
+* CI-only tools, never shipped in an image, never linked into ParseDock: actionlint (MIT),
+  golangci-lint (GPL-3.0; runs as a separate program over the source, distribution is
+  not affected), govulncheck (`golang.org/x/vuln`, BSD-3-Clause), ruff (MIT).
 * Base images: `golang:1.27.3-bookworm` (build only, digest in `images.lock.json`), `debian:trixie-slim`
   (runtime, DFSG-free), `nvidia/cuda:13.2.0-runtime-ubuntu24.04` (optional GPU
   worker — its CUDA EULA governs redistribution).

@@ -42,7 +42,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: static phase (pins, fmt, vet, build, tidy drift)
+      - name: static phase (pins, fmt, vet, golangci-lint, govulncheck, ruff, build, tidy drift)
         run: bash scripts/ci-local.sh static
       - name: upload
         if: always()

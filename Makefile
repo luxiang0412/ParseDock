@@ -7,7 +7,7 @@ BIN := runtime/bin/docparse
 PY_FIX := runtime/engines/venv-fixtures/bin/python
 COMPOSE := docker compose -f deploy/compose.cpu.yaml
 
-.PHONY: help build fmt fmt-check schema verify-pins lint-workflows vet test contract ci ci-phase \
+.PHONY: help build fmt fmt-check schema verify-pins lint vulncheck lint-workflows vet test contract ci ci-phase \
 	container-smoke pr00 load gpu-check score license-audit fixtures acceptance acceptance-real \
 	bench gpu-bench sdk sdk-test images up down logs metrics sdk-check drill gate gate-baseline \
 	web-install web-dev web-test web-e2e web-e2e-compose playground-up playground-down clean
@@ -30,6 +30,15 @@ schema: ## publish the Document IR JSON Schema to api/
 
 verify-pins: ## check go.mod / Dockerfiles / workflows against images.lock.json
 	python3 scripts/verify_pins.py
+
+lint: ## golangci-lint (Go) + ruff (Python), pinned versions
+	bash scripts/install-golangci-lint.sh >/dev/null
+	runtime/bin/golangci-lint run $(GO_PKGS)
+	bash scripts/install-ruff.sh >/dev/null
+	runtime/ci-venv/bin/ruff check tests scripts benchmark sdk/python examples
+
+vulncheck: ## govulncheck with the pinned toolchain (refuses any other go on PATH)
+	bash scripts/govulncheck.sh
 
 lint-workflows: ## actionlint on .github/workflows (pinned binary)
 	bash scripts/install-actionlint.sh
