@@ -245,19 +245,16 @@ func (s *Server) handleAck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
-	var body struct {
-		ResultVersion string `json:"result_version"`
-	}
+	// The body is accepted for compatibility but carries nothing: cancellation
+	// never releases a result, so no version is needed or honoured.
 	if r.ContentLength != 0 {
+		var body json.RawMessage
 		if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
 			writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid JSON body"))
 			return
 		}
 	}
-	if v := r.Header.Get("If-Match"); v != "" && body.ResultVersion == "" {
-		body.ResultVersion = strings.Trim(v, `"`)
-	}
-	job, err := s.Svc.Cancel(r.Context(), r.PathValue("id"), owner(r), body.ResultVersion)
+	job, err := s.Svc.Cancel(r.Context(), r.PathValue("id"), owner(r))
 	if err != nil {
 		writeErr(w, err)
 		return
@@ -589,9 +586,11 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("X-Job-Id", cur.ID)
 			w.WriteHeader(200)
 			_, _ = io.Copy(w, f)
-			// Synchronous responses have no retention window: the body was
-			// fully written, so release immediately.
-			_, _ = s.Svc.Ack(context.WithoutCancel(r.Context()), cur.ID, owner(r), manifest.Version, "release")
+			// The result is NOT released here. "The body was written" is not proof
+			// that the caller received it: a dropped connection would lose both the
+			// response and the only recoverable copy. The result therefore follows
+			// the normal TTL, and the caller releases it explicitly with
+			// POST /v1/jobs/{id}/ack using X-Result-Version from this response.
 			return
 		}
 		select {

@@ -100,11 +100,17 @@ def main() -> int:
                                    mock.headers({"Content-Type": "application/json"}))
             assert blocked.status == 409, (blocked.status, blocked.text()[:200])
             assert mock.get_job(jid).json()["retention_status"] == "active"
-            released = http_request(mock.api, "POST", f"/v1/jobs/{jid}/cancel",
-                                    json.dumps({"result_version": v}).encode(),
-                                    mock.headers({"Content-Type": "application/json"}))
-            assert released.status == 202, (released.status, released.text()[:200])
-            assert released.json()["retention_status"] == "release_pending"
+            # Even with the correct version, cancel must not release a completed
+            # result: releasing is ACK's job (single path, no cancel/ACK race).
+            refused = http_request(mock.api, "POST", f"/v1/jobs/{jid}/cancel",
+                                   json.dumps({"result_version": v}).encode(),
+                                   mock.headers({"Content-Type": "application/json"}))
+            assert refused.status == 409, (refused.status, refused.text()[:200])
+            assert mock.get_job(jid).json()["retention_status"] == "active"
+            acked = http_request(mock.api, "POST", f"/v1/jobs/{jid}/ack",
+                                 json.dumps({"result_version": v}).encode(),
+                                 mock.headers({"Content-Type": "application/json"}))
+            assert acked.status == 202, (acked.status, acked.text()[:200])
             mock.wait_retention(jid, {"released"}, timeout=40)
 
             # queued/running cancel stays a cancellation, not a release
@@ -118,7 +124,7 @@ def main() -> int:
                     "SELECT state FROM attempts WHERE job_id=?", (j2,))]
             assert all(s in ("cancelled", "failed", "expired") for s in states), states
             return {"completed_cancel_no_version": blocked.status,
-                    "completed_cancel_with_version": released.status,
+                    "completed_cancel_with_version": refused.status,
                     "running_cancel_status": c2.json()["status"], "attempts": states}
 
         # ---------------------------------------------------------------- PR00-04
@@ -131,9 +137,18 @@ def main() -> int:
             assert ir["schema_version"] == "doc-ir/0.1", ir.get("schema_version")
             job_id = sync.headers.get("x-job-id")
             assert job_id, "sync response must expose X-Job-Id"
+            # The synchronous body is not proof of receipt: the result stays
+            # downloadable until the caller ACKs it (or the TTL expires).
+            still = http_request(mock.api, "GET", f"/v1/jobs/{job_id}/result?format=markdown",
+                                 headers=mock.headers())
+            assert still.status == 200, f"sync result was released without an ACK: {still.status}"
+            ack = http_request(mock.api, "POST", f"/v1/jobs/{job_id}/ack",
+                               json.dumps({"result_version": sync.headers.get("x-result-version")}).encode(),
+                               mock.headers({"Content-Type": "application/json"}))
+            assert ack.status == 202, (ack.status, ack.text()[:200])
             gone = http_request(mock.api, "GET", f"/v1/jobs/{job_id}/result?format=markdown",
                                 headers=mock.headers())
-            assert gone.status == 410, f"sync result was not one-shot: {gone.status}"
+            assert gone.status == 410, f"result survived its ACK: {gone.status}"
 
             # timeout → 202, job continues asynchronously and completes normally
             body, ctype = multipart({"mode": "fast"}, [("file", FIX / "txt_plain.txt")])
@@ -145,7 +160,8 @@ def main() -> int:
             final = wait_terminal(mock, jid)
             assert final["status"] == "completed", final
             assert time.time() - t0 < 30
-            return {"sync_http": sync.status, "sync_result_after": gone.status,
+            return {"sync_http": sync.status, "sync_result_before_ack": still.status,
+                    "sync_result_after_ack": gone.status,
                     "async_http": async_resp.status, "async_final": final["status"]}
 
         # ---------------------------------------------------------------- PR00-05
@@ -362,8 +378,8 @@ def main() -> int:
 
         for cid, name, fn in [
             ("PR00-02", "TXT/CSV/GB18030 decode correctly in auto|fast|accurate", pr00_02),
-            ("PR00-03", "cancel semantics: completed needs result_version; running cancels", pr00_03),
-            ("PR00-04", "sync parse is one-shot; timeout converts to async", pr00_04),
+            ("PR00-03", "cancel never releases a completed result (only ACK does); running cancels", pr00_03),
+            ("PR00-04", "sync parse keeps the result until ACK; timeout converts to async", pr00_04),
             ("PR00-05", "ACK vs in-flight download: lease protects the stream", pr00_05),
             ("PR00-06", "per-representation ETag, shared X-Result-Version, 304", pr00_06),
             ("PR00-07", "SSE scope, retention events, cursor reset", pr00_07),

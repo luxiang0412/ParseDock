@@ -69,6 +69,12 @@ def main(argv: list[str] | None = None) -> int:
                 sys.stdout.flush()
             else:
                 Path(args.out).write_bytes(data)
+            # The job id goes to stderr (stdout carries the document bytes): it is
+            # the only handle for a later `parsedock status`, or for releasing a
+            # result kept with --keep.
+            print(f"job {job_id} ({final.get('engine', 'unknown')}), "
+                  f"version {version}, retention "
+                  f"{'active (--keep)' if args.keep else 'releasing'}", file=sys.stderr)
             if not args.keep:
                 # ACK only after the bytes are safely written (the SDK's contract).
                 client.ack(job_id, version)

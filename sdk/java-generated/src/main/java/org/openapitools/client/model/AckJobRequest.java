@@ -61,7 +61,9 @@ public class AckJobRequest {
    */
   @JsonAdapter(ActionEnum.Adapter.class)
   public enum ActionEnum {
-    RELEASE("release");
+    RELEASE("release"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -84,7 +86,7 @@ public class AckJobRequest {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<ActionEnum> {

@@ -107,6 +107,7 @@ class EventsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -189,6 +190,7 @@ class EventsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,
@@ -271,6 +273,7 @@ class EventsApi:
             '401': "Error",
             '403': "Error",
             '404': "Error",
+            '429': "Error",
         }
         response_data = self.api_client.call_api(
             *_param,

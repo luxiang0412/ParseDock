@@ -49,11 +49,13 @@ Job = dict[str, Any]
 class ParseDockError(Exception):
     """Error returned by the service (stable ``code`` plus HTTP status)."""
 
-    def __init__(self, status: int, code: str, message: str):
+    def __init__(self, status: int, code: str, message: str, retry_after: float | None = None):
         super().__init__(f"{status} {code}: {message}")
         self.status = status
         self.code = code
         self.message = message
+        # Seconds the server asked us to wait (`Retry-After`), when it sent one.
+        self.retry_after = retry_after
 
     # Codes that share a transient HTTP status but will not clear by retrying.
     # `quota_exceeded` is 429 like `rate_limited`, yet the quota only resets when
@@ -131,9 +133,13 @@ class ParseDockClient:
                     return _Response(resp.status, dict(resp.headers), resp.read())
             except urllib.error.HTTPError as e:
                 raw = e.read()
-                err = self._to_error(e.code, raw)
+                err = self._to_error(e.code, raw, dict(e.headers or {}))
                 if retry and err.retryable and attempt < self.max_retries:
-                    time.sleep(min(2 ** attempt, 8) + random.random() / 4)
+                    delay = min(2 ** attempt, 8) + random.random() / 4
+                    if err.retry_after:
+                        # The server knows when the window resets; do not guess.
+                        delay = min(err.retry_after, 30)
+                    time.sleep(delay)
                     attempt += 1
                     continue
                 raise err
@@ -145,13 +151,22 @@ class ParseDockClient:
                 raise ParseDockError(502, "coordinator_unavailable", str(e)) from e
 
     @staticmethod
-    def _to_error(status: int, raw: bytes) -> ParseDockError:
+    def _to_error(status: int, raw: bytes, headers: dict[str, str] | None = None) -> ParseDockError:
+        retry_after = None
+        for k, v in (headers or {}).items():
+            if k.lower() == "retry-after":
+                try:
+                    retry_after = float(str(v).strip())
+                except ValueError:
+                    retry_after = None
         try:
             payload = json.loads(raw.decode("utf-8", "replace"))
             err = payload.get("error") or {}
-            return ParseDockError(status, err.get("code", "unknown"), err.get("message", ""))
+            return ParseDockError(status, err.get("code", "unknown"), err.get("message", ""),
+                                  retry_after=retry_after)
         except Exception:
-            return ParseDockError(status, "unknown", raw[:300].decode("utf-8", "replace"))
+            return ParseDockError(status, "unknown", raw[:300].decode("utf-8", "replace"),
+                                  retry_after=retry_after)
 
     @staticmethod
     def _multipart(fields: dict[str, str], path: str) -> tuple[bytes, str]:
@@ -179,12 +194,18 @@ class ParseDockClient:
         idempotency_key: str | None = None,
         priority: int | None = None,
     ) -> Job:
-        """Upload and enqueue. Returns the job (``status=queued``)."""
+        """Upload and enqueue. Returns the job (``status=queued``).
+
+        A key is always sent: the one you pass, or a generated one. The client
+        retries failed requests, and without a key a retried upload whose first
+        response was lost would create a second job that nobody releases. The
+        generated key is stable for this logical upload (it lives in the multipart
+        body built once), so a retry replays instead of duplicating.
+        """
         fields = {"mode": mode, "device": device}
         if ttl_seconds is not None:
             fields["ttl_seconds"] = str(ttl_seconds)
-        if idempotency_key:
-            fields["idempotency_key"] = idempotency_key
+        fields["idempotency_key"] = idempotency_key or uuid.uuid4().hex
         body, ctype = self._multipart(fields, str(path))
         q = ""
         if priority is not None:
@@ -239,9 +260,15 @@ class ParseDockClient:
     ) -> bytes:
         """Download, hand the bytes to ``sink``, and ACK **only if the sink succeeded**.
 
-        Use this in preference to a bare ``download()`` when the sink is your real
-        consumer (object store write, DB insert, file write). A failure inside
-        ``sink`` propagates and the result is *not* released, so it can be retried.
+        The sink's contract: when it returns, the bytes are *durably* stored. A
+        buffered write that is never closed does not satisfy that - use a context
+        manager (``with open(path, "wb") as f: f.write(body)``) or an API whose
+        return means the write is committed. Raise from the sink if the write
+        failed; the exception propagates, the result is not released, and the call
+        can be retried.
+
+        ``sink=None`` ACKs after the bytes are in this process's memory, which is
+        only appropriate when the caller itself is the last consumer.
         """
         body, version = self.download(job_id, fmt=fmt)
         if sink is not None:
@@ -259,16 +286,14 @@ class ParseDockClient:
         return json.loads(self._request("POST", f"/v1/jobs/{job_id}/ack", body, headers,
                                         retry=True).body)
 
-    def cancel(self, job_id: str, result_version: str | None = None) -> dict[str, Any]:
-        """Cancel a queued/running job.
+    def cancel(self, job_id: str) -> dict[str, Any]:
+        """Cancel a queued/running job. Idempotent.
 
-        A completed job cannot be cancelled — it can only be released, which needs
-        the manifest version exactly like :meth:`ack`. Pass ``result_version`` for
-        that case (or call :meth:`ack`); without it the server returns ``409``.
+        A completed job cannot be cancelled and cancel never releases its result:
+        the server returns ``409`` and you release with :meth:`ack`. Releasing is
+        deliberately a single path so the outcome cannot depend on a race.
         """
-        body = json.dumps({"result_version": result_version}).encode() if result_version else b""
-        return json.loads(self._request("POST", f"/v1/jobs/{job_id}/cancel", body,
-                                        {"Content-Type": "application/json"}).body)
+        return json.loads(self._request("POST", f"/v1/jobs/{job_id}/cancel", None).body)
 
     def parse_sync(
         self,
@@ -316,12 +341,18 @@ class ParseDockClient:
                     current = {}
 
     def wait_released(self, job_id: str, *, timeout: float = 60.0) -> Job:
-        """Wait until the cleaner finished releasing the artifact."""
+        """Wait until the cleaner finished releasing the artifact.
+
+        Raises ``TimeoutError`` if retention did not reach a terminal state within
+        ``timeout``: returning the still-pending job made callers announce a
+        release that had not happened.
+        """
         deadline = time.monotonic() + timeout
         while True:
             job = self.get_job(job_id)
             if job.get("retention_status") in RETENTION_DONE:
                 return job
             if time.monotonic() >= deadline:
-                return job
+                raise TimeoutError(
+                    f"job {job_id} still {job.get('retention_status')} after {timeout}s")
             time.sleep(0.5)

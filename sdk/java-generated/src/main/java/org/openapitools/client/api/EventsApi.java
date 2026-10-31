@@ -89,6 +89,7 @@ public class EventsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
     public okhttp3.Call jobEventsCall(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback _callback) throws ApiException {
@@ -178,6 +179,7 @@ public class EventsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
     public String jobEvents(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId) throws ApiException {
@@ -202,6 +204,7 @@ public class EventsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
     public ApiResponse<String> jobEventsWithHttpInfo(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId) throws ApiException {
@@ -228,6 +231,7 @@ public class EventsApi {
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
         <tr><td> 404 </td><td> Unknown job, or a job owned by somebody else. </td><td>  -  </td></tr>
+        <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
      </table>
      */
     public okhttp3.Call jobEventsAsync(@javax.annotation.Nonnull String id, @javax.annotation.Nullable String scope, @javax.annotation.Nullable String lastEventID, @javax.annotation.Nullable Long lastEventId, final ApiCallback<String> _callback) throws ApiException {

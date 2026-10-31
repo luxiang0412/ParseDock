@@ -129,17 +129,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-        '429':
-          description: |
-            Per-owner limits. `rate_limited` = request-rate budget (all requests,
-            including status polling); `quota_exceeded` = concurrent jobs, jobs/day
-            or bytes/day for this owner. Both carry `Retry-After` in seconds.
-          headers:
-            Retry-After:
-              schema: { type: integer }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '507':
           description: Storage below the safety watermark; retry later (existing results stay readable).
           content:
@@ -165,6 +155,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '503': { $ref: '#/components/responses/CoordinatorDown' }
 
   /v1/jobs/{id}/result:
@@ -227,6 +218,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '409':
           description: The result is not ready yet (job queued/running/failed).
           content:
@@ -290,6 +282,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
         '409':
           description: result_version does not match the current result.
           content:
@@ -309,25 +302,16 @@ paths:
         path. A cancelled job never publishes a result, even if the engine finished
         in the meantime.
 
-        A **completed** result is not cancelled. It is released, which is the same
-        operation as ACK and therefore requires `result_version`; without it the
-        call returns `409` and nothing is released. Use `POST /ack`.
+        A **completed** job cannot be cancelled: the call returns `409` and nothing
+        is released. Releasing a result is ACK's job and only ACK carries the
+        "I stored these bytes" claim - a second release path made the outcome
+        depend on a race between cancel and ACK.
       parameters:
         - $ref: '#/components/parameters/JobId'
         - $ref: '#/components/parameters/IdempotencyKeyHeader'
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                result_version:
-                  type: string
-                  description: Required when the job is already completed.
       responses:
         '202':
-          description: Cancellation (or release) accepted.
+          description: Cancellation accepted.
           content:
             application/json:
               schema:
@@ -343,10 +327,11 @@ paths:
         '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409':
-          description: Job already completed — cancel needs `result_version`.
+          description: Job already completed - use `POST /v1/jobs/{id}/ack` to release the result.
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /v1/jobs/{id}/events:
     get:
@@ -396,6 +381,7 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/InsufficientScope' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /v1/parse:
     post:
@@ -405,11 +391,15 @@ paths:
       description: |
         Same validation and pipeline as `POST /v1/jobs`, but waits up to
         `timeout_ms` (default 30 s, max 2 min) for completion.
-        * finished → `200` with the Document IR and the result is released immediately
-          (the body was fully written, so no retention window is needed);
+        * finished → `200` with the Document IR;
         * deadline reached → `202` with the job resource; it keeps running asynchronously;
         * failure → `422` with the stable error code.
-        Intended for interactive callers; prefer `/v1/jobs` for anything large.
+
+        The result is **not released** by this call: a written response does not
+        prove the caller received it, so the normal TTL applies. The response
+        carries `X-Job-Id` and `X-Result-Version`; release with
+        `POST /v1/jobs/{id}/ack` when your sink has the bytes. Intended for
+        interactive callers; prefer `/v1/jobs` for anything large.
       parameters:
         - $ref: '#/components/parameters/ModeQuery'
         - $ref: '#/components/parameters/DeviceQuery'
@@ -445,6 +435,7 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
+        '429': { $ref: '#/components/responses/RateLimited' }
 
   /healthz:
     get:
@@ -544,6 +535,19 @@ components:
       description: Same key + same owner returns the original job (`200`) instead of creating a second one.
 
   responses:
+    RateLimited:
+      description: |
+        Per-owner limits. `rate_limited` = request-rate budget (all requests,
+        including status polling and event streams); `quota_exceeded` = concurrent
+        jobs, jobs/day or bytes/day for this owner. Both carry `Retry-After` in
+        seconds. Retrying `rate_limited` after that delay is expected; retrying
+        `quota_exceeded` is not - the quota only resets when its window passes.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     BadRequest:
       description: Invalid parameters.
       content:
@@ -566,14 +570,6 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     TooLarge:
       description: Upload exceeds the configured limit.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    RateLimited:
-      description: Per-owner rate limit exceeded.
-      headers:
-        Retry-After:
-          schema: { type: integer }
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -633,6 +629,7 @@ components:
           enum: [queued, running, completed, failed, cancelled]
           description: Processing dimension.
         processing_status:
+          deprecated: true
           type: string
           description: Alias of `status` (both are returned).
         retention_status:

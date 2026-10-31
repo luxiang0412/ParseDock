@@ -1154,7 +1154,7 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 // A *completed* result is not cancelled: it is released, and releasing storage
 // requires the same proof as ACK (`result_version`), otherwise cancel would be a
 // way to bypass the ACK guard. Repeat calls are idempotent.
-func (s *Service) Cancel(ctx context.Context, jobID, ownerID, resultVersion string) (*jobs.Job, error) {
+func (s *Service) Cancel(ctx context.Context, jobID, ownerID string) (*jobs.Job, error) {
 	job, err := s.GetJob(ctx, jobID, ownerID)
 	if err != nil {
 		return nil, err
@@ -1180,23 +1180,13 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID, resultVersion stri
 		s.appendEvent(ctx, jobID, "cancelled", map[string]any{"reason": "client_request"})
 		s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
 	case jobs.StatusCompleted:
+		// A finished job cannot be cancelled, and cancel must never release its
+		// result: releasing is ACK's job and only ACK carries the "I stored these
+		// bytes" claim. Two release paths made the outcome depend on a race
+		// between cancel and ACK.
 		if job.RetentionStatus == jobs.RetentionActive {
-			if resultVersion == "" {
-				return nil, NewError(409, jobs.ErrConflict,
-					"job already completed: cancel would release the result and requires result_version (or call POST /ack with the manifest version)")
-			}
-			if job.ResultVersion != "" && resultVersion != job.ResultVersion {
-				return nil, NewError(409, jobs.ErrConflict, "result_version does not match the current result")
-			}
-			res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
-				WHERE id = ? AND owner_id = ? AND retention_status = 'active'`, ts(now), jobID, job.OwnerID)
-			if err != nil {
-				return nil, NewError(500, jobs.ErrInternal, err.Error())
-			}
-			if n, _ := res.RowsAffected(); n > 0 {
-				s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "cancel_after_complete"})
-				s.audit(ctx, "job_acked", job, map[string]any{"via": "cancel"})
-			}
+			return nil, NewError(409, jobs.ErrConflict,
+				"job already completed: cancel has no effect; release the result with POST /v1/jobs/{id}/ack and its result_version")
 		}
 	}
 	return s.GetJob(ctx, jobID, ownerID)

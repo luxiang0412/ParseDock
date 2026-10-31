@@ -64,7 +64,9 @@ public class DocumentIR {
    */
   @JsonAdapter(SchemaVersionEnum.Adapter.class)
   public enum SchemaVersionEnum {
-    DOC_IR_0_1("doc-ir/0.1");
+    DOC_IR_0_1("doc-ir/0.1"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -87,7 +89,7 @@ public class DocumentIR {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<SchemaVersionEnum> {
@@ -150,7 +152,9 @@ public class DocumentIR {
     
     SLIDE("slide"),
     
-    NONE("none");
+    NONE("none"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -173,7 +177,7 @@ public class DocumentIR {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<PageKindEnum> {

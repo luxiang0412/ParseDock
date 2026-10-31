@@ -37,8 +37,8 @@ class AckJobRequest(BaseModel):
         if value is None:
             return value
 
-        if value not in set(['release']):
-            raise ValueError("must be one of enum values ('release')")
+        if value not in set(['release', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('release', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

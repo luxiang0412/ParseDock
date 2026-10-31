@@ -27,6 +27,7 @@
 | Name | Value |
 |---- | -----|
 | DOC_IR_0_1 | &quot;doc-ir/0.1&quot; |
+| UNKNOWN_DEFAULT_OPEN_API | &quot;unknown_default_open_api&quot; |
 
 
 
@@ -38,6 +39,7 @@
 | SHEET | &quot;sheet&quot; |
 | SLIDE | &quot;slide&quot; |
 | NONE | &quot;none&quot; |
+| UNKNOWN_DEFAULT_OPEN_API | &quot;unknown_default_open_api&quot; |
 
 
 

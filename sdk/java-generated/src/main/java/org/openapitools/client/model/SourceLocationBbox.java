@@ -61,7 +61,9 @@ public class SourceLocationBbox {
     
     PDF_TOP_LEFT_V1("pdf_top_left_v1"),
     
-    IMAGE_PX_V1("image_px_v1");
+    IMAGE_PX_V1("image_px_v1"),
+    
+    UNKNOWN_DEFAULT_OPEN_API("unknown_default_open_api");
 
     private String value;
 
@@ -84,7 +86,7 @@ public class SourceLocationBbox {
           return b;
         }
       }
-      throw new IllegalArgumentException("Unexpected value '" + value + "'");
+      return UNKNOWN_DEFAULT_OPEN_API;
     }
 
     public static class Adapter extends TypeAdapter<CoordEnum> {

@@ -44,8 +44,8 @@ class TableCellsInner(BaseModel):
         if value is None:
             return value
 
-        if value not in set(['string', 'number', 'date', 'bool']):
-            raise ValueError("must be one of enum values ('string', 'number', 'date', 'bool')")
+        if value not in set(['string', 'number', 'date', 'bool', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('string', 'number', 'date', 'bool', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

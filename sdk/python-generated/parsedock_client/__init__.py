@@ -34,7 +34,6 @@ __all__ = [
     "AckJob202Response",
     "AckJobRequest",
     "CancelJob202Response",
-    "CancelJobRequest",
     "DocumentIR",
     "DocumentIRMetrics",
     "DocumentIRRouting",
@@ -74,7 +73,6 @@ from parsedock_client.exceptions import ApiException as ApiException
 from parsedock_client.models.ack_job202_response import AckJob202Response as AckJob202Response
 from parsedock_client.models.ack_job_request import AckJobRequest as AckJobRequest
 from parsedock_client.models.cancel_job202_response import CancelJob202Response as CancelJob202Response
-from parsedock_client.models.cancel_job_request import CancelJobRequest as CancelJobRequest
 from parsedock_client.models.document_ir import DocumentIR as DocumentIR
 from parsedock_client.models.document_ir_metrics import DocumentIRMetrics as DocumentIRMetrics
 from parsedock_client.models.document_ir_routing import DocumentIRRouting as DocumentIRRouting

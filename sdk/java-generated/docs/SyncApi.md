@@ -13,7 +13,7 @@ All URIs are relative to *http://localhost:8080*
 
 Bounded synchronous parse (small documents)
 
-Same validation and pipeline as &#x60;POST /v1/jobs&#x60;, but waits up to &#x60;timeout_ms&#x60; (default 30 s, max 2 min) for completion. * finished → &#x60;200&#x60; with the Document IR and the result is released immediately   (the body was fully written, so no retention window is needed); * deadline reached → &#x60;202&#x60; with the job resource; it keeps running asynchronously; * failure → &#x60;422&#x60; with the stable error code. Intended for interactive callers; prefer &#x60;/v1/jobs&#x60; for anything large. 
+Same validation and pipeline as &#x60;POST /v1/jobs&#x60;, but waits up to &#x60;timeout_ms&#x60; (default 30 s, max 2 min) for completion. * finished → &#x60;200&#x60; with the Document IR; * deadline reached → &#x60;202&#x60; with the job resource; it keeps running asynchronously; * failure → &#x60;422&#x60; with the stable error code.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries &#x60;X-Job-Id&#x60; and &#x60;X-Result-Version&#x60;; release with &#x60;POST /v1/jobs/{id}/ack&#x60; when your sink has the bytes. Intended for interactive callers; prefer &#x60;/v1/jobs&#x60; for anything large. 
 
 ### Example
 ```java
@@ -85,4 +85,5 @@ public class Example {
 | **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **413** | Upload exceeds the configured limit. |  -  |
 | **422** | Parse failed or the document is unsupported. |  -  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 

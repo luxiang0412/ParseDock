@@ -37,8 +37,8 @@ class SourceLocationBbox(BaseModel):
     @field_validator('coord')
     def coord_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in set(['pdf_user_space_v1', 'pdf_top_left_v1', 'image_px_v1']):
-            raise ValueError("must be one of enum values ('pdf_user_space_v1', 'pdf_top_left_v1', 'image_px_v1')")
+        if value not in set(['pdf_user_space_v1', 'pdf_top_left_v1', 'image_px_v1', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('pdf_user_space_v1', 'pdf_top_left_v1', 'image_px_v1', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

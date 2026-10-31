@@ -91,7 +91,8 @@ public final class ParseFile {
             }
             jobs.ackJob(done.getJobId(),                          // …release only after the write
                     new AckJobRequest().resultVersion(done.getResultVersion()), null);
-            System.out.println("released (ACK sent after the file was written)");
+            // ACK is a release *request*: deletion is asynchronous, so say what happened.
+            System.out.println("release accepted (ACK sent after the file was written)");
         } catch (ApiException e) {
             System.err.println("server error " + e.getCode() + ": " + e.getMessage());
             System.exit(1);

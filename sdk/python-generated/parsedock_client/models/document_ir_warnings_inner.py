@@ -40,8 +40,8 @@ class DocumentIRWarningsInner(BaseModel):
         if value is None:
             return value
 
-        if value not in set(['info', 'warn', 'error']):
-            raise ValueError("must be one of enum values ('info', 'warn', 'error')")
+        if value not in set(['info', 'warn', 'error', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('info', 'warn', 'error', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

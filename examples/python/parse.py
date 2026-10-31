@@ -64,8 +64,13 @@ def main() -> int:
                 print(f"kept on server; ACK it later with: {version}")
                 return 0
             c.ack(job["job_id"], version)              # …release only after the write
-            c.wait_released(job["job_id"])
-            print("released (ACK sent after the file was written)")
+            try:
+                c.wait_released(job["job_id"], timeout=60)
+                print("released (ACK sent after the file was written)")
+            except TimeoutError:
+                # The release is accepted; deletion is asynchronous. Saying
+                # "released" here before it is true would be a lie.
+                print("release accepted; deletion still in progress")
             return 0
     except ParseDockError as e:
         print(f"server error {e.status} {e.code}: {e.message}", file=sys.stderr)

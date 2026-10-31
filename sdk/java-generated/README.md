@@ -155,7 +155,6 @@ Class | Method | HTTP request | Description
  - [AckJob202Response](docs/AckJob202Response.md)
  - [AckJobRequest](docs/AckJobRequest.md)
  - [CancelJob202Response](docs/CancelJob202Response.md)
- - [CancelJobRequest](docs/CancelJobRequest.md)
  - [DocumentIR](docs/DocumentIR.md)
  - [DocumentIRMetrics](docs/DocumentIRMetrics.md)
  - [DocumentIRRouting](docs/DocumentIRRouting.md)

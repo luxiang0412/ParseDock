@@ -45,6 +45,8 @@ with ParseDockClient("http://localhost:8080", token=TOKEN) as c:
   you downloaded: a stale one is refused with `409` and nothing is released.
 * Without an ACK the result expires at `result_expires_at` (TTL).
 * After release: `410 gone` for a short tombstone window, then `404`.
+* `create_job` always sends an `Idempotency-Key` (yours or a generated one): a retried
+  upload whose response was lost replays instead of creating a second job.
 * Rows listed in `GET /v1/jobs` never include the text; download is separate.
 
 ## Methods
@@ -57,10 +59,10 @@ with ParseDockClient("http://localhost:8080", token=TOKEN) as c:
 | `download(id, fmt="markdown")` | `fmt` ∈ `markdown` \| `text` \| `json`; returns `(bytes, version)` |
 | `download_and_ack(id, fmt=..., sink=...)` | ACKs only after the sink returns |
 | `ack(id, result_version, action="release")` | `202` → `release_pending`; idempotent |
-| `cancel(id, result_version=None)` | queued/running only; a finished job must be ACKed |
-| `parse_sync(path, ...)` | create + wait + download in one call (small files) |
+| `cancel(id)` | queued/running only; a **completed** job returns `409` — releasing is ACK's job |
+| `parse_sync(path, ...)` | bounded synchronous parse (small files). The result is **not** released; it expires by TTL |
 | `events(id, last_event_id=0)` | SSE iterator; pass the last id to resume without replay |
-| `wait_released(id, timeout=60)` | until `retention_status` is `released` |
+| `wait_released(id, timeout=60)` | until `retention_status` is `released`/`expired`; raises `TimeoutError` otherwise |
 
 `mode`: `fast` (xberg, fastest), `accurate` (docling-rs, structure), `auto` (router
 decides, may retry once on the accurate engine for a bad scan). Text formats
@@ -84,7 +86,7 @@ can help (the client already retries retryable errors with backoff, `max_retries
 | 415 | `unsupported_type` | format not enabled |
 | 422 | `encrypted_file` | password-protected document |
 | 429 | `rate_limited` | retryable; back off |
-| 429 | `quota_exceeded` | **not** retryable: the owner's rolling quota is spent |
+| 429 | `quota_exceeded` | **not** retryable: the owner's rolling quota is spent (`Retry-After` is still sent) |
 | 409 | `gpu_unavailable` | `gpu_required` without a proven GPU worker |
 
 ## CLI

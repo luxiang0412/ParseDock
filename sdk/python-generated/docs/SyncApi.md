@@ -14,11 +14,15 @@ Bounded synchronous parse (small documents)
 
 Same validation and pipeline as `POST /v1/jobs`, but waits up to
 `timeout_ms` (default 30 s, max 2 min) for completion.
-* finished → `200` with the Document IR and the result is released immediately
-  (the body was fully written, so no retention window is needed);
+* finished → `200` with the Document IR;
 * deadline reached → `202` with the job resource; it keeps running asynchronously;
 * failure → `422` with the stable error code.
-Intended for interactive callers; prefer `/v1/jobs` for anything large.
+
+The result is **not released** by this call: a written response does not
+prove the caller received it, so the normal TTL applies. The response
+carries `X-Job-Id` and `X-Result-Version`; release with
+`POST /v1/jobs/{id}/ack` when your sink has the bytes. Intended for
+interactive callers; prefer `/v1/jobs` for anything large.
 
 
 ### Example
@@ -101,6 +105,7 @@ Name | Type | Description  | Notes
 **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 **413** | Upload exceeds the configured limit. |  -  |
 **422** | Parse failed or the document is unsupported. |  -  |
+**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

@@ -37,6 +37,16 @@ Other entry points: `download_and_ack(..., sink=...)` (ACK only after your sink
 returns), `parse_sync(path)` (small files), `events(job_id, last_event_id=...)`
 (SSE, resumable), `cancel(job_id)`. Errors are `ParseDockError(status, code,
 message)` with `.retryable`; the wrapper retries retryable failures with backoff.
+
+The retry rule is code-first, not status-first: `quota_exceeded` shares the `429`
+status with `rate_limited` but is **not** retryable — the quota only resets when
+its rolling window passes — and the server's `Retry-After` is honoured.
+`create_job` always sends an `Idempotency-Key` (yours, or a generated one), so a
+retried upload whose first response was lost replays instead of creating a second
+job. `wait_released` raises `TimeoutError` rather than reporting a release that
+has not happened, and `download_and_ack(sink=...)` requires the sink to have
+*durably* stored the bytes when it returns (a buffered write that is never closed
+does not qualify).
 `docs/SDK.md` §Errors lists the codes, `.agents/skills/parsedock-python-sdk/SKILL.md` is a
 condensed version for agent use.
 

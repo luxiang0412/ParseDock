@@ -103,12 +103,13 @@ Name | Type | Description  | Notes
 **401** | Missing/invalid token. |  -  |
 **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 **404** | Unknown job, or a job owned by somebody else. |  -  |
+**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 **409** | result_version does not match the current result. |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
 # **cancel_job**
-> CancelJob202Response cancel_job(id, idempotency_key=idempotency_key, cancel_job_request=cancel_job_request)
+> CancelJob202Response cancel_job(id, idempotency_key=idempotency_key)
 
 Stop a queued/running job (completed results must be ACKed)
 
@@ -119,9 +120,10 @@ process and finalises cleanly. Files are removed by the normal retention
 path. A cancelled job never publishes a result, even if the engine finished
 in the meantime.
 
-A **completed** result is not cancelled. It is released, which is the same
-operation as ACK and therefore requires `result_version`; without it the
-call returns `409` and nothing is released. Use `POST /ack`.
+A **completed** job cannot be cancelled: the call returns `409` and nothing
+is released. Releasing a result is ACK's job and only ACK carries the
+"I stored these bytes" claim - a second release path made the outcome
+depend on a race between cancel and ACK.
 
 
 ### Example
@@ -131,7 +133,6 @@ call returns `409` and nothing is released. Use `POST /ack`.
 ```python
 import parsedock_client
 from parsedock_client.models.cancel_job202_response import CancelJob202Response
-from parsedock_client.models.cancel_job_request import CancelJobRequest
 from parsedock_client.rest import ApiException
 from pprint import pprint
 
@@ -157,11 +158,10 @@ with parsedock_client.ApiClient(configuration) as api_client:
     api_instance = parsedock_client.JobsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
     idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. (optional)
-    cancel_job_request = parsedock_client.CancelJobRequest() # CancelJobRequest |  (optional)
 
     try:
         # Stop a queued/running job (completed results must be ACKed)
-        api_response = api_instance.cancel_job(id, idempotency_key=idempotency_key, cancel_job_request=cancel_job_request)
+        api_response = api_instance.cancel_job(id, idempotency_key=idempotency_key)
         print("The response of JobsApi->cancel_job:\n")
         pprint(api_response)
     except Exception as e:
@@ -177,7 +177,6 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
  **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] 
- **cancel_job_request** | [**CancelJobRequest**](CancelJobRequest.md)|  | [optional] 
 
 ### Return type
 
@@ -189,18 +188,19 @@ Name | Type | Description  | Notes
 
 ### HTTP request headers
 
- - **Content-Type**: application/json
+ - **Content-Type**: Not defined
  - **Accept**: application/json
 
 ### HTTP response details
 
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-**202** | Cancellation (or release) accepted. |  -  |
+**202** | Cancellation accepted. |  -  |
 **401** | Missing/invalid token. |  -  |
 **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 **404** | Unknown job, or a job owned by somebody else. |  -  |
-**409** | Job already completed — cancel needs &#x60;result_version&#x60;. |  -  |
+**409** | Job already completed - use &#x60;POST /v1/jobs/{id}/ack&#x60; to release the result. |  -  |
+**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 
@@ -317,7 +317,7 @@ Name | Type | Description  | Notes
 **413** | Upload exceeds the configured limit. |  -  |
 **415** | Format not in the allow-list, or content does not match the extension. |  -  |
 **422** | Malformed, encrypted or structurally invalid document. |  -  |
-**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  |  * Retry-After -  <br>  |
+**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 **507** | Storage below the safety watermark; retry later (existing results stay readable). |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
@@ -416,6 +416,7 @@ Name | Type | Description  | Notes
 **401** | Missing/invalid token. |  -  |
 **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 **404** | Unknown job, or a job owned by somebody else. |  -  |
+**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 **409** | The result is not ready yet (job queued/running/failed). |  -  |
 **410** | The result was released or expired (tombstone window). |  -  |
 
@@ -501,6 +502,7 @@ Name | Type | Description  | Notes
 **401** | Missing/invalid token. |  -  |
 **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 **404** | Unknown job, or a job owned by somebody else. |  -  |
+**429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 **503** | The coordinator is unreachable (API replicas stay healthy). |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)

@@ -43,8 +43,8 @@ class Element(BaseModel):
     @field_validator('type')
     def type_validate_enum(cls, value):
         """Validates the enum"""
-        if value not in set(['title', 'section', 'paragraph', 'list', 'list_item', 'table', 'image', 'formula', 'caption', 'footnote', 'header', 'footer', 'code', 'page_break', 'unknown']):
-            raise ValueError("must be one of enum values ('title', 'section', 'paragraph', 'list', 'list_item', 'table', 'image', 'formula', 'caption', 'footnote', 'header', 'footer', 'code', 'page_break', 'unknown')")
+        if value not in set(['title', 'section', 'paragraph', 'list', 'list_item', 'table', 'image', 'formula', 'caption', 'footnote', 'header', 'footer', 'code', 'page_break', 'unknown', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('title', 'section', 'paragraph', 'list', 'list_item', 'table', 'image', 'formula', 'caption', 'footnote', 'header', 'footer', 'code', 'page_break', 'unknown', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

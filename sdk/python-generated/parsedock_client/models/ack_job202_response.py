@@ -41,8 +41,8 @@ class AckJob202Response(BaseModel):
         if value is None:
             return value
 
-        if value not in set(['release_pending', 'deleting', 'released', 'expired']):
-            raise ValueError("must be one of enum values ('release_pending', 'deleting', 'released', 'expired')")
+        if value not in set(['release_pending', 'deleting', 'released', 'expired', 'unknown_default_open_api']):
+            raise ValueError("must be one of enum values ('release_pending', 'deleting', 'released', 'expired', 'unknown_default_open_api')")
         return value
 
     model_config = ConfigDict(

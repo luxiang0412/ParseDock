@@ -150,7 +150,8 @@ def main() -> int:
     check("result endpoint documents If-None-Match",
           "If-None-Match" in result_desc.get("description", ""))
     cancel_desc = pub["paths"]["/v1/jobs/{id}/cancel"]["post"]["description"]
-    check("cancel documents the completed-job rule", "completed" in cancel_desc and "result_version" in cancel_desc)
+    check("cancel documents the completed-job rule",
+          "completed" in cancel_desc and "ack" in cancel_desc.lower())
     events_desc = pub["paths"]["/v1/jobs/{id}/events"]["get"]["description"]
     check("events documents the scope", "scope=processing" in events_desc and "scope=retention" in events_desc)
     create_desc = pub["paths"]["/v1/jobs"]["post"]["description"]

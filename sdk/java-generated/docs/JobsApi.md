@@ -85,15 +85,16 @@ public class Example {
 | **401** | Missing/invalid token. |  -  |
 | **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 | **409** | result_version does not match the current result. |  -  |
 
 <a id="cancelJob"></a>
 # **cancelJob**
-> CancelJob202Response cancelJob(id, idempotencyKey, cancelJobRequest)
+> CancelJob202Response cancelJob(id, idempotencyKey)
 
 Stop a queued/running job (completed results must be ACKed)
 
-Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** result is not cancelled. It is released, which is the same operation as ACK and therefore requires &#x60;result_version&#x60;; without it the call returns &#x60;409&#x60; and nothing is released. Use &#x60;POST /ack&#x60;. 
+Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
 
 ### Example
 ```java
@@ -117,9 +118,8 @@ public class Example {
     JobsApi apiInstance = new JobsApi(defaultClient);
     String id = "job_06GRQJT5HC1DDZMPWRSKSCKM24"; // String | 
     String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one.
-    CancelJobRequest cancelJobRequest = new CancelJobRequest(); // CancelJobRequest | 
     try {
-      CancelJob202Response result = apiInstance.cancelJob(id, idempotencyKey, cancelJobRequest);
+      CancelJob202Response result = apiInstance.cancelJob(id, idempotencyKey);
       System.out.println(result);
     } catch (ApiException e) {
       System.err.println("Exception when calling JobsApi#cancelJob");
@@ -138,7 +138,6 @@ public class Example {
 |------------- | ------------- | ------------- | -------------|
 | **id** | **String**|  | |
 | **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] |
-| **cancelJobRequest** | [**CancelJobRequest**](CancelJobRequest.md)|  | [optional] |
 
 ### Return type
 
@@ -150,17 +149,18 @@ public class Example {
 
 ### HTTP request headers
 
- - **Content-Type**: application/json
+ - **Content-Type**: Not defined
  - **Accept**: application/json
 
 ### HTTP response details
 | Status code | Description | Response headers |
 |-------------|-------------|------------------|
-| **202** | Cancellation (or release) accepted. |  -  |
+| **202** | Cancellation accepted. |  -  |
 | **401** | Missing/invalid token. |  -  |
 | **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
-| **409** | Job already completed — cancel needs &#x60;result_version&#x60;. |  -  |
+| **409** | Job already completed - use &#x60;POST /v1/jobs/{id}/ack&#x60; to release the result. |  -  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 
 <a id="createJob"></a>
 # **createJob**
@@ -254,7 +254,7 @@ public class Example {
 | **413** | Upload exceeds the configured limit. |  -  |
 | **415** | Format not in the allow-list, or content does not match the extension. |  -  |
 | **422** | Malformed, encrypted or structurally invalid document. |  -  |
-| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds.  |  * Retry-After -  <br>  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 | **507** | Storage below the safety watermark; retry later (existing results stay readable). |  -  |
 
 <a id="downloadResult"></a>
@@ -329,6 +329,7 @@ public class Example {
 | **401** | Missing/invalid token. |  -  |
 | **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 | **409** | The result is not ready yet (job queued/running/failed). |  -  |
 | **410** | The result was released or expired (tombstone window). |  -  |
 
@@ -401,5 +402,6 @@ public class Example {
 | **401** | Missing/invalid token. |  -  |
 | **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
 | **404** | Unknown job, or a job owned by somebody else. |  -  |
+| **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 | **503** | The coordinator is unreachable (API replicas stay healthy). |  -  |
 

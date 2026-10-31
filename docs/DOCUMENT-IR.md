@@ -144,6 +144,35 @@ Stable codes: `ocr_not_run`, `ocr_used`, `ocr_quality_unknown`, `ocr_low_confide
 `legacy_format` marks OLE2 Word/Excel/PowerPoint input: text and tables are
 extracted, page numbers and coordinates are not available.
 
+## 2a. Compatibility policy (what `doc-ir/0.1` promises)
+
+The IR is a public contract, so the rules for changing it are part of it:
+
+* **Additive only within a minor version.** New optional fields may appear in any
+  object; clients must ignore fields they do not know. A field is never removed
+  or given a different meaning inside `doc-ir/0.1`.
+* **Vocabulary is open, not enumerated, on the client side.** `elements[].type`
+  and `warnings[].code` are strings. The server only emits the documented values,
+  but a client must tolerate an unknown one (render it as `unknown`, keep the
+  text) instead of failing the document. Generated clients are built with
+  `enumUnknownDefaultCase` for this reason.
+* **`schema_version` is a contract selector, not a content fingerprint.** It
+  changes only for a breaking change (a removed field, a renamed field, a changed
+  meaning). A client that sees an unknown `schema_version` should refuse the
+  document rather than guess.
+* **`routing.actual_device`** is `gpu`, `cpu` or `unknown`. A new value would be
+  an additive vocabulary change; treat anything unrecognised as `unknown`.
+* **Numbers and units are fixed.** `metrics.parse_ms` is milliseconds,
+  `size_bytes` is bytes, `bbox` coordinates are in the space named by
+  `bbox.coord`; absent fields mean "not measured", never zero.
+* **Arrays are in reading order.** `elements[]` order is authoritative;
+  `reading_order` is a per-element copy for consumers that sort or filter, and the
+  two must agree.
+
+`internal/documentir/compat_test.go` enforces the client-side half of this: a
+document with an unknown element type, an unknown warning code and unknown fields
+must unmarshal and round-trip unchanged.
+
 ## 3. Rules the adapters must follow
 
 1. **Never invent.** Missing page number, bbox, sheet name, confidence or heading level is
