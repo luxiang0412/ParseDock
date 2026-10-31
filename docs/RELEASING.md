@@ -66,8 +66,10 @@ To switch, change `groupId=` in the `make sdk` line in the `Makefile`, run
 | `GPG_PRIVATE_KEY` | `gpg --armor --export-secret-keys <key-id>` |
 | `MAVEN_GPG_PASSPHRASE` | the key passphrase |
 
-Create an environment named `central` (the workflow uses it) if you want the same
-manual-approval gate as PyPI.
+Both workflows use the **`pypi` environment** (the repository keeps every release
+secret there, so there is one approval gate and no duplicated values). To split
+them, create a `central` environment, move the four `MAVEN_*`/GPG secrets into it,
+and change `environment:` in `release-maven.yml`.
 
 After the workflow deploys, open the Central Portal, review the pending bundle and
 publish it. Artifacts appear in Maven Central a few minutes later.
