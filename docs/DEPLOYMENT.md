@@ -199,6 +199,13 @@ Coordinator log lines with `audit=true` are the audit trail; forward them to you
 log pipeline separately from application logs (they contain identities and sizes,
 never document text). Example event schema: `docs/ARCHITECTURE.md` §6.
 
+## 4a. Error codes
+
+Every error response is `{"error":{"code","message"}}`, and a failed job carries the
+same `code` in `error_code`. The full table (HTTP status, whether a client should retry,
+meaning, which component raises it) is [`ERROR-CODES.md`](ERROR-CODES.md); alerting and
+client retry policies should key on `code`, never on `message`.
+
 ## 5. Probes
 
 | Endpoint | Role | Meaning |

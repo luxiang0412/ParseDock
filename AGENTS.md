@@ -130,7 +130,9 @@ port clashes and confusing failures in the integration tests.
 * **Document IR schema is drift-checked.** Edit
   `internal/documentir/schema/document-ir-0.1.schema.json`, then `make schema` to publish it.
 * **Error codes are a public contract.** Add to `internal/jobs/job.go` + the OpenAPI enum +
-  `docs/DEPLOYMENT.md`; classifiers live in `internal/engines/exec.go` (`ClassifyCLIError`).
+  a row in `docs/ERROR-CODES.md` (`tests/contract/openapi_contract.py` fails unless the three
+  sets are equal), then `make sdk` and `npm run api:types`; classifiers live in
+  `internal/engines/exec.go` (`ClassifyCLIError`).
 * **The Go binary and both SDKs must share one version** (`scripts/check_versions.py`).
 * **The playground never holds the API key** — the dev/preview proxy and nginx inject it from the
   environment. Never rename it to `VITE_*` (Vite inlines those) and never ACK a result

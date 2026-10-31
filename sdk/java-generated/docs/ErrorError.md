@@ -24,6 +24,7 @@
 | PAGE_LIMIT_EXCEEDED | &quot;page_limit_exceeded&quot; |
 | SUSPICIOUS_COMPRESSION | &quot;suspicious_compression&quot; |
 | EXPANDED_TOO_LARGE | &quot;expanded_too_large&quot; |
+| ENGINE_OUT_OF_MEMORY | &quot;engine_out_of_memory&quot; |
 | QUOTA_EXCEEDED | &quot;quota_exceeded&quot; |
 | INSUFFICIENT_STORAGE | &quot;insufficient_storage&quot; |
 | ENGINE_UNAVAILABLE | &quot;engine_unavailable&quot; |

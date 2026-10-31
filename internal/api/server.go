@@ -22,6 +22,7 @@ import (
 	"sync"
 	"time"
 
+	"parsedock.dev/parsedock/internal/jobs"
 	"parsedock.dev/parsedock/internal/tlsutil"
 )
 
@@ -97,7 +98,7 @@ func New(cfg Config) (*Server, error) {
 			s.log.Warn("coordinator unreachable", "path", r.URL.Path, "err", err)
 			writeJSON(w, http.StatusBadGateway, map[string]any{
 				"error": map[string]any{
-					"code":    "coordinator_unavailable",
+					"code":    jobs.ErrCoordinatorUnavailable,
 					"message": "the coordinator is unreachable; retry with backoff",
 				},
 			})
@@ -226,7 +227,7 @@ func (s *Server) auth(next http.HandlerFunc) http.HandlerFunc {
 		}
 		if need := NeededScope(r.Method, r.URL.Path); !key.HasScope(need) {
 			writeJSON(w, 403, map[string]any{"error": map[string]any{
-				"code":    "insufficient_scope",
+				"code":    jobs.ErrInsufficientScope,
 				"message": "this API key does not grant " + need,
 			}})
 			return
