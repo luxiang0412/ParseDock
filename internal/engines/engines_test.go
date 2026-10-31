@@ -321,3 +321,30 @@ func TestRemapTablesRewritesReferences(t *testing.T) {
 		t.Fatalf("element id = %q, want el_11 (document namespace)", frag.Elements[0].ID)
 	}
 }
+
+// Audit: a formula tag split across the 1 MiB read boundary must still be detected, for both
+// "<f" and namespace-prefixed ":f".
+func TestFormulaTagAcrossChunkBoundary(t *testing.T) {
+	for _, prefix := range []string{"<f", "<s:f"} {
+		var b strings.Builder
+		b.WriteString(`<?xml version="1.0"?><worksheet><sheetData>`)
+		// Land the prefix's last character (< or :) as the final byte of the first 1 MiB chunk.
+		for b.Len() < (1<<20)-1 {
+			b.WriteString("<row/>")
+		}
+		b.WriteString(prefix + ">SUM(A1:A2)</f></sheetData></worksheet>")
+		ok, err := containsFormulaTag(context.Background(), strings.NewReader(b.String()))
+		if err != nil {
+			t.Fatalf("%s: %v", prefix, err)
+		}
+		if !ok {
+			t.Fatalf("%s: formula tag split across the read boundary was not detected", prefix)
+		}
+	}
+	// A formula-free sheet must not be reported as having one.
+	plain := strings.Repeat("<row><c r=\"A1\"><v>1</v></c></row>", 1000)
+	ok, err := containsFormulaTag(context.Background(), strings.NewReader(plain))
+	if err != nil || ok {
+		t.Fatalf("formula-free sheet reported as having formulas (ok=%v err=%v)", ok, err)
+	}
+}

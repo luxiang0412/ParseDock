@@ -348,7 +348,17 @@ func CheckPDF(path string, lim Limits) (pages int, encrypted bool, err error) {
 	if !has([]byte("%%EOF")) && !has([]byte("startxref")) && !has([]byte("/Root")) {
 		return 0, false, &ValidationError{Code: "malformed_file", Msg: "PDF structure markers are missing"}
 	}
-	pages = countPageObjects(buf) + countPageObjects(tail)
+	// Head and tail are adjacent when the file is smaller than head+tail: counting them
+	// separately loses a "/Type /Page" token straddling the 1 MiB seam. Count a contiguous
+	// window once instead.
+	if len(tail) > 0 && tailStart == int64(len(buf)) {
+		joined := make([]byte, 0, len(buf)+len(tail))
+		joined = append(joined, buf...)
+		joined = append(joined, tail...)
+		pages = countPageObjects(joined)
+	} else {
+		pages = countPageObjects(buf) + countPageObjects(tail)
+	}
 	encrypted = has([]byte("/Encrypt"))
 	if lim.MaxPages > 0 && pages > lim.MaxPages {
 		return pages, encrypted, &ValidationError{Code: "page_limit_exceeded", Msg: fmt.Sprintf("document has ~%d pages (limit %d)", pages, lim.MaxPages)}

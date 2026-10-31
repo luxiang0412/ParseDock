@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -556,6 +557,18 @@ type WorkerCaps struct {
 	CanGPU   bool     `json:"-"`
 }
 
+// jobLocks serialises publication and reclamation per job. Two completions for the same job
+// must not interleave their writes, and the cleaner must not delete a generation while a
+// completion is publishing one.
+var jobLocks sync.Map
+
+func lockJob(jobID string) func() {
+	v, _ := jobLocks.LoadOrStore(jobID, &sync.Mutex{})
+	mu := v.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 // instr returns the service instruments, falling back to the process-wide registry so
 // instrumentation is always available (and never nil) in tests and single-binary runs.
 func (s *Service) instr() *Instruments {
@@ -695,8 +708,8 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 	// overlapping heartbeats must not shorten the lease with an older computed value.
 	res, err := s.DB.ExecContext(ctx, `UPDATE attempts SET
 			last_heartbeat_at = ?,
-			lease_until = CASE WHEN lease_until < ? THEN ? ELSE lease_until END
-		WHERE job_id = ? AND lease_token = ? AND state = 'running' AND lease_until > ?`,
+			lease_until = CASE WHEN julianday(lease_until) < julianday(?) THEN ? ELSE lease_until END
+		WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?)`,
 		ts(now), ts(until), ts(until), jobID, token, ts(now))
 	if err != nil {
 		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
@@ -751,6 +764,13 @@ type CompleteParams struct {
 // while writing. If the lease was lost, the freshly published files are
 // removed so a superseded attempt cannot leave a result behind.
 func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, error) {
+	// One publisher per job at a time: the fence decides the winner, but the losing attempt
+	// must not be writing files that the winner (or the cleaner) is touching.
+	unlock := lockJob(p.JobID)
+	defer unlock()
+	if err := ctx.Err(); err != nil {
+		return nil, NewError(499, jobs.ErrCancelled, "cancelled before publishing the result")
+	}
 	if err := s.checkLease(ctx, p.JobID, p.Token); err != nil {
 		return nil, err
 	}
@@ -833,7 +853,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 				progress_stage = 'quota_rejected', updated_at = ?
 				WHERE id = ? AND processing_status = 'running'
 				  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
-				  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND lease_until > ?)`,
+				  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?))`,
 				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 			if uerr != nil {
 				_ = tx.Rollback()
@@ -869,7 +889,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			error_code = NULL, error_message = NULL, updated_at = ?
 		WHERE id = ? AND processing_status = 'running'
 		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
-		  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND lease_until > ?)`,
+		  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?))`,
 		ts(now), ts(expires), manifest.Version,
 		filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
 		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
@@ -917,8 +937,11 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	// Older generations of this job are unreachable now; removing them keeps the bytes on
-	// disk equal to what storage accounting charges for.
-	_ = s.Store.PruneResults(p.JobID, manifest.Version)
+	// disk equal to what storage accounting charges for. Skip it while a client or an online
+	// backup holds a lease: that reader may be copying the very directory.
+	if leased, lerr := s.hasActiveDownloadLease(ctx, p.JobID); lerr == nil && !leased {
+		_ = s.Store.PruneResults(p.JobID, manifest.Version)
+	}
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
 	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
 	s.appendEvent(ctx, p.JobID, "completed", map[string]any{
@@ -1054,7 +1077,7 @@ func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
 func (s *Service) hasActiveDownloadLease(ctx context.Context, jobID string) (bool, error) {
 	var n int
 	err := s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM download_leases
-		WHERE job_id = ? AND expires_at > ?`, jobID, ts(nowUTC())).Scan(&n)
+		WHERE job_id = ? AND julianday(expires_at) > julianday(?)`, jobID, ts(nowUTC())).Scan(&n)
 	return n > 0, err
 }
 
@@ -1227,7 +1250,7 @@ func (s *Service) RenewDownload(ctx context.Context, leaseID string) (time.Time,
 	res, err := s.DB.ExecContext(ctx, `UPDATE download_leases SET
 			expires_at = CASE WHEN expires_at < ? THEN ? ELSE expires_at END,
 			last_renewed_at = ?
-		WHERE lease_id = ? AND expires_at > ?
+		WHERE lease_id = ? AND julianday(expires_at) > julianday(?)
 		  AND job_id IN (SELECT id FROM jobs WHERE retention_status = 'active')`,
 		ts(exp), ts(exp), ts(now), leaseID, ts(now))
 	if err != nil {

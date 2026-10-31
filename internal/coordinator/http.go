@@ -336,8 +336,29 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 		gz = gzip.NewWriter(w)
 		dst = gz
 	}
-	if _, err := io.CopyBuffer(dst, f, make([]byte, 64<<10)); err != nil {
-		s.Log.Warn("result stream interrupted", "job", job.ID, "err", err)
+	// Deadline per chunk: a client that stops reading blocks Write, and without a deadline it
+	// would do so forever while the renewer keeps the result alive. 60 s of no progress ends
+	// the response instead.
+	rc := http.NewResponseController(w)
+	buf := make([]byte, 64<<10)
+	for {
+		n, rerr := f.Read(buf)
+		if n > 0 {
+			_ = rc.SetWriteDeadline(time.Now().Add(60 * time.Second))
+			if _, werr := dst.Write(buf[:n]); werr != nil {
+				s.Log.Warn("result stream write failed", "job", job.ID, "err", werr)
+				break
+			}
+			if fl, ok := w.(http.Flusher); ok {
+				fl.Flush()
+			}
+		}
+		if rerr != nil {
+			if !errors.Is(rerr, io.EOF) {
+				s.Log.Warn("result stream read failed", "job", job.ID, "err", rerr)
+			}
+			break
+		}
 	}
 	if gz != nil {
 		_ = gz.Close()

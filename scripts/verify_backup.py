@@ -86,6 +86,12 @@ def verify(backup: Path) -> dict:
         gen = files / "results" / job_id / (version or "").removeprefix("sha256:")
         mp = gen / "manifest.json"
         if not mp.exists():
+            # Backups (and installations) from before content-addressed generations keep the
+            # manifest directly under results/<job>/.
+            legacy = files / "results" / job_id / "manifest.json"
+            if legacy.exists():
+                gen, mp = files / "results" / job_id, legacy
+        if not mp.exists():
             problems.append(f"missing manifest {job_id}")
             continue
         counts["manifests"] += 1
@@ -107,10 +113,13 @@ def verify(backup: Path) -> dict:
         # altered (or whose version was never consistent) must not pass.
         try:
             computed = manifest_version(man["files"])
-        except (KeyError, TypeError):
+        except (KeyError, TypeError) as exc:
+            problems.append(f"manifest entries are malformed for {job_id}: {exc}")
             computed = ""
         if computed and man.get("result_version") and computed != man["result_version"]:
             problems.append(f"manifest version does not match its files for {job_id}")
+        if computed and not man.get("result_version"):
+            problems.append(f"manifest has no result_version for {job_id}")
         for entry in man["files"]:
             fp = gen / entry["name"]
             if not fp.exists():
@@ -122,6 +131,17 @@ def verify(backup: Path) -> dict:
 
     # Artifact rows are authoritative too: a manifest that omits a served artifact would
     # let a restore fail on download rather than here.
+    # Every served representation must have both a manifest entry and an artifact row: a
+    # result is served through the manifest, and storage accounting is driven by the row.
+    served_by_job: dict[str, set[str]] = {}
+    for job_id, kind, size, want in artifacts:
+        served_by_job.setdefault(job_id, set()).add(kind)
+    for job_id in manifests:
+        have = served_by_job.get(job_id, set())
+        for want in SERVED:
+            if want not in have:
+                problems.append(f"no artifact row for {want} of {job_id}")
+
     for job_id, kind, size, want in artifacts:
         if job_id not in with_files:
             continue

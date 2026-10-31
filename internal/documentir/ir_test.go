@@ -164,3 +164,15 @@ func TestLimitsRejectNegativeAndOverflow(t *testing.T) {
 		}
 	}
 }
+
+// Audit: duplicate table IDs made the text renderer and the validation disagree, and let a
+// document bypass the rendered-area bound (each element re-renders the first table).
+func TestLimitsRejectDuplicateTableIDs(t *testing.T) {
+	d := &Document{SchemaVersion: "doc-ir/0.1", Tables: []Table{
+		{ID: "t", Rows: 100_000, Cols: 100},
+		{ID: "t", Rows: 1, Cols: 1},
+	}}
+	if err := DefaultLimits.Validate(d); err == nil {
+		t.Fatal("duplicate table ids were accepted")
+	}
+}
