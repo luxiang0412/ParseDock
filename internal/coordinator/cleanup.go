@@ -158,12 +158,16 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				rep.Errors = append(rep.Errors, "finalize artifacts: "+err.Error())
 				continue
 			}
+			if err := appendEvent(ctx, tx, p.id, string(final), map[string]any{"at": nowUTC()}); err != nil {
+				_ = tx.Rollback()
+				rep.Errors = append(rep.Errors, "finalize event: "+err.Error())
+				continue
+			}
 			if err := tx.Commit(); err != nil {
 				rep.Errors = append(rep.Errors, "finalize commit: "+err.Error())
 				continue
 			}
 			_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE job_id = ?`, p.id)
-			s.appendEvent(ctx, p.id, string(final), map[string]any{"at": nowUTC()})
 			if job, jerr := s.GetJob(ctx, p.id, ""); jerr == nil {
 				s.audit(ctx, "job_"+string(final), job, map[string]any{"reason": p.status})
 			}
@@ -314,12 +318,17 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 				continue
 			}
 		}
+		if err := appendEvent(ctx, tx, l.jobID, "lease_expired",
+			map[string]any{"attempt": l.attempt, "worker_id": l.worker}); err != nil {
+			_ = tx.Rollback()
+			rep.Errors = append(rep.Errors, "reap event: "+err.Error())
+			continue
+		}
 		if err := tx.Commit(); err != nil {
 			rep.Errors = append(rep.Errors, "reap commit: "+err.Error())
 			continue
 		}
 		n++
-		s.appendEvent(ctx, l.jobID, "lease_expired", map[string]any{"attempt": l.attempt, "worker_id": l.worker})
 	}
 	return n
 }

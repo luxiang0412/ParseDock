@@ -268,13 +268,16 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		_ = s.Store.DeleteJob(jobID)
 		return nil, false, NewError(500, jobs.ErrInternal, "record usage: "+err.Error())
 	}
+	if err := appendEvent(ctx, tx, jobID, "created", map[string]any{
+		"status": job.ProcessingStatus, "format": job.Format, "engine_hint": job.EngineHint,
+	}); err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+	}
 	if err := tx.Commit(); err != nil {
 		_ = s.Store.DeleteJob(jobID)
 		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
 	}
-	s.appendEvent(ctx, jobID, "created", map[string]any{
-		"status": job.ProcessingStatus, "format": job.Format, "engine_hint": job.EngineHint,
-	})
 	s.audit(ctx, "job_created", job, map[string]any{
 		"engine_hint": job.EngineHint, "mode": job.RequestedMode, "device": job.RequestedDevice,
 	})
@@ -709,12 +712,14 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 		t.JobID, t.AttemptNo, caps.WorkerID, t.LeaseToken, ts(t.LeaseUntil), ts(now), jobs.AttemptRunning, caps.Device); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, "claim: insert attempt: "+err.Error())
 	}
+	if err := appendEvent(ctx, tx, t.JobID, "running", map[string]any{
+		"attempt": t.AttemptNo, "worker_id": caps.WorkerID, "lease_until": t.LeaseUntil,
+	}); err != nil {
+		return nil, NewError(500, jobs.ErrInternal, "claim: event: "+err.Error())
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, "claim: commit: "+err.Error())
 	}
-	s.appendEvent(ctx, t.JobID, "running", map[string]any{
-		"attempt": t.AttemptNo, "worker_id": caps.WorkerID, "lease_until": t.LeaseUntil,
-	})
 	return &t, nil
 }
 
@@ -933,14 +938,16 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 				_ = tx.Rollback()
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+aerr.Error())
 			}
+			if eerr := appendEvent(ctx, tx, p.JobID, "failed", map[string]any{
+				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false}); eerr != nil {
+				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+eerr.Error())
+			}
 			if cerr := tx.Commit(); cerr != nil {
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
 			}
 			// The job is terminal now; its input and the rejected result go away unless a
 			// download lease (client or online backup) still protects them.
 			s.deleteJobUnlessLeased(ctx, p.JobID)
-			s.appendEvent(ctx, p.JobID, "failed", map[string]any{
-				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false})
 			return nil, NewError(429, jobs.ErrQuotaExceeded, msg)
 		}
 	}
@@ -990,6 +997,12 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
+	if err := appendEvent(ctx, tx, p.JobID, "completed", map[string]any{
+		"result_version": manifest.Version, "engine": p.Engine, "engine_version": p.Version,
+		"result_expires_at": expires, "pages": p.PageCount, "warnings": p.Warnings,
+	}); err != nil {
+		return nil, NewError(500, jobs.ErrInternal, "complete: event: "+err.Error())
+	}
 	if err := tx.Commit(); err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
@@ -1003,10 +1016,6 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	}
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
 	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
-	s.appendEvent(ctx, p.JobID, "completed", map[string]any{
-		"result_version": manifest.Version, "engine": p.Engine, "engine_version": p.Version,
-		"result_expires_at": expires, "pages": p.PageCount, "warnings": p.Warnings,
-	})
 	return s.GetJob(ctx, p.JobID, "")
 }
 
@@ -1066,11 +1075,13 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 			truncate(msg, 500), jobID, token); err != nil {
 			return nil, NewError(500, jobs.ErrInternal, err.Error())
 		}
-		evt := "retry_scheduled"
+		if err := appendEvent(ctx, tx, jobID, "retry_scheduled",
+			map[string]any{"code": code, "attempt": attempt, "backoff_s": backoff.Seconds()}); err != nil {
+			return nil, NewError(500, jobs.ErrInternal, err.Error())
+		}
 		if err := tx.Commit(); err != nil {
 			return nil, NewError(500, jobs.ErrInternal, err.Error())
 		}
-		s.appendEvent(ctx, jobID, evt, map[string]any{"code": code, "attempt": attempt, "backoff_s": backoff.Seconds()})
 		return s.GetJob(ctx, jobID, "")
 	}
 
@@ -1097,10 +1108,13 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		truncate(msg, 500), jobID, token); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
+	if err := appendEvent(ctx, tx, jobID, "failed",
+		map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable}); err != nil {
+		return nil, NewError(500, jobs.ErrInternal, err.Error())
+	}
 	if err := tx.Commit(); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
-	s.appendEvent(ctx, jobID, "failed", map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable})
 	// A client (or an online backup) may hold a live download lease on the input; deleting
 	// under it would pull the bytes out from under a reader. In that case the cleaner removes
 	// the files once the lease expires (it already honours download_leases).
@@ -1190,7 +1204,12 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 		}
 		// The predicate repeats the checks inside the update: a completion that lands
 		// between the read above and this statement must not be released by a stale token.
-		res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
+		tx, err := s.DB.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, NewError(500, jobs.ErrInternal, err.Error())
+		}
+		defer func() { _ = tx.Rollback() }()
+		res, err := tx.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
 			WHERE id = ? AND owner_id = ? AND retention_status = 'active'
 			  AND processing_status = 'completed' AND result_version = ?`,
 			ts(now), jobID, job.OwnerID, resultVersion)
@@ -1200,7 +1219,12 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 		if n, _ := res.RowsAffected(); n == 0 {
 			return nil, NewError(409, jobs.ErrConflict, "result_version is no longer current")
 		}
-		s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "ack"})
+		if err := appendEvent(ctx, tx, jobID, "release_pending", map[string]any{"reason": "ack"}); err != nil {
+			return nil, NewError(500, jobs.ErrInternal, err.Error())
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, NewError(500, jobs.ErrInternal, err.Error())
+		}
 		s.audit(ctx, "job_acked", job, map[string]any{"result_version": resultVersion})
 		return s.GetJob(ctx, jobID, ownerID)
 	}
@@ -1236,7 +1260,7 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID string) (*jobs.Job,
 			}
 		}
 		_, _ = s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`, jobID)
-		s.appendEvent(ctx, jobID, "cancelled", map[string]any{"reason": "client_request"})
+		_ = appendEvent(ctx, s.DB, jobID, "cancelled", map[string]any{"reason": "client_request"})
 		s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
 	case jobs.StatusCompleted:
 		// A finished job cannot be cancelled, and cancel must never release its
@@ -1404,13 +1428,22 @@ type Event struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-func (s *Service) appendEvent(ctx context.Context, jobID, typ string, payload map[string]any) {
+// execer is satisfied by *sql.DB and *sql.Tx.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// appendEvent records one lifecycle event. State transitions pass their transaction, so
+// the event becomes visible atomically with the status it describes: an SSE reader that
+// observes a terminal status is then guaranteed to find the terminal event as well.
+func appendEvent(ctx context.Context, q execer, jobID, typ string, payload map[string]any) error {
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return
+		return err
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO job_events(job_id, type, payload, created_at) VALUES(?,?,?,?)`,
+	_, err = q.ExecContext(ctx, `INSERT INTO job_events(job_id, type, payload, created_at) VALUES(?,?,?,?)`,
 		jobID, typ, string(b), ts(nowUTC()))
+	return err
 }
 
 // OldestEventID reports the oldest retained event for a job, so a client cursor

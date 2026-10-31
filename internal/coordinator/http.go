@@ -30,6 +30,12 @@ type Server struct {
 	Svc           *Service
 	InternalToken string
 	Log           *slog.Logger
+
+	// ssePollEvery overrides the SSE poll interval (tests); zero means 500 ms.
+	ssePollEvery time.Duration
+	// ssePollHook, when set, runs between the status read and the event read of every SSE
+	// poll (tests use it to land a transition inside that window).
+	ssePollHook func()
 }
 
 // NewServer builds the coordinator HTTP server.
@@ -407,7 +413,8 @@ func (l *leaseRenewer) stop() {
 //
 // F07: the subscription scope is explicit.
 //   - scope=processing (default): the stream ends when the *processing* status is
-//     terminal (completed/failed/cancelled). Retention events are not sent.
+//     terminal (completed/failed/cancelled). Retention events are not sent (they are
+//     skipped, and the cursor still advances past them).
 //   - scope=retention: the stream continues into the retention lifecycle and ends
 //     at released/expired (or after sseMaxDuration).
 //
@@ -488,7 +495,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	deadline := time.Now().Add(sseMaxDuration)
-	poll := time.NewTicker(500 * time.Millisecond)
+	every := s.ssePollEvery
+	if every <= 0 {
+		every = 500 * time.Millisecond
+	}
+	poll := time.NewTicker(every)
 	defer poll.Stop()
 	keepalive := time.NewTicker(15 * time.Second)
 	defer keepalive.Stop()
@@ -502,23 +513,38 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			flusher.Flush()
 		case <-poll.C:
-			evs, err := s.Svc.Events(r.Context(), jobID, lastID, 200)
-			if err != nil {
-				return
-			}
-			for _, e := range evs {
-				lastID = e.ID
-				if !send(e) {
-					return
-				}
-			}
+			// Status first, events second. Every transition writes its event in the same
+			// transaction as the status, so once this read observes a terminal status the
+			// drain below is guaranteed to include the terminal event. Reading events first
+			// let a completion land between the two reads and end the stream without it.
 			cur, err := s.Svc.GetJob(r.Context(), jobID, owner(r))
 			if err != nil {
 				// Job row purged (tombstone over): the stream is over.
 				return
 			}
-			done := cur.ProcessingStatus.Terminal() && len(evs) == 0
-			if scope == "retention" && done && !cur.RetentionStatus.Terminal() {
+			if s.ssePollHook != nil {
+				s.ssePollHook()
+			}
+			for {
+				evs, err := s.Svc.Events(r.Context(), jobID, lastID, sseBatch)
+				if err != nil {
+					return
+				}
+				for _, e := range evs {
+					lastID = e.ID
+					if scope == "processing" && isRetentionEvent(e.Type) {
+						continue
+					}
+					if !send(e) {
+						return
+					}
+				}
+				if len(evs) < sseBatch {
+					break
+				}
+			}
+			done := cur.ProcessingStatus.Terminal()
+			if scope == "retention" && !cur.RetentionStatus.Terminal() {
 				done = false
 			}
 			if done {
@@ -539,6 +565,20 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 // sseMaxDuration bounds one SSE connection so a client cannot hold a server
 // goroutine (and its DB polling) forever.
 const sseMaxDuration = 10 * time.Minute
+
+// sseBatch is the page size of one event read; a poll keeps reading until a short page.
+const sseBatch = 200
+
+// isRetentionEvent reports whether an event type belongs to the retention lifecycle, which
+// scope=processing does not deliver.
+func isRetentionEvent(typ string) bool {
+	switch jobs.RetentionStatus(typ) {
+	case jobs.RetentionReleasePending, jobs.RetentionExpiryPending, jobs.RetentionDeleting,
+		jobs.RetentionReleased, jobs.RetentionExpired:
+		return true
+	}
+	return false
+}
 
 // handleSyncParse implements POST /v1/parse: same pipeline, bounded wait.
 func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {

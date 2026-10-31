@@ -75,6 +75,14 @@ POST …/ack            202 immediately, deletion asynchronous
 files gone             within one cleanup interval (measured ≤ 2 s with 1 s interval)
 ```
 
+Every transition writes its `job_events` row in the **same transaction** as the status
+change (create, claim, retry, complete, fail, quota rejection, cancel, ACK, release/expiry,
+lease reap). The SSE loop reads the status first and then drains every event up to that
+point, so a stream that ends on a terminal status has always delivered the terminal event
+(`TestSSEDeliversTerminalEventWhenCompletionRacesThePoll`). `scope=processing` skips the
+retention events (`release_pending`, `released`, `expired`) as the OpenAPI spec says;
+`scope=retention` delivers them.
+
 ## 4. ACK contract
 
 Request:
