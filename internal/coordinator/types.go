@@ -40,6 +40,58 @@ func AsError(err error) *Error {
 	return &Error{Code: jobs.ErrInternal, Message: internalMessage, Status: 500}
 }
 
+// statusForCode is the HTTP status a stable error code is answered with when the code is not
+// produced together with its own status: upload validation and a job's terminal failure as
+// reported by the synchronous endpoint. Document and engine failures (malformed, encrypted,
+// page limit, engine errors, timeouts) are 422; codes with a dedicated meaning keep it.
+func statusForCode(code string) int {
+	switch code {
+	case jobs.ErrInvalidRequest:
+		return 400
+	case jobs.ErrUnauthorized:
+		return 401
+	case jobs.ErrNotFound:
+		return 404
+	case jobs.ErrConflict, jobs.ErrCancelled, jobs.ErrGPUUnavailable, jobs.ErrLeaseLost:
+		return 409
+	case jobs.ErrGone:
+		return 410
+	case jobs.ErrTooLarge, jobs.ErrExpandedTooLarge:
+		return 413
+	case jobs.ErrUnsupportedType:
+		return 415
+	case jobs.ErrQuotaExceeded, jobs.ErrRateLimited:
+		return 429
+	case jobs.ErrInsufficientSpace:
+		return 507
+	}
+	return 422
+}
+
+// quotaRetryAfter is the Retry-After (seconds) for storage-quota refusals, at admission and
+// when a result is rejected at completion.
+const quotaRetryAfter = 60
+
+// terminalFailure is the error a client receives for a job that ended without a result.
+func terminalFailure(j *jobs.Job) *Error {
+	if j.ProcessingStatus == jobs.StatusCancelled {
+		// Cancel records no error_code; the stable code for this outcome is 'cancelled'.
+		return NewError(409, jobs.ErrCancelled, "job was cancelled before it finished")
+	}
+	code, msg := j.ErrorCode, j.ErrorMessage
+	if !jobs.IsKnownErrorCode(code) {
+		code = jobs.ErrInternal
+	}
+	if msg == "" {
+		msg = "parse failed"
+	}
+	e := NewError(statusForCode(code), code, msg)
+	if code == jobs.ErrQuotaExceeded {
+		e.RetryAfter = quotaRetryAfter
+	}
+	return e
+}
+
 // internalMessage is what a client sees for an internal failure.
 const internalMessage = "internal error; the coordinator logged the details"
 

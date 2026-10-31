@@ -616,14 +616,19 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 	tick := time.NewTicker(200 * time.Millisecond)
 	defer tick.Stop()
 	for {
-		cur, err := s.Svc.GetJob(ctx, job.ID, owner(r))
+		// Poll with the request context, not the wait deadline: a deadline expiring inside
+		// this query must end in the 202 below, not in a 500 for a healthy job.
+		cur, err := s.Svc.GetJob(r.Context(), job.ID, owner(r))
 		if err != nil {
 			writeErr(w, err)
 			return
 		}
 		if cur.ProcessingStatus.Terminal() {
 			if cur.ProcessingStatus != jobs.StatusCompleted {
-				writeErr(w, NewError(422, cur.ErrorCode, cur.ErrorMessage))
+				// Same code→status mapping as upload validation, so a failure has one status
+				// whether it is detected at admission or by the engine (quota_exceeded is 429
+				// with Retry-After, a cancelled job is 409 cancelled).
+				writeErr(w, terminalFailure(cur))
 				return
 			}
 			f, _, manifest, err := s.Svc.OpenResult(cur.ID, cur.ResultVersion, "json")

@@ -548,6 +548,72 @@ func TestInternalErrorsDoNotLeakDetails(t *testing.T) {
 	}
 }
 
+// syncParse runs POST /v1/parse while act plays the worker (or the client) for the job.
+func syncParse(t *testing.T, s *Service, act func(jobID string)) (*http.Response, map[string]any) {
+	t.Helper()
+	srv := NewServer(s, "", slog.Default())
+	type result struct {
+		resp *http.Response
+		body map[string]any
+	}
+	ch := make(chan result, 1)
+	go func() {
+		resp, body := postJob(t, srv, "/v1/parse", "timeout_ms=10000", []byte("hello"))
+		ch <- result{resp, body}
+	}()
+	var jobID string
+	deadline := time.Now().Add(5 * time.Second)
+	for jobID == "" && time.Now().Before(deadline) {
+		_ = s.DB.QueryRow(`SELECT id FROM jobs LIMIT 1`).Scan(&jobID)
+		time.Sleep(5 * time.Millisecond)
+	}
+	if jobID == "" {
+		t.Fatal("sync parse never created a job")
+	}
+	act(jobID)
+	r := <-ch
+	return r.resp, r.body
+}
+
+// Review finding 3: every failed sync parse was a 422 carrying cur.ErrorCode; a cancelled job
+// has no error_code (empty code) and a quota rejection is a 429 everywhere else.
+func TestSyncParseFailureStatuses(t *testing.T) {
+	t.Run("cancelled", func(t *testing.T) {
+		s := testService(t, nil)
+		resp, body := syncParse(t, s, func(jobID string) {
+			if _, err := s.Cancel(context.Background(), jobID, "owner-1"); err != nil {
+				t.Errorf("cancel: %v", err)
+			}
+		})
+		if resp.StatusCode != 409 || errCode(body) != jobs.ErrCancelled {
+			t.Fatalf("got %d %v, want 409 cancelled", resp.StatusCode, body)
+		}
+	})
+	t.Run("quota", func(t *testing.T) {
+		s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 100} })
+		resp, body := syncParse(t, s, func(jobID string) {
+			task := claimNative(t, s)
+			big := bytes.Repeat([]byte("x"), 500)
+			_, _ = s.Complete(context.Background(), CompleteParams{JobID: jobID, Token: task.LeaseToken,
+				Engine: "native", Version: "1", Markdown: big, Text: big, JSON: big})
+		})
+		if resp.StatusCode != 429 || errCode(body) != jobs.ErrQuotaExceeded || resp.Header.Get("Retry-After") == "" {
+			t.Fatalf("got %d %v (Retry-After %q), want 429 quota_exceeded with Retry-After",
+				resp.StatusCode, body, resp.Header.Get("Retry-After"))
+		}
+	})
+	t.Run("engine", func(t *testing.T) {
+		s := testService(t, nil)
+		resp, body := syncParse(t, s, func(jobID string) {
+			task := claimNative(t, s)
+			_, _ = s.Fail(context.Background(), jobID, task.LeaseToken, jobs.ErrEncrypted, "password", false)
+		})
+		if resp.StatusCode != 422 || errCode(body) != jobs.ErrEncrypted {
+			t.Fatalf("got %d %v, want 422 encrypted_file", resp.StatusCode, body)
+		}
+	})
+}
+
 // Review finding 1: the terminal event is written in the completion's transaction, so a
 // failure to record it leaves the job untouched instead of completed-without-event.
 func TestCompletionEventIsAtomicWithStatus(t *testing.T) {

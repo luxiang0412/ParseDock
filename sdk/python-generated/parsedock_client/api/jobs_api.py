@@ -46,7 +46,7 @@ class JobsApi:
         self,
         id: Annotated[str, Field(strict=True)],
         ack_job_request: AckJobRequest,
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -68,7 +68,7 @@ class JobsApi:
         :type id: str
         :param ack_job_request: (required)
         :type ack_job_request: AckJobRequest
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -127,7 +127,7 @@ class JobsApi:
         self,
         id: Annotated[str, Field(strict=True)],
         ack_job_request: AckJobRequest,
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -149,7 +149,7 @@ class JobsApi:
         :type id: str
         :param ack_job_request: (required)
         :type ack_job_request: AckJobRequest
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -208,7 +208,7 @@ class JobsApi:
         self,
         id: Annotated[str, Field(strict=True)],
         ack_job_request: AckJobRequest,
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -230,7 +230,7 @@ class JobsApi:
         :type id: str
         :param ack_job_request: (required)
         :type ack_job_request: AckJobRequest
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -367,7 +367,7 @@ class JobsApi:
     def cancel_job(
         self,
         id: Annotated[str, Field(strict=True)],
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -387,7 +387,7 @@ class JobsApi:
 
         :param id: (required)
         :type id: str
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -443,7 +443,7 @@ class JobsApi:
     def cancel_job_with_http_info(
         self,
         id: Annotated[str, Field(strict=True)],
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -463,7 +463,7 @@ class JobsApi:
 
         :param id: (required)
         :type id: str
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -519,7 +519,7 @@ class JobsApi:
     def cancel_job_without_preload_content(
         self,
         id: Annotated[str, Field(strict=True)],
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -539,7 +539,7 @@ class JobsApi:
 
         :param id: (required)
         :type id: str
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -660,13 +660,13 @@ class JobsApi:
         file: Annotated[Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]], Field(description="The document. Required.")],
         mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
-        ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum.")] = None,
-        priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue.")] = None,
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. ")] = None,
+        priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. ")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         mode2: Optional[StrictStr] = None,
         device2: Optional[StrictStr] = None,
-        ttl_seconds2: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL; capped by the server maximum.")] = None,
-        idempotency_key2: Annotated[Optional[StrictStr], Field(description="Alternative to the Idempotency-Key header.")] = None,
+        ttl_seconds2: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. ")] = None,
+        idempotency_key2: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -690,19 +690,19 @@ class JobsApi:
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
-        :param ttl_seconds: Requested result TTL, capped by the server's maximum.
+        :param ttl_seconds: Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
         :type ttl_seconds: int
-        :param priority: Higher runs first within the same queue.
+        :param priority: Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. 
         :type priority: int
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param mode2:
         :type mode2: str
         :param device2:
         :type device2: str
-        :param ttl_seconds2: Requested result TTL; capped by the server maximum.
+        :param ttl_seconds2: Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
         :type ttl_seconds2: int
-        :param idempotency_key2: Alternative to the Idempotency-Key header.
+        :param idempotency_key2: Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). 
         :type idempotency_key2: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -773,13 +773,13 @@ class JobsApi:
         file: Annotated[Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]], Field(description="The document. Required.")],
         mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
-        ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum.")] = None,
-        priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue.")] = None,
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. ")] = None,
+        priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. ")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         mode2: Optional[StrictStr] = None,
         device2: Optional[StrictStr] = None,
-        ttl_seconds2: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL; capped by the server maximum.")] = None,
-        idempotency_key2: Annotated[Optional[StrictStr], Field(description="Alternative to the Idempotency-Key header.")] = None,
+        ttl_seconds2: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. ")] = None,
+        idempotency_key2: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -803,19 +803,19 @@ class JobsApi:
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
-        :param ttl_seconds: Requested result TTL, capped by the server's maximum.
+        :param ttl_seconds: Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
         :type ttl_seconds: int
-        :param priority: Higher runs first within the same queue.
+        :param priority: Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. 
         :type priority: int
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param mode2:
         :type mode2: str
         :param device2:
         :type device2: str
-        :param ttl_seconds2: Requested result TTL; capped by the server maximum.
+        :param ttl_seconds2: Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
         :type ttl_seconds2: int
-        :param idempotency_key2: Alternative to the Idempotency-Key header.
+        :param idempotency_key2: Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). 
         :type idempotency_key2: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request
@@ -886,13 +886,13 @@ class JobsApi:
         file: Annotated[Union[StrictBytes, StrictStr, Tuple[StrictStr, StrictBytes]], Field(description="The document. Required.")],
         mode: Annotated[Optional[StrictStr], Field(description="A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. ")] = None,
         device: Annotated[Optional[StrictStr], Field(description="`gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. ")] = None,
-        ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum.")] = None,
-        priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue.")] = None,
-        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one.")] = None,
+        ttl_seconds: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. ")] = None,
+        priority: Annotated[Optional[Annotated[int, Field(le=100, strict=True, ge=0)]], Field(description="Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. ")] = None,
+        idempotency_key: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. ")] = None,
         mode2: Optional[StrictStr] = None,
         device2: Optional[StrictStr] = None,
-        ttl_seconds2: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL; capped by the server maximum.")] = None,
-        idempotency_key2: Annotated[Optional[StrictStr], Field(description="Alternative to the Idempotency-Key header.")] = None,
+        ttl_seconds2: Annotated[Optional[Annotated[int, Field(strict=True, ge=1)]], Field(description="Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. ")] = None,
+        idempotency_key2: Annotated[Optional[Annotated[str, Field(strict=True, max_length=200)]], Field(description="Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). ")] = None,
         _request_timeout: Union[
             None,
             Annotated[StrictFloat, Field(gt=0)],
@@ -916,19 +916,19 @@ class JobsApi:
         :type mode: str
         :param device: `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
         :type device: str
-        :param ttl_seconds: Requested result TTL, capped by the server's maximum.
+        :param ttl_seconds: Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
         :type ttl_seconds: int
-        :param priority: Higher runs first within the same queue.
+        :param priority: Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. 
         :type priority: int
-        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one.
+        :param idempotency_key: Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
         :type idempotency_key: str
         :param mode2:
         :type mode2: str
         :param device2:
         :type device2: str
-        :param ttl_seconds2: Requested result TTL; capped by the server maximum.
+        :param ttl_seconds2: Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
         :type ttl_seconds2: int
-        :param idempotency_key2: Alternative to the Idempotency-Key header.
+        :param idempotency_key2: Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). 
         :type idempotency_key2: str
         :param _request_timeout: timeout setting for this request. If one
                                  number provided, it will be total request

@@ -13,7 +13,7 @@ All URIs are relative to *http://localhost:8080*
 
 Bounded synchronous parse (small documents)
 
-Same validation and pipeline as &#x60;POST /v1/jobs&#x60;, but waits up to &#x60;timeout_ms&#x60; (default 30 s, max 2 min) for completion. * finished → &#x60;200&#x60; with the Document IR; * deadline reached → &#x60;202&#x60; with the job resource; it keeps running asynchronously; * failure → &#x60;422&#x60; with the stable error code.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries &#x60;X-Job-Id&#x60; and &#x60;X-Result-Version&#x60;; release with &#x60;POST /v1/jobs/{id}/ack&#x60; when your sink has the bytes. Intended for interactive callers; prefer &#x60;/v1/jobs&#x60; for anything large. 
+Same validation and pipeline as &#x60;POST /v1/jobs&#x60;, but waits up to &#x60;timeout_ms&#x60; (default 30 s, max 2 min) for completion. * finished → &#x60;200&#x60; with the Document IR; * deadline reached → &#x60;202&#x60; with the job resource; it keeps running asynchronously; * failure → the job&#39;s stable error code, with the same status the code has   everywhere else: &#x60;422&#x60; for document and engine failures (&#x60;malformed_file&#x60;,   &#x60;encrypted_file&#x60;, &#x60;page_limit_exceeded&#x60;, &#x60;engine_*&#x60;, &#x60;timeout&#x60;,   &#x60;internal_error&#x60;), &#x60;413&#x60;/&#x60;415&#x60; for size and type, &#x60;429 quota_exceeded&#x60; with   &#x60;Retry-After&#x60; when the result does not fit the storage quota, and   &#x60;409 cancelled&#x60; when the job was cancelled while the call waited.  The result is **not released** by this call: a written response does not prove the caller received it, so the normal TTL applies. The response carries &#x60;X-Job-Id&#x60; and &#x60;X-Result-Version&#x60;; release with &#x60;POST /v1/jobs/{id}/ack&#x60; when your sink has the bytes. Intended for interactive callers; prefer &#x60;/v1/jobs&#x60; for anything large. 
 
 ### Example
 ```java
@@ -83,7 +83,10 @@ public class Example {
 | **400** | Invalid parameters. |  -  |
 | **401** | Missing/invalid token. |  -  |
 | **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
+| **409** | &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used (use &#x60;/v1/jobs&#x60; for async access); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  |  -  |
 | **413** | Upload exceeds the configured limit. |  -  |
-| **422** | Parse failed or the document is unsupported. |  -  |
+| **415** | Format not in the allow-list, or content does not match the extension. |  -  |
+| **422** | Parse failed, or the document is malformed, encrypted or over a limit. |  -  |
 | **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
+| **507** | Storage below the safety watermark; retry later. |  -  |
 

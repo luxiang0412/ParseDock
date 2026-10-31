@@ -59,7 +59,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
     api_instance = parsedock_client.JobsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
     ack_job_request = parsedock_client.AckJobRequest() # AckJobRequest | 
-    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. (optional)
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
 
     try:
         # Accept that the client consumed the result, release storage asynchronously
@@ -79,7 +79,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
  **ack_job_request** | [**AckJobRequest**](AckJobRequest.md)|  | 
- **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] 
+ **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
 
 ### Return type
 
@@ -157,7 +157,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = parsedock_client.JobsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
-    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. (optional)
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
 
     try:
         # Stop a queued/running job (completed results must be ACKed)
@@ -176,7 +176,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
- **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] 
+ **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
 
 ### Return type
 
@@ -256,13 +256,13 @@ with parsedock_client.ApiClient(configuration) as api_client:
     file = None # bytes | The document. Required.
     mode = 'auto' # str | A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR.  (optional) (default to 'auto')
     device = 'auto' # str | `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device.  (optional) (default to 'auto')
-    ttl_seconds = 56 # int | Requested result TTL, capped by the server's maximum. (optional)
-    priority = 0 # int | Higher runs first within the same queue. (optional) (default to 0)
-    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. (optional)
+    ttl_seconds = 56 # int | Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`.  (optional)
+    priority = 0 # int | Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`.  (optional) (default to 0)
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
     mode2 = 'auto' # str |  (optional) (default to 'auto')
     device2 = 'auto' # str |  (optional) (default to 'auto')
-    ttl_seconds2 = 56 # int | Requested result TTL; capped by the server maximum. (optional)
-    idempotency_key2 = 'idempotency_key_example' # str | Alternative to the Idempotency-Key header. (optional)
+    ttl_seconds2 = 56 # int | Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`.  (optional)
+    idempotency_key2 = 'idempotency_key_example' # str | Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated).  (optional)
 
     try:
         # Upload a document and enqueue a parse job
@@ -283,13 +283,13 @@ Name | Type | Description  | Notes
  **file** | **bytes**| The document. Required. | 
  **mode** | **str**| A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  | [optional] [default to &#39;auto&#39;]
  **device** | **str**| &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  | [optional] [default to &#39;auto&#39;]
- **ttl_seconds** | **int**| Requested result TTL, capped by the server&#39;s maximum. | [optional] 
- **priority** | **int**| Higher runs first within the same queue. | [optional] [default to 0]
- **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] 
+ **ttl_seconds** | **int**| Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] 
+ **priority** | **int**| Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] [default to 0]
+ **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
  **mode2** | **str**|  | [optional] [default to &#39;auto&#39;]
  **device2** | **str**|  | [optional] [default to &#39;auto&#39;]
- **ttl_seconds2** | **int**| Requested result TTL; capped by the server maximum. | [optional] 
- **idempotency_key2** | **str**| Alternative to the Idempotency-Key header. | [optional] 
+ **ttl_seconds2** | **int**| Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] 
+ **idempotency_key2** | **str**| Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60; (keys are never truncated).  | [optional] 
 
 ### Return type
 

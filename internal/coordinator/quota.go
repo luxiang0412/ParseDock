@@ -119,7 +119,7 @@ func (s *Service) enforceQuota(ctx context.Context, owner string, size int64) er
 			return internalError(ctx, "quota lookup", err)
 		}
 		if stored+size > q.MaxStorageBytes {
-			return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: 60,
+			return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: quotaRetryAfter,
 				Message: fmt.Sprintf("storage quota reached (%d MiB of live results)", q.MaxStorageBytes>>20)}
 		}
 	}

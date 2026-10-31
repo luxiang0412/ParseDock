@@ -342,16 +342,7 @@ func validateFile(path, name string, lim storage.Limits) error {
 func validationErr(err error) error {
 	var ve *storage.ValidationError
 	if errors.As(err, &ve) {
-		status := 422
-		switch ve.Code {
-		case jobs.ErrTooLarge, jobs.ErrExpandedTooLarge:
-			status = 413
-		case jobs.ErrUnsupportedType:
-			status = 415
-		case jobs.ErrMalformed:
-			status = 422
-		}
-		return NewError(status, ve.Code, ve.Msg)
+		return NewError(statusForCode(ve.Code), ve.Code, ve.Msg)
 	}
 	return NewError(422, jobs.ErrMalformed, err.Error())
 }
@@ -999,7 +990,7 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			// The job is terminal now; its input and the rejected result go away unless a
 			// download lease (client or online backup) still protects them.
 			s.deleteJobUnlessLeased(ctx, p.JobID)
-			return nil, NewError(429, jobs.ErrQuotaExceeded, msg)
+			return nil, &Error{Status: 429, Code: jobs.ErrQuotaExceeded, Message: msg, RetryAfter: quotaRetryAfter}
 		}
 	}
 
