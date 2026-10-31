@@ -321,9 +321,15 @@ func CheckPDF(path string, lim Limits) (pages int, encrypted bool, err error) {
 	if _, err := io.ReadFull(f, buf); err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
 		return 0, false, err
 	}
+	// The tail window must not overlap the head, or page objects in the overlap would be
+	// counted twice (a 3 MiB PDF counted 1 MiB twice in the old layout).
 	var tail []byte
-	if st.Size() > int64(len(buf)) {
-		if _, err := f.Seek(max64(0, st.Size()-(8<<20)), io.SeekStart); err == nil {
+	tailStart := st.Size() - (8 << 20)
+	if tailStart < int64(len(buf)) {
+		tailStart = int64(len(buf))
+	}
+	if tailStart < st.Size() {
+		if _, err := f.Seek(tailStart, io.SeekStart); err == nil {
 			tail = make([]byte, 8<<20)
 			n, rerr := io.ReadFull(f, tail)
 			tail = tail[:n]

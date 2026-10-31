@@ -1,0 +1,169 @@
+{
+  "finished_at": "2026-10-31T00:27:15.675144+00:00",
+  "checks": [
+    {
+      "id": "PR00-02",
+      "name": "TXT/CSV/GB18030 decode correctly in auto|fast|accurate",
+      "status": "PASS",
+      "detail": {
+        "auto": {
+          "engine": "native",
+          "has_region": true,
+          "rows": 20
+        },
+        "fast": {
+          "engine": "native",
+          "has_region": true,
+          "rows": 20
+        },
+        "accurate": {
+          "engine": "native",
+          "has_region": true,
+          "rows": 20
+        }
+      },
+      "elapsed_s": 5.16
+    },
+    {
+      "id": "PR00-03",
+      "name": "cancel semantics: completed needs result_version; running cancels",
+      "status": "PASS",
+      "detail": {
+        "completed_cancel_no_version": 409,
+        "completed_cancel_with_version": 202,
+        "running_cancel_status": "cancelled",
+        "attempts": []
+      },
+      "elapsed_s": 1.6
+    },
+    {
+      "id": "PR00-04",
+      "name": "sync parse is one-shot; timeout converts to async",
+      "status": "PASS",
+      "detail": {
+        "sync_http": 200,
+        "sync_result_after": 410,
+        "async_http": 202,
+        "async_final": "completed"
+      },
+      "elapsed_s": 2.13
+    },
+    {
+      "id": "PR00-05",
+      "name": "ACK vs in-flight download: lease protects the stream",
+      "status": "PASS",
+      "detail": {
+        "bytes": 33554601,
+        "ack": 202,
+        "second_download": 410,
+        "final": "released"
+      },
+      "elapsed_s": 2.91
+    },
+    {
+      "id": "PR00-06",
+      "name": "per-representation ETag, shared X-Result-Version, 304",
+      "status": "PASS",
+      "detail": {
+        "etags": {
+          "markdown": "\"sha256:fa5c560f61e998a4cbfb5c8a46ef413ca19ff71da2581c1f73a3de0dbf1e9bc8\"",
+          "text": "\"sha256:ec83909bb837f5feeff37298a4556a4d1f0b5b59a66716b8278e55ee0ee7eff6\"",
+          "json": "\"sha256:c8f4e9f71465e75d12625ca51631c523d266a40b65eb4e13c611677779143bef\""
+        },
+        "result_version": "sha256:3e15f81a75f1955f6ab6382981b7989f5e357465f0dc5b000b1d57dd13ec8832",
+        "conditional": 304,
+        "gzip_etag": "W/\"sha256:fa5c560f61e998a4cbfb5c8a46ef413ca19ff71da2581c1f73a3de0dbf1e9bc8\"",
+        "gzip_bytes": 97843,
+        "gzip_conditional": 304
+      },
+      "elapsed_s": 1.09
+    },
+    {
+      "id": "PR00-07",
+      "name": "SSE scope, retention events, cursor reset",
+      "status": "PASS",
+      "detail": {
+        "processing_events": [
+          "snapshot",
+          "created",
+          "running",
+          "completed",
+          "stream_end"
+        ],
+        "retention_events": [
+          "snapshot",
+          "created",
+          "running",
+          "completed",
+          "release_pending",
+          "released",
+          "stream_end"
+        ],
+        "reset_events": [
+          "snapshot",
+          "cursor_reset",
+          "created",
+          "running",
+          "completed",
+          "release_pending",
+          "released",
+          "stream_end"
+        ]
+      },
+      "elapsed_s": 4.77
+    },
+    {
+      "id": "PR00-09",
+      "name": "multipart parts in any order, fields honoured",
+      "status": "PASS",
+      "detail": {
+        "file_first": {
+          "status": 202,
+          "mode": "accurate",
+          "device": "cpu"
+        },
+        "fields_first": {
+          "status": 202,
+          "mode": "accurate",
+          "device": "cpu"
+        }
+      },
+      "elapsed_s": 1.84
+    },
+    {
+      "id": "PR00-10",
+      "name": "key rotation keeps the owner; forged headers ignored",
+      "status": "PASS",
+      "detail": {
+        "rotated_read": 200,
+        "rotated_ack": 202,
+        "bad_token": 401,
+        "forged_owner": 404,
+        "internal_via_api": 404
+      },
+      "elapsed_s": 1.08
+    },
+    {
+      "id": "PR00-12",
+      "name": "worker crash leftovers are swept from the scratch dir",
+      "status": "PASS",
+      "detail": {
+        "stale_removed": true,
+        "fresh_kept": true,
+        "worker_stopped": true
+      },
+      "elapsed_s": 0.51
+    },
+    {
+      "id": "PR00-14",
+      "name": "gpu_required without a GPU worker is rejected",
+      "status": "PASS",
+      "detail": {
+        "http": 409,
+        "code": "gpu_unavailable",
+        "gpu_jobs_persisted": 0
+      },
+      "elapsed_s": 0.22
+    }
+  ]
+}

@@ -1507,3 +1507,34 @@ func TestReapDoesNotTouchNewerAttempt(t *testing.T) {
 		t.Fatalf("newer attempt could not complete after cleanup: %v", err)
 	}
 }
+
+// Audit: a renewed lease must never move backwards, and an expired lease must not be
+// revived (that would resurrect a download lease cleanup had already accounted for).
+func TestLeaseRenewalIsMonotonic(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task, err := s.Claim(ctx, WorkerCaps{WorkerID: "w1", Engines: []string{"native"}, Device: "cpu"})
+	if err != nil || task == nil {
+		t.Fatalf("claim: %v", err)
+	}
+	first, err := s.Heartbeat(ctx, job.ID, task.LeaseToken, 10, "parsing")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Force an overlapping, older renewal to land after the newer one.
+	if _, err := s.DB.ExecContext(ctx, `UPDATE attempts SET lease_until = ? WHERE job_id = ?`,
+		ts(first.Add(time.Minute)), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Heartbeat(ctx, job.ID, task.LeaseToken, 20, "parsing"); err != nil {
+		t.Fatal(err)
+	}
+	var until string
+	_ = s.DB.QueryRowContext(ctx, `SELECT lease_until FROM attempts WHERE job_id = ? AND lease_token = ?`,
+		job.ID, task.LeaseToken).Scan(&until)
+	ut, _ := parseTS(until)
+	if ut.Before(first.Add(time.Minute)) {
+		t.Fatalf("lease moved backwards: %s", until)
+	}
+}

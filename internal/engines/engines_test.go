@@ -310,11 +310,14 @@ func TestRemapTablesRewritesReferences(t *testing.T) {
 	frag.Elements = append(frag.Elements,
 		documentir.Element{ID: "el_1", Type: documentir.ElTable, TableID: "tbl_1"},
 		documentir.Element{ID: "el_2", Type: documentir.ElParagraph, Text: "after"})
-	remapTables(frag, 5) // five tables already in the document
+	remapTables(frag, 5, 10) // five tables, ten elements already in the document
 	if frag.Tables[0].ID != "tbl_6" {
 		t.Fatalf("table id = %q", frag.Tables[0].ID)
 	}
 	if frag.Elements[0].TableID != "tbl_6" {
 		t.Fatalf("element reference = %q", frag.Elements[0].TableID)
+	}
+	if frag.Elements[0].ID != "el_11" {
+		t.Fatalf("element id = %q, want el_11 (document namespace)", frag.Elements[0].ID)
 	}
 }

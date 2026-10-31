@@ -502,7 +502,7 @@ func (s *Service) OpenResult(jobID, version, format string) (*os.File, os.FileIn
 		return nil, nil, nil, NewError(410, jobs.ErrGone, "result is no longer available")
 	}
 	name := artifactName(format)
-	p := filepath.Join(s.Store.ResultDirAt(jobID, version), name)
+	p := filepath.Join(s.Store.ResultDirFor(jobID, version), name)
 	f, err := os.Open(p)
 	if err != nil {
 		return nil, nil, nil, NewError(410, jobs.ErrGone, "result artifact missing")
@@ -690,9 +690,14 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 	if u, perr := parseTS(leaseUntil); perr != nil || u.Before(now) {
 		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "lease expired")
 	}
-	res, err := s.DB.ExecContext(ctx, `UPDATE attempts SET lease_until = ?, last_heartbeat_at = ?
-		WHERE job_id = ? AND lease_token = ? AND state = 'running'`,
-		ts(until), ts(now), jobID, token)
+	// The checks above are advisory (they read without a lock); the UPDATE repeats them so a
+	// concurrent reap cannot slip between. lease_until only ever moves forward: two
+	// overlapping heartbeats must not shorten the lease with an older computed value.
+	res, err := s.DB.ExecContext(ctx, `UPDATE attempts SET
+			last_heartbeat_at = ?,
+			lease_until = CASE WHEN lease_until < ? THEN ? ELSE lease_until END
+		WHERE job_id = ? AND lease_token = ? AND state = 'running' AND lease_until > ?`,
+		ts(now), ts(until), ts(until), jobID, token, ts(now))
 	if err != nil {
 		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
 	}
@@ -705,9 +710,12 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 		}
 		// Progress updates are cheap but still throttled by the worker side;
 		// this clamp keeps SQLite writes bounded.
+		// Fenced by the attempt: a heartbeat accepted for an old attempt must not write
+		// progress onto a job a newer attempt now owns.
 		_, err = s.DB.ExecContext(ctx, `UPDATE jobs SET progress = ?, progress_stage = ?, updated_at = ?
-			WHERE id = ? AND processing_status = 'running' AND progress <= ?`,
-			progress, stage, ts(now), jobID, progress)
+			WHERE id = ? AND processing_status = 'running' AND progress <= ?
+			  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
+			progress, stage, ts(now), jobID, progress, jobID, token)
 		if err != nil {
 			return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
 		}
@@ -769,7 +777,8 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+		// Leave the generation for the cleaner: deleting here could remove a byte-identical
+		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	defer func() { _ = tx.Rollback() }()
@@ -790,7 +799,8 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	var startedRaw sql.NullString
 	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
 		Scan(&ownerID, &startedRaw); err != nil {
-		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+		// Leave the generation for the cleaner: deleting here could remove a byte-identical
+		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	var attemptStart sql.NullString
@@ -808,9 +818,6 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	}
 	// A result can be much larger than its input, so admission alone cannot bound
 	// tenant storage: enforce the limit transactionally on the committed bytes.
-	if debugQuota {
-		fmt.Fprintf(os.Stderr, "DBG quota=%d resultBytes=%d files=%d\n", s.Cfg.Quota.MaxStorageBytes, resultBytes, len(manifest.Files))
-	}
 	if s.Cfg.Quota.MaxStorageBytes > 0 {
 		var stored int64
 		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
@@ -830,22 +837,20 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 			if uerr != nil {
 				_ = tx.Rollback()
-				_ = s.Store.DropResult(p.JobID, manifest.Version)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+uerr.Error())
 			}
 			if n, _ := ures.RowsAffected(); n == 0 {
+				// Left for the cleaner for the same reason as the main fence: this generation
+				// may be identical to one another attempt just committed.
 				_ = tx.Rollback()
-				_ = s.Store.DropResult(p.JobID, manifest.Version) // only the result, never the input
 				return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 			}
 			if _, aerr := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ?
 				WHERE job_id = ? AND lease_token = ?`, msg, p.JobID, p.Token); aerr != nil {
 				_ = tx.Rollback()
-				_ = s.Store.DropResult(p.JobID, manifest.Version)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+aerr.Error())
 			}
 			if cerr := tx.Commit(); cerr != nil {
-				_ = s.Store.DropResult(p.JobID, manifest.Version)
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
 			}
 			// The job is terminal now; its input and the rejected result go away unless a
@@ -869,7 +874,8 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
 		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
 	if err != nil {
-		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+		// Leave the generation for the cleaner: deleting here could remove a byte-identical
+		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, "complete: "+err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
@@ -880,13 +886,13 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		_ = tx.QueryRowContext(ctx, `SELECT result_version FROM jobs WHERE id = ?`, p.JobID).Scan(&committed)
 		_ = tx.Rollback()
 		if !committed.Valid || committed.String != manifest.Version {
-			_ = s.Store.DropResult(p.JobID, manifest.Version)
 		}
 		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'succeeded', engine = ?, device_type = ?
 		WHERE job_id = ? AND lease_token = ?`, p.Engine, p.Device, p.JobID, p.Token); err != nil {
-		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+		// Leave the generation for the cleaner: deleting here could remove a byte-identical
+		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
 	}
 	for _, a := range manifest.Files {
@@ -895,18 +901,24 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			sha256=excluded.sha256, generation=artifacts.generation+1, ready_at=excluded.ready_at`,
 			p.JobID, a.Name, filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), a.Name),
 			a.Size, a.SHA256, ts(now)); err != nil {
-			_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+			// Leave the generation for the cleaner: deleting here could remove a byte-identical
+			// generation that another attempt committed in the meantime.
 			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
 		}
 	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
-		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+		// Leave the generation for the cleaner: deleting here could remove a byte-identical
+		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
 	if err := tx.Commit(); err != nil {
-		_ = s.Store.DropResult(p.JobID, manifest.Version) // only this attempt's generation
+		// Leave the generation for the cleaner: deleting here could remove a byte-identical
+		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
+	// Older generations of this job are unreachable now; removing them keeps the bytes on
+	// disk equal to what storage accounting charges for.
+	_ = s.Store.PruneResults(p.JobID, manifest.Version)
 	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
 	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
 	s.appendEvent(ctx, p.JobID, "completed", map[string]any{
@@ -1209,13 +1221,20 @@ func (s *Service) BeginDownload(ctx context.Context, jobID, ownerID string) (*jo
 func (s *Service) RenewDownload(ctx context.Context, leaseID string) (time.Time, error) {
 	now := nowUTC()
 	exp := now.Add(s.Cfg.DownloadLeaseTTL)
-	res, err := s.DB.ExecContext(ctx, `UPDATE download_leases SET expires_at = ?, last_renewed_at = ? WHERE lease_id = ?`,
-		ts(exp), ts(now), leaseID)
+	// Only a lease that is still live, for a job that is still servable, may be renewed.
+	// Without both conditions a blocked writer could revive a lease after cleanup had
+	// already authorised deletion, and then hold storage the cleaner had accounted as gone.
+	res, err := s.DB.ExecContext(ctx, `UPDATE download_leases SET
+			expires_at = CASE WHEN expires_at < ? THEN ? ELSE expires_at END,
+			last_renewed_at = ?
+		WHERE lease_id = ? AND expires_at > ?
+		  AND job_id IN (SELECT id FROM jobs WHERE retention_status = 'active')`,
+		ts(exp), ts(exp), ts(now), leaseID, ts(now))
 	if err != nil {
 		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return time.Time{}, NewError(404, jobs.ErrNotFound, "download lease not found")
+		return time.Time{}, NewError(404, jobs.ErrNotFound, "download lease expired, was released, or no longer exists")
 	}
 	return exp, nil
 }
@@ -1468,5 +1487,3 @@ func nullIfEmpty(s string) any {
 func isUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unique constraint")
 }
-
-var debugQuota = os.Getenv("PARSEDOCK_DEBUG_QUOTA") == "1"

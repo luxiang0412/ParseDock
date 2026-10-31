@@ -586,6 +586,8 @@ func (w *Worker) uploadResult(ctx context.Context, task *coordClaim, engine engi
 	if err != nil {
 		return w.fail(ctx, task, jobs.ErrInternal, "encode result: "+err.Error(), false)
 	}
+	// parseCtx carries the job deadline, so a stalled upload cannot outlive the lease the
+	// heartbeats maintain (and the heartbeat goroutine stops when it is cancelled).
 	req, err := w.newRequest(ctx, http.MethodPut, "/internal/tasks/"+task.JobID+"/result", bytes.NewReader(body))
 	if err != nil {
 		return err

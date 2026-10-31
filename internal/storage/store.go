@@ -72,6 +72,25 @@ func (s *Store) ResultDirAt(jobID, version string) string {
 	return filepath.Join(s.ResultDir(jobID), strings.TrimPrefix(version, "sha256:"))
 }
 
+// ResultDirFor returns the directory holding the job's committed generation. Installations
+// upgraded from the pre-generation layout still have manifest.json directly under
+// results/<job>/; it is used when its version matches, so an upgrade does not turn every
+// existing result into a 410.
+func (s *Store) ResultDirFor(jobID, version string) string {
+	dir := s.ResultDirAt(jobID, version)
+	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err == nil {
+		return dir
+	}
+	legacy := s.ResultDir(jobID)
+	if b, err := os.ReadFile(filepath.Join(legacy, "manifest.json")); err == nil {
+		var m Manifest
+		if json.Unmarshal(b, &m) == nil && m.Version == version {
+			return legacy
+		}
+	}
+	return dir
+}
+
 // ResultPath is the legacy job-wide path. Nothing publishes here any more; it is kept for
 // callers that only need the parent directory.
 func (s *Store) ResultPath(jobID, name string) string {
@@ -252,19 +271,21 @@ func (s *Store) CommitResult(jobID, engine, engineVer string, files map[string]i
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		tmp := filepath.Join(s.Root, "tmp", jobID+".result."+name+".part")
-		if err := ingestFile(tmp, filepath.Join(dir, name), files[name]); err != nil {
-			s.cleanupParts(jobID)
+		// Ingest straight into the private staging directory: the old shared
+		// tmp/<job>.result.<name>.part name let two concurrent attempts truncate each other's
+		// file, and cleanupParts(jobID) then deleted files the other attempt was still writing.
+		if err := ingestFile(filepath.Join(dir, name), files[name]); err != nil {
+			_ = os.RemoveAll(stage)
 			return nil, err
 		}
 		st, err := os.Stat(filepath.Join(dir, name))
 		if err != nil {
-			s.cleanupParts(jobID)
+			_ = os.RemoveAll(stage)
 			return nil, err
 		}
 		art := Artifact{Name: name, Size: st.Size()}
 		if art.SHA256, err = hashFile(filepath.Join(dir, name)); err != nil {
-			s.cleanupParts(jobID)
+			_ = os.RemoveAll(stage)
 			return nil, err
 		}
 		manifest.Files = append(manifest.Files, art)
@@ -299,9 +320,33 @@ func (s *Store) CommitResult(jobID, engine, engineVer string, files map[string]i
 }
 
 // ReadManifest loads a committed manifest.
+// PruneResults removes result directories of a job other than keep (including leftovers from
+// an interrupted publication). Called after a generation is committed: the others are
+// unreachable, and leaving them would make disk usage exceed the storage accounting.
+func (s *Store) PruneResults(jobID, keep string) error {
+	entries, err := os.ReadDir(s.ResultDir(jobID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	keepName := strings.TrimPrefix(keep, "sha256:")
+	var firstErr error
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == keepName {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(s.ResultDir(jobID), e.Name())); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
+}
+
 // ReadManifestAt loads the manifest of one result generation.
 func (s *Store) ReadManifestAt(jobID, version string) (*Manifest, error) {
-	b, err := os.ReadFile(filepath.Join(s.ResultDirAt(jobID, version), "manifest.json"))
+	b, err := os.ReadFile(filepath.Join(s.ResultDirFor(jobID, version), "manifest.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -428,7 +473,8 @@ func (s *Store) writeAtomic(dst string, data []byte) error {
 	return nil
 }
 
-func ingestFile(tmp, dst string, r io.Reader) error {
+func ingestFile(dst string, r io.Reader) error {
+	tmp := dst + ".part"
 	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o640)
 	if err != nil {
 		return err

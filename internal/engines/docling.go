@@ -106,7 +106,12 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 	}
 	spec := CLISpec{Bin: d.Bin, Env: d.ExtraEnv, Sandbox: d.Sandbox, MaxOutput: 512 << 20, MaxRSSMB: d.MaxRSSMB}
 	res, err := RunCLI(ctx, spec, d.ModelRoot, args...)
-	if err != nil && res != nil && !res.OOM && !res.Truncated && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
+	if res != nil && res.Truncated {
+		// The parser's output exceeded the ceiling; a JSON prefix may even still parse, so
+		// this must be an explicit rejection rather than a "malformed file".
+		return nil, fmt.Errorf("%w: %d MiB ceiling", ErrOutputTooLarge, 512)
+	}
+	if err != nil && res != nil && !res.OOM && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
 		err = nil
 	}
 	if err != nil {

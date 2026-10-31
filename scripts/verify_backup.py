@@ -17,6 +17,17 @@ import sqlite3
 import sys
 from pathlib import Path
 
+# The three representations the API serves; a result without one of them is not restorable.
+SERVED = ("result.md", "result.txt", "result.json")
+
+
+def manifest_version(files: list[dict]) -> str:
+    """Mirror storage.manifestVersion: sha256 over "name:size:sha\n" per file."""
+    h = hashlib.sha256()
+    for f in files:
+        h.update(f"{f['name']}:{f['size']}:{f['sha256']}\n".encode())
+    return "sha256:" + h.hexdigest()
+
 # Jobs whose files must survive a restore. A permanently failed job keeps
 # retention_status=active but the coordinator already deleted its files, so it is checked
 # for metadata only.
@@ -88,6 +99,18 @@ def verify(backup: Path) -> dict:
         if not man.get("files"):
             problems.append(f"manifest lists no files {job_id}")
             continue
+        names = {f.get("name") for f in man["files"]}
+        for want in SERVED:
+            if want not in names:
+                problems.append(f"manifest is missing {want} for {job_id}")
+        # Recompute the version the coordinator would advertise: a manifest whose files were
+        # altered (or whose version was never consistent) must not pass.
+        try:
+            computed = manifest_version(man["files"])
+        except (KeyError, TypeError):
+            computed = ""
+        if computed and man.get("result_version") and computed != man["result_version"]:
+            problems.append(f"manifest version does not match its files for {job_id}")
         for entry in man["files"]:
             fp = gen / entry["name"]
             if not fp.exists():

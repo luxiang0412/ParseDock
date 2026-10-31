@@ -58,6 +58,24 @@ func (l Limits) Validate(d *Document) error {
 			return fmt.Errorf("document declares more than %d table cells", l.MaxTableCells*10)
 		}
 	}
+	// Rendering cost is driven by *references*, not declarations: every table element renders
+	// its table again, so a document with one large table and many references to it would
+	// allocate the grid repeatedly.
+	areas := make(map[string]int64, len(d.Tables))
+	for i := range d.Tables {
+		areas[d.Tables[i].ID] = int64(d.Tables[i].Rows) * int64(d.Tables[i].Cols)
+	}
+	var rendered int64
+	for i := range d.Elements {
+		if d.Elements[i].Type != ElTable {
+			continue
+		}
+		rendered += areas[d.Elements[i].TableID]
+		if rendered > l.MaxTableCells*2 {
+			return fmt.Errorf("document renders %d table cells across its tables (limit %d)",
+				rendered, l.MaxTableCells*2)
+		}
+	}
 	for i := range d.Elements {
 		text += int64(len(d.Elements[i].Text))
 	}

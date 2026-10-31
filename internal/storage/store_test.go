@@ -3,6 +3,7 @@ package storage
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -390,5 +391,31 @@ func TestVerifyCompoundFile(t *testing.T) {
 	notCFB := write("plain.doc", bytes.Repeat([]byte("A"), 512))
 	if err := VerifyCompoundFile(notCFB); err == nil {
 		t.Fatal("non-CFB file accepted")
+	}
+}
+
+// A page object inside the overlap of the head and tail samples used to be counted twice,
+// so a small PDF could be rejected for exceeding the page limit.
+func TestCheckPDFDoesNotDoubleCountOverlappingSamples(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "small.pdf")
+	var b bytes.Buffer
+	b.WriteString("%PDF-1.7\n")
+	for i := 0; i < 3; i++ {
+		fmt.Fprintf(&b, "%d 0 obj\n<< /Type /Page /Parent 2 0 R >>\nendobj\n", i+1)
+	}
+	for b.Len() < 3<<20 { // 3 MiB: bigger than the 1 MiB head, smaller than head+tail
+		b.WriteString("% padding\n")
+	}
+	b.WriteString("trailer\n<< /Root 2 0 R >>\nstartxref\n0\n%%EOF\n")
+	if err := os.WriteFile(path, b.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	pages, encrypted, err := CheckPDF(path, Limits{MaxPages: 10})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pages != 3 || encrypted {
+		t.Fatalf("pages=%d encrypted=%v, want 3/false", pages, encrypted)
 	}
 }

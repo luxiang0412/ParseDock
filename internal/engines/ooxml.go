@@ -81,6 +81,9 @@ type xlsxSharedStrings struct {
 // sheetFormulas holds the formula cells of one sheet plus the origin of the sheet's
 // used range. Engine table coordinates are table-local, so enrichment is only safe
 // when the used range starts at A1 and the mapping is therefore an identity.
+// maxFormulaCells bounds the formula cells retained for one sheet.
+const maxFormulaCells = 500_000
+
 type sheetFormulas struct {
 	originRow, originCol int
 	maxRow, maxCol       int
@@ -341,7 +344,9 @@ func sheetHasFormulaTag(ctx context.Context, zr *zip.ReadCloser, name string) (b
 	defer rc.Close()
 	buf := make([]byte, 1<<20)
 	prevF := false // last byte of the previous chunk was '<'
-	needle := []byte("<f")
+	// OOXML in the wild prefixes elements (<x:f>), and the decoder matches on Name.Local,
+	// so both spellings must be detected.
+	needles := [][]byte{[]byte("<f"), []byte(":f")}
 	for {
 		if err := ctx.Err(); err != nil {
 			return false, err
@@ -352,8 +357,10 @@ func sheetHasFormulaTag(ctx context.Context, zr *zip.ReadCloser, name string) (b
 			if prevF && len(chunk) > 0 && chunk[0] == 'f' {
 				return true, nil
 			}
-			if bytes.Contains(chunk, needle) {
-				return true, nil
+			for _, needle := range needles {
+				if bytes.Contains(chunk, needle) {
+					return true, nil
+				}
 			}
 			prevF = chunk[len(chunk)-1] == '<'
 		}
@@ -512,6 +519,15 @@ func scanSheet(ctx context.Context, zr *zip.ReadCloser, name string,
 				fc.shared = true
 			}
 			if fc.formula != "" || fc.cached != "" || fc.shared {
+				// Bound what a hostile sheet can make us retain: past this many formula
+				// cells the sheet is not enrichable anyway (verification needs the values,
+				// which are capped separately), and the subprocess RSS ceiling does not
+				// cover this in-process work.
+				if len(out.cells) >= maxFormulaCells {
+					out.valuesCapped = true
+					out.cells = map[[2]int]formulaCell{}
+					return out, nil
+				}
 				out.cells[[2]int{row, col}] = fc
 			}
 		}
