@@ -2,8 +2,11 @@ package coordinator
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -343,6 +346,89 @@ func TestCleanupReportsMaxLifetimeFailure(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("step 6 failure not reported: %v", rep.Errors)
+	}
+}
+
+// postJob submits a small text file to POST /v1/jobs with the given query string.
+func postJob(t *testing.T, srv *Server, path, query string, body []byte) (*http.Response, map[string]any) {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	fw, err := mw.CreateFormFile("file", "a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write(body)
+	_ = mw.Close()
+	hs := httptest.NewServer(srv.PublicMux())
+	defer hs.Close()
+	req, _ := http.NewRequest(http.MethodPost, hs.URL+path+"?"+query, &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	req.Header.Set("X-Parsedock-Owner", "owner-1")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	out := map[string]any{}
+	_ = json.NewDecoder(resp.Body).Decode(&out)
+	return resp, out
+}
+
+func errCode(m map[string]any) string {
+	e, _ := m["error"].(map[string]any)
+	c, _ := e["code"].(string)
+	return c
+}
+
+// Review finding 2: Atoi errors were dropped and neither value was range-checked, so
+// priority=999999 jumped every other tenant's queue and ttl_seconds=10000000000 overflowed
+// time.Duration (negative TTL, the result expired at commit).
+func TestCreateJobValidatesPriorityAndTTL(t *testing.T) {
+	s := testService(t, nil)
+	srv := NewServer(s, "", slog.Default())
+	for _, q := range []string{"priority=abc", "priority=101", "priority=-1", "priority=999999",
+		"ttl_seconds=1e10", "ttl_seconds=0", "ttl_seconds=-5", "ttl_seconds=soon"} {
+		resp, body := postJob(t, srv, "/v1/jobs", q, []byte("hello"))
+		if resp.StatusCode != 400 || errCode(body) != jobs.ErrInvalidRequest {
+			t.Errorf("%s: got %d %v, want 400 invalid_request", q, resp.StatusCode, body)
+		}
+	}
+	var n int
+	_ = s.DB.QueryRow(`SELECT COUNT(*) FROM jobs`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d jobs created from invalid requests", n)
+	}
+
+	resp, body := postJob(t, srv, "/v1/jobs", "priority=100&ttl_seconds=10000000000", []byte("hello"))
+	if resp.StatusCode != 202 {
+		t.Fatalf("valid request refused: %d %v", resp.StatusCode, body)
+	}
+	jobID, _ := body["job_id"].(string)
+	var stored int64
+	_ = s.DB.QueryRow(`SELECT requested_ttl_seconds FROM jobs WHERE id = ?`, jobID).Scan(&stored)
+	if want := int64(s.Cfg.MaxResultTTL / time.Second); stored != want {
+		t.Fatalf("stored ttl %d, want it capped to %d", stored, want)
+	}
+	task := claimNative(t, s)
+	done := completeTask(t, s, jobID, task.LeaseToken)
+	if done.ResultExpiresAt == nil || !done.ResultExpiresAt.After(time.Now().Add(s.Cfg.MaxResultTTL-time.Minute)) {
+		t.Fatalf("result_expires_at = %v, want about now + %s", done.ResultExpiresAt, s.Cfg.MaxResultTTL)
+	}
+}
+
+func TestResultTTLDoesNotOverflow(t *testing.T) {
+	s := testService(t, nil)
+	for _, req := range []int64{1 << 40, 1 << 62, 1<<63 - 1} {
+		if got := s.resultTTL(req); got != s.Cfg.MaxResultTTL {
+			t.Fatalf("resultTTL(%d) = %s, want the ceiling %s", req, got, s.Cfg.MaxResultTTL)
+		}
+	}
+	if got := s.resultTTL(90); got != 90*time.Second {
+		t.Fatalf("resultTTL(90) = %s", got)
+	}
+	if got := s.resultTTL(0); got != s.Cfg.ResultTTL {
+		t.Fatalf("resultTTL(0) = %s, want the default %s", got, s.Cfg.ResultTTL)
 	}
 }
 

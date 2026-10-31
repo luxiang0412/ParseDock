@@ -193,8 +193,19 @@ func (s *Server) stageUpload(r *http.Request, maxBodyLimit int64) (*jobs.Job, bo
 	mode := firstNonEmpty(q.Get("mode"), form["mode"], jobs.ModeAuto)
 	device := firstNonEmpty(q.Get("device"), form["device"], jobs.DeviceAuto)
 	idemKey := firstNonEmpty(r.Header.Get("Idempotency-Key"), q.Get("idempotency_key"), form["idempotency_key"])
-	priority, _ := strconv.Atoi(firstNonEmpty(q.Get("priority"), form["priority"]))
-	ttlSeconds, _ := strconv.Atoi(firstNonEmpty(q.Get("ttl_seconds"), form["ttl_seconds"]))
+	// Unparsable values used to be dropped silently (priority 0, default TTL); they are a
+	// client error. Range checks for priority live in CreateJobStaged.
+	priority, err := intParam("priority", firstNonEmpty(q.Get("priority"), form["priority"]))
+	if err != nil {
+		return nil, false, err
+	}
+	ttlSeconds, err := intParam("ttl_seconds", firstNonEmpty(q.Get("ttl_seconds"), form["ttl_seconds"]))
+	if err != nil {
+		return nil, false, err
+	}
+	if ttlSeconds < 0 || (ttlSeconds == 0 && firstNonEmpty(q.Get("ttl_seconds"), form["ttl_seconds"]) != "") {
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, "ttl_seconds must be at least 1")
+	}
 
 	job, isNew, err := s.Svc.CreateJobStaged(r.Context(), CreateParams{
 		OwnerID:        ownerID,
@@ -1048,6 +1059,18 @@ func extFor(f documentir.Format) string {
 	default:
 		return "md"
 	}
+}
+
+// intParam parses an optional integer request parameter; empty means 0.
+func intParam(name, v string) (int, error) {
+	if v == "" {
+		return 0, nil
+	}
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil {
+		return 0, NewError(400, jobs.ErrInvalidRequest, name+" must be a decimal integer")
+	}
+	return n, nil
 }
 
 func firstNonEmpty(vals ...string) string {

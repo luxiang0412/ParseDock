@@ -72,6 +72,12 @@ func requestID(ctx context.Context) string {
 	return v
 }
 
+// Priority bounds (api/openapi.yaml: priority minimum 0, maximum 100).
+const (
+	MinPriority = 0
+	MaxPriority = 100
+)
+
 // CreateParams is one submission.
 type CreateParams struct {
 	OwnerID        string
@@ -141,6 +147,17 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	if p.OwnerID == "" {
 		writer.Abort()
 		return nil, false, NewError(401, jobs.ErrUnauthorized, "missing owner")
+	}
+	// priority orders the shared queue; an unbounded value lets one tenant jump every other
+	// tenant's jobs (the spec bounds it to 0..100).
+	if p.Priority < MinPriority || p.Priority > MaxPriority {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest,
+			fmt.Sprintf("priority must be an integer in %d..%d", MinPriority, MaxPriority))
+	}
+	if p.TTLSeconds < 0 {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, "ttl_seconds must be at least 1")
 	}
 	if p.IdempotencyKey != "" {
 		key := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
@@ -216,9 +233,12 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	}
 
 	now := nowUTC()
-	ttl := p.TTLSeconds
-	if ttl < 0 {
-		ttl = 0
+	// 0 means "server default". A request above the ceiling is stored as the ceiling (the
+	// documented semantics are "capped", not "rejected"), so the column never holds a value
+	// that cannot be converted to a duration.
+	ttl := int64(p.TTLSeconds)
+	if maxS := int64(s.Cfg.MaxResultTTL / time.Second); ttl > maxS {
+		ttl = maxS
 	}
 	job := &jobs.Job{
 		ID:               jobID,
@@ -803,6 +823,23 @@ type CompleteParams struct {
 	Warnings  int
 }
 
+// resultTTL resolves how long a result committed now is retained: the client's request when
+// there is one, never above MaxResultTTL.
+func (s *Service) resultTTL(reqSeconds int64) time.Duration {
+	if reqSeconds > 0 {
+		// Compare in seconds before converting: multiplying a large request into a Duration
+		// overflowed int64, wrapped negative and expired the result immediately.
+		if reqSeconds >= int64(s.Cfg.MaxResultTTL/time.Second) {
+			return s.Cfg.MaxResultTTL
+		}
+		return time.Duration(reqSeconds) * time.Second
+	}
+	if s.Cfg.ResultTTL > s.Cfg.MaxResultTTL {
+		return s.Cfg.MaxResultTTL
+	}
+	return s.Cfg.ResultTTL
+}
+
 // Fencing predicates for a worker-reported transition on the jobs row. They are appended to
 // `UPDATE jobs ... WHERE id = ? AND processing_status = 'running'` so a report from a stale
 // attempt cannot move a job that a newer attempt now owns:
@@ -853,17 +890,6 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	}
 
 	now := nowUTC()
-	ttl := s.Cfg.ResultTTL
-	var reqTTL int
-	_ = s.DB.QueryRowContext(ctx, `SELECT requested_ttl_seconds FROM jobs WHERE id = ?`, p.JobID).Scan(&reqTTL)
-	if reqTTL > 0 {
-		ttl = time.Duration(reqTTL) * time.Second
-	}
-	if ttl > s.Cfg.MaxResultTTL {
-		ttl = s.Cfg.MaxResultTTL
-	}
-	expires := now.Add(ttl)
-
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
@@ -886,12 +912,16 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	// this attempt's start: jobs.started_at keeps the first claim (COALESCE) and would
 	// include retries and escalations in the final engine's histogram.
 	var startedRaw sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
-		Scan(&ownerID, &startedRaw); err != nil {
+	var reqTTL sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at, requested_ttl_seconds FROM jobs WHERE id = ?`, p.JobID).
+		Scan(&ownerID, &startedRaw, &reqTTL); err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
 		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
 	}
+	// TTL counts from this commit; a failed read above aborts instead of silently applying
+	// the default retention.
+	expires := now.Add(s.resultTTL(reqTTL.Int64))
 	var attemptStart sql.NullString
 	_ = tx.QueryRowContext(ctx, `SELECT started_at FROM attempts WHERE job_id = ? AND lease_token = ?`,
 		p.JobID, p.Token).Scan(&attemptStart)
