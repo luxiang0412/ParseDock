@@ -1,6 +1,6 @@
 module parsedock.dev/parsedock
 
-go 1.24.4
+go 1.27.3
 
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

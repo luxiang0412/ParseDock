@@ -1,8 +1,8 @@
 {
   "$comment": "Single source of truth for build inputs. scripts/verify-pins.sh compares this file with the Dockerfiles, workflows and go.mod and fails on drift. Update deliberately, in one commit, with the reason in the commit message.",
-  "go": "1.24.4",
+  "go": "1.27.3",
   "images": {
-    "go_builder": "golang:1.24.4-bookworm@sha256:10f549dc8489597aa7ed2b62008199bb96717f52a8e8434ea035d5b44368f8a6",
+    "go_builder": "golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9",
     "runtime": "debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f",
     "openapi_generator": "openapitools/openapi-generator-cli@sha256:dbc745d3a93f7bbc4289155001ef8eba1474d9e34a0733e7baf32d78e8bb02d7",
     "tika": "apache/tika@sha256:4774eaac44f86cdf648ae7b5a367016eaf6f9052adec31e5cff07cff1a0c6e24",

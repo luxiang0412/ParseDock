@@ -34,7 +34,7 @@ safe to include in branch protection.
 
 ## Reproducibility
 
-* `images.lock.json` is the single source of truth: Go 1.24.4, base images
+* `images.lock.json` is the single source of truth: Go 1.27.3, base images
   (`golang@sha256:…`, `debian@sha256:…`, CUDA base), `openapi-generator@sha256:…`,
   Tika digest, xberg/docling-rs/model versions, actionlint version.
 * `scripts/verify_pins.py` fails on drift: floating `FROM`, action tag instead of

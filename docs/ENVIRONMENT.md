@@ -17,7 +17,7 @@
 | Container runtime | Docker Engine 29.9.2, Cgroup v2, overlay2, `nvidia` runtime + CDI (`nvidia.com/gpu=all`) |
 | Compose | Docker Compose v5.6.1 |
 | Java (for Tika / OpenAPI Generator) | OpenJDK 1.8.0_442 |
-| Go | go1.24.4 linux/amd64 |
+| Go | host install go1.24.4 linux/amd64 (Phase 0 measurements). The **build toolchain** is pinned to go1.27.3 by `go.mod` / `images.lock.json` (bumped 2026-11-01: go1.24 is out of support and govulncheck reported 42 reachable stdlib vulnerabilities); with the default `GOTOOLCHAIN=auto` the host `go` switches to it, CI and the Docker build use it with `GOTOOLCHAIN=local` |
 | Python | 3.12.3 |
 
 The machine is a workstation, **not** a dedicated benchmark host: the GPU also

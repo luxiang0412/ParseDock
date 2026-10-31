@@ -126,7 +126,7 @@ subprocess or over HTTP. Attribution is still recommended in `NOTICE`.
 
 ## 6. Container and SDK licenses
 
-* Base images: `golang:1.24-bookworm` (build only), `debian:trixie-slim`
+* Base images: `golang:1.27.3-bookworm` (build only, digest in `images.lock.json`), `debian:trixie-slim`
   (runtime, DFSG-free), `nvidia/cuda:13.2.0-runtime-ubuntu24.04` (optional GPU
   worker — its CUDA EULA governs redistribution).
 * OpenAPI Generator output: Apache-2.0 for the generator; generated clients
