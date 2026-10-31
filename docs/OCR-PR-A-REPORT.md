@@ -62,12 +62,26 @@ Chinese. This corrects an assumption in the earlier spike document (§3.5 there)
 
 ### 2.3 Does the CPU worker run with existing models, and no new dependency?
 
-Yes. The PP-OCRv6 graphs are inside the pinned xberg tarball; nothing is
-downloaded, and the worker's dependency set is unchanged:
+**Correction (2026-10-31, after running it in the container):** the original
+answer here was wrong. The PP-OCRv6 graphs are **not** inside the xberg tarball:
+the engine downloads them on first use into the Hugging Face cache
+(`~/.cache/huggingface/hub/models--xberg-io--paddleocr-onnx-models`, 43 MiB for
+paddle-ocr alone, 652 MiB for the full classic-OCR catalogue). Standalone runs
+passed because that cache already existed in the operator's home.
 
-```
-OCRB-06  no model files written by the worker (0 found)
-```
+In a worker container this failed twice:
+
+1. `HOME=/home/parsedock` does not exist in the image, so creating the cache lock
+   directory failed with `Permission denied`;
+2. the worker network is internal, so the follow-up download failed too — and both
+   surfaced as `malformed_file`, which blames the document instead of the setup.
+
+Fixed in `docker/Dockerfile.engines`: the cache is seeded at build time with
+`xberg cache seed-classic-ocr --cache-dir /opt/xberg-models` and pointed at by
+`HF_HUB_CACHE` (that option populates the hub root, not `HF_HOME/hub`), and
+`/home/parsedock` is created for the worker user. The worker image grows by
+652 MiB; the runtime dependency set is otherwise unchanged (no new package, no
+network at run time).
 
 Peak RSS and latency on the 2-page Chinese scan (same host, same method as
 `docs/OCR-GPU-BENCHMARK.md`): **1 252 ms, 765 MiB** for paddle-ocr vs
