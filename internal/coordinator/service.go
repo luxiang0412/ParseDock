@@ -721,9 +721,8 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 		// Fenced by the attempt: a heartbeat accepted for an old attempt must not write
 		// progress onto a job a newer attempt now owns.
 		_, err = s.DB.ExecContext(ctx, `UPDATE jobs SET progress = ?, progress_stage = ?, updated_at = ?
-			WHERE id = ? AND processing_status = 'running' AND progress <= ?
-			  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
-			progress, stage, ts(now), jobID, progress, jobID, token)
+			WHERE id = ? AND processing_status = 'running' AND progress <= ?`+fenceCurrentAttempt,
+			append([]any{progress, stage, ts(now), jobID, progress}, fenceCurrentAttemptArgs(jobID, token)...)...)
 		if err != nil {
 			return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
 		}
@@ -751,6 +750,30 @@ type CompleteParams struct {
 	JSON      []byte
 	PageCount int
 	Warnings  int
+}
+
+// Fencing predicates for a worker-reported transition on the jobs row. They are appended to
+// `UPDATE jobs ... WHERE id = ? AND processing_status = 'running'` so a report from a stale
+// attempt cannot move a job that a newer attempt now owns:
+//
+//   - fenceCurrentAttempt: the token belongs to the job's current, still-running attempt;
+//   - fenceLeaseLive: additionally, that attempt's lease has not expired. Publishing a result
+//     requires it; a failure report deliberately does not (checkLease already ran, and the
+//     reaper is the one that expires a lease).
+const (
+	fenceCurrentAttempt = `
+	  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`
+	fenceLeaseLive = `
+	  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running'
+	              AND julianday(lease_until) > julianday(?))`
+)
+
+// fenceCurrentAttemptArgs are the arguments of fenceCurrentAttempt.
+func fenceCurrentAttemptArgs(jobID, token string) []any { return []any{jobID, token} }
+
+// fenceLiveArgs are the arguments of fenceCurrentAttempt followed by fenceLeaseLive.
+func fenceLiveArgs(jobID, token string, now time.Time) []any {
+	return []any{jobID, token, jobID, token, ts(now)}
 }
 
 // Complete publishes artifacts then commits the job with a fencing check.
@@ -846,10 +869,9 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			ures, uerr := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
 				error_code = ?, error_message = ?, retention_status = 'release_pending',
 				progress_stage = 'quota_rejected', updated_at = ?
-				WHERE id = ? AND processing_status = 'running'
-				  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
-				  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?))`,
-				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
+				WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt+fenceLeaseLive,
+				append([]any{ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID},
+					fenceLiveArgs(p.JobID, p.Token, now)...)...)
 			if uerr != nil {
 				_ = tx.Rollback()
 				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+uerr.Error())
@@ -882,12 +904,11 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			result_version = ?, result_manifest_path = ?, page_count = CASE WHEN ? > 0 THEN ? ELSE page_count END,
 			actual_engine = ?, warning_count = ?, progress = 100, progress_stage = 'completed',
 			error_code = NULL, error_message = NULL, updated_at = ?
-		WHERE id = ? AND processing_status = 'running'
-		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
-		  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?))`,
-		ts(now), ts(expires), manifest.Version,
-		filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
-		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
+		WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt+fenceLeaseLive,
+		append([]any{ts(now), ts(expires), manifest.Version,
+			filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
+			p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID},
+			fenceLiveArgs(p.JobID, p.Token, now)...)...)
 	if err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
@@ -985,9 +1006,9 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		// these predicates an old report would reset a newer attempt's job to 'queued'.
 		res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued', progress = 0,
 			progress_stage = 'retry_wait', error_code = ?, error_message = ?, available_at = ?, updated_at = ?
-			WHERE id = ? AND processing_status = 'running'
-			  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
-			code, truncate(msg, 500), ts(now.Add(backoff)), ts(now), jobID, jobID, token)
+			WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt,
+			append([]any{code, truncate(msg, 500), ts(now.Add(backoff)), ts(now), jobID},
+				fenceCurrentAttemptArgs(jobID, token)...)...)
 		if err != nil {
 			return nil, NewError(500, jobs.ErrInternal, err.Error())
 		}
@@ -1014,9 +1035,9 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	// (and the backup retries with a fresh snapshot).
 	res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
 		error_code = ?, error_message = ?, retention_status = 'release_pending', updated_at = ?
-		WHERE id = ? AND processing_status = 'running'
-		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
-		ts(now), code, truncate(msg, 500), ts(now), jobID, jobID, token)
+		WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt,
+		append([]any{ts(now), code, truncate(msg, 500), ts(now), jobID},
+			fenceCurrentAttemptArgs(jobID, token)...)...)
 	if err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
