@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"parsedock.dev/parsedock/internal/jobs"
+
 	"parsedock.dev/parsedock/internal/documentir"
 	"parsedock.dev/parsedock/internal/engines"
 )
@@ -226,5 +228,18 @@ func TestWorkerResolvesWorkDir(t *testing.T) {
 	}
 	if got := filepath.Join(w.Cfg.WorkDir, "job", "a1"); !filepath.IsAbs(got) {
 		t.Fatalf("derived attempt dir not absolute: %q", got)
+	}
+}
+
+// Audit follow-up: a rejected result must end the job, not leave it 'running' until the
+// lease expires and re-parse the document on every attempt.
+func TestClassifyUploadRejection(t *testing.T) {
+	code, msg := classifyUploadRejection([]byte(`{"error":{"code":"malformed_file","message":"table too big"}}`))
+	if code != jobs.ErrMalformed || msg != "table too big" {
+		t.Fatalf("got %q/%q", code, msg)
+	}
+	code, _ = classifyUploadRejection([]byte("not json"))
+	if code != jobs.ErrInternal {
+		t.Fatalf("fallback code = %q", code)
 	}
 }

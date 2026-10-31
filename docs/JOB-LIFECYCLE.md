@@ -179,6 +179,22 @@ Steps 2–3 and 4 are separated on purpose: the state flip is a single SQL state
 while the file deletion retries until it succeeds. A `SIGKILL` anywhere yields either
 "still pending" or "already deleted", both of which converge.
 
+### Result generations
+
+Results are content-addressed: `results/<job>/<sha256 of the manifest>/` holds
+`result.md`, `result.txt`, `result.json` and `manifest.json`. The database records the
+generation it committed, so:
+
+* two workers racing to finish the same job write to different directories, and the loser
+  removes only its own generation (never the winner's files);
+* a retried attempt that produces identical bytes resolves to the same directory, which is
+  harmless — the loser then deletes nothing;
+* `release`/`expire` still remove the whole job directory, so retention is unchanged.
+
+Publishing writes into a `.stage-<random>` directory first and renames the files into the
+content-addressed one, then syncs the directory, so a crash cannot leave a half-written
+generation in the served path.
+
 ### Lease-aware deletion
 
 Two writers can discard a job's files: the cleaner (step 4) and the coordinator's terminal

@@ -2,6 +2,7 @@ package engines
 
 import (
 	"archive/zip"
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/xml"
@@ -173,92 +174,31 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		if err := ctx.Err(); err != nil {
 			return 0, nil, err
 		}
-		ws, err := readZipXML[xlsxWorksheet](ctx, zr, sh.part)
+		// A large sheet expands to tens of megabytes of XML (a real 10 MB workbook has one
+		// 59 MB worksheet). Unmarshalling that into structs cost several times the parse
+		// itself, so: (1) skip sheets with no <f> tag at all using a byte scan of the
+		// decompressed stream, and (2) stream the rest instead of building a DOM.
+		hasF, err := sheetHasFormulaTag(ctx, zr, sh.part)
+		if err != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return 0, warnings, cerr
+			}
+			continue
+		}
+		if !hasF {
+			continue
+		}
+		scan, err := scanSheet(ctx, zr, sh.part, sharedStrings)
 		if err != nil {
 			if cerr := ctx.Err(); cerr != nil {
 				return 0, warnings, cerr
 			}
 			continue // malformed worksheet: best effort
 		}
-		cells := map[[2]int]formulaCell{}
-		values := map[[2]int]string{}
-		capped := false
-		originRow, originCol := -1, -1
-		maxRow, maxCol := -1, -1
-		for _, row := range ws.SheetData.Rows {
-			for _, c := range row.Cells {
-				col, r, ok := parseA1(c.Ref)
-				if !ok {
-					continue
-				}
-				if originRow < 0 || r < originRow {
-					originRow = r
-				}
-				if originCol < 0 || col < originCol {
-					originCol = col
-				}
-				if r > maxRow {
-					maxRow = r
-				}
-				if col > maxCol {
-					maxCol = col
-				}
-				// Record every cell's text first: origin verification compares the
-				// engine's table against the sheet, so ordinary cells matter.
-				if !capped {
-					val := cachedText(c.T, c.V, sharedStrings)
-					if val == "" && c.T == "inlineStr" {
-						val = c.Is.T
-						for _, r := range c.Is.R {
-							val += r.T
-						}
-					}
-					if val != "" {
-						values[[2]int{r, col}] = val
-					}
-					if len(values) > 200000 {
-						capped = true
-						values = map[[2]int]string{}
-					}
-				}
-				hasFormula := strings.TrimSpace(c.F.Text) != "" || c.F.Type == "shared"
-				if !hasFormula {
-					// Ordinary cells are already populated by the engine; touching
-					// them would replace real text with a shared-string index or
-					// overwrite a date/boolean type.
-					continue
-				}
-				fc := formulaCell{cached: cachedText(c.T, c.V, sharedStrings)}
-				switch c.T {
-				case "s", "str", "inlineStr":
-					fc.dataType, fc.authoritative = "string", true
-				case "b":
-					fc.dataType, fc.authoritative = "bool", true
-				case "d":
-					fc.dataType, fc.authoritative = "date", true
-				default:
-					fc.dataType = "number"
-				}
-				if text := strings.TrimSpace(c.F.Text); text != "" {
-					fc.formula = text
-				} else {
-					// A shared-formula slave carries no text of its own. Copying the
-					// master verbatim would be wrong (relative references), so only
-					// the cached value is used and the gap is reported once.
-					fc.shared = true
-				}
-				// Keep shared-formula slaves even when they have no cache: the warning
-				// that the formula text is unavailable depends on seeing them.
-				if fc.formula != "" || fc.cached != "" || fc.shared {
-					cells[[2]int{r, col}] = fc
-				}
-
-			}
+		if len(scan.cells) == 0 {
+			continue
 		}
-		if len(cells) > 0 && originRow >= 0 {
-			formulas[sh.name] = sheetFormulas{originRow: originRow, originCol: originCol,
-				maxRow: maxRow, maxCol: maxCol, cells: cells, values: values, valuesCapped: capped}
-		}
+		formulas[sh.name] = *scan
 	}
 	if len(formulas) == 0 {
 		return 0, nil, nil
@@ -386,6 +326,197 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 			Message: msg, Severity: "info"})
 	}
 	return applied, warnings, nil
+}
+
+// sheetHasFormulaTag reports whether the worksheet part contains a formula element.
+//
+// It is a byte scan of the decompressed stream, not an XML parse: text content escapes "<"
+// as "&lt;", so a raw "<f" can only start a tag. This lets a large sheet with no formulas —
+// the common case — cost a memchr-style pass instead of a full tokenise.
+func sheetHasFormulaTag(ctx context.Context, zr *zip.ReadCloser, name string) (bool, error) {
+	rc, err := zr.Open(name)
+	if err != nil {
+		return false, err
+	}
+	defer rc.Close()
+	buf := make([]byte, 1<<20)
+	prevF := false // last byte of the previous chunk was '<'
+	needle := []byte("<f")
+	for {
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
+		n, rerr := rc.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			if prevF && len(chunk) > 0 && chunk[0] == 'f' {
+				return true, nil
+			}
+			if bytes.Contains(chunk, needle) {
+				return true, nil
+			}
+			prevF = chunk[len(chunk)-1] == '<'
+		}
+		if rerr == io.EOF {
+			return false, nil
+		}
+		if rerr != nil {
+			return false, rerr
+		}
+	}
+}
+
+// scanSheet streams one worksheet part.
+//
+// It replaces a full xml.Unmarshal of the sheet into structs: the decoder below walks the
+// token stream, keeps only the cells that matter, and never materialises the whole document.
+// keepValues additionally records every cell's text at its worksheet address, which origin
+// verification needs (and which is the expensive part, so the caller asks for it only when
+// the sheet actually contains formulas).
+func scanSheet(ctx context.Context, zr *zip.ReadCloser, name string,
+	shared []string) (*sheetFormulas, error) {
+	rc, err := zr.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	out := &sheetFormulas{
+		originRow: -1, originCol: -1, maxRow: -1, maxCol: -1,
+		cells:  map[[2]int]formulaCell{},
+		values: map[[2]int]string{},
+	}
+
+	dec := xml.NewDecoder(&ctxReader{ctx: ctx, r: bufio.NewReaderSize(rc, 256<<10)})
+	var (
+		inCell                                bool
+		ref, typ, value, fText, fType, inline string
+	)
+	for {
+		tok, err := dec.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+		switch t := tok.(type) {
+		case xml.StartElement:
+			switch t.Name.Local {
+			case "c":
+				inCell = true
+				ref, typ, value, fText, fType, inline = "", "", "", "", "", ""
+				for _, a := range t.Attr {
+					switch a.Name.Local {
+					case "r":
+						ref = a.Value
+					case "t":
+						typ = a.Value
+					}
+				}
+			case "v":
+				if inCell {
+					var v string
+					if err := dec.DecodeElement(&v, &t); err != nil {
+						return nil, err
+					}
+					value = v
+				}
+			case "f":
+				if inCell {
+					for _, a := range t.Attr {
+						if a.Name.Local == "t" {
+							fType = a.Value
+						}
+					}
+					var f string
+					if err := dec.DecodeElement(&f, &t); err != nil {
+						return nil, err
+					}
+					fText = f
+				}
+			case "is":
+				if inCell {
+					var is struct {
+						T string `xml:"t"`
+						R []struct {
+							T string `xml:"t"`
+						} `xml:"r"`
+					}
+					if err := dec.DecodeElement(&is, &t); err != nil {
+						return nil, err
+					}
+					inline = is.T
+					for _, r := range is.R {
+						inline += r.T
+					}
+				}
+			}
+		case xml.EndElement:
+			if t.Name.Local != "c" || !inCell {
+				continue
+			}
+			inCell = false
+			col, row, ok := parseA1(ref)
+			if !ok {
+				continue
+			}
+			if out.originRow < 0 || row < out.originRow {
+				out.originRow = row
+			}
+			if out.originCol < 0 || col < out.originCol {
+				out.originCol = col
+			}
+			if row > out.maxRow {
+				out.maxRow = row
+			}
+			if col > out.maxCol {
+				out.maxCol = col
+			}
+			cellValue := cachedText(typ, value, shared)
+			if cellValue == "" && typ == "inlineStr" {
+				cellValue = inline
+			}
+			if !out.valuesCapped {
+				if cellValue != "" {
+					out.values[[2]int{row, col}] = cellValue
+				}
+				if len(out.values) > 200000 {
+					out.valuesCapped = true
+					out.values = nil
+				}
+			}
+			hasFormula := strings.TrimSpace(fText) != "" || fType == "shared"
+			if !hasFormula {
+				// Ordinary cells are already populated by the engine; touching them would
+				// replace real text with a shared-string index or overwrite a date/boolean.
+				continue
+			}
+			fc := formulaCell{cached: cellValue}
+			switch typ {
+			case "s", "str", "inlineStr":
+				fc.dataType, fc.authoritative = "string", true
+			case "b":
+				fc.dataType, fc.authoritative = "bool", true
+			case "d":
+				fc.dataType, fc.authoritative = "date", true
+			default:
+				fc.dataType = "number"
+			}
+			if text := strings.TrimSpace(fText); text != "" {
+				fc.formula = text
+			} else {
+				// A shared-formula slave carries no text of its own; copying the master
+				// verbatim would be wrong (relative references), so only the cached value is
+				// used and the gap is reported once.
+				fc.shared = true
+			}
+			if fc.formula != "" || fc.cached != "" || fc.shared {
+				out.cells[[2]int{row, col}] = fc
+			}
+		}
+	}
+	return out, nil
 }
 
 // cachedText converts a cached OOXML value to text, resolving shared strings.

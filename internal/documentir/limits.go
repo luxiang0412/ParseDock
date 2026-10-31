@@ -16,9 +16,11 @@ type Limits struct {
 
 // DefaultLimits is used when a caller has no reason to choose its own.
 var DefaultLimits = Limits{
-	MaxElements:   2_000_000,
-	MaxTables:     10_000,
-	MaxTableCells: 2_000_000,
+	MaxElements: 2_000_000,
+	MaxTables:   10_000,
+	// A real SAP ledger in the corporate corpus declares 2.16M cells in one sheet; the
+	// ceiling is a shape guard against absurd claims, not a quality limit.
+	MaxTableCells: 10_000_000,
 	MaxTextBytes:  512 << 20,
 }
 
@@ -52,7 +54,7 @@ func (l Limits) Validate(d *Document) error {
 			return fmt.Errorf("table %q declares %d cells (limit %d)", t.ID, area, l.MaxTableCells)
 		}
 		cells += area
-		if cells > l.MaxTableCells*10 {
+		if cells > l.MaxTableCells*2 {
 			return fmt.Errorf("document declares more than %d table cells", l.MaxTableCells*10)
 		}
 	}

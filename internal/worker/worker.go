@@ -598,9 +598,30 @@ func (w *Worker) uploadResult(ctx context.Context, task *coordClaim, engine engi
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if resp.StatusCode >= 300 {
+		// Report the rejection as a classified failure. Without this the job kept its
+		// 'running' state until the lease expired, was requeued, and re-parsed from
+		// scratch - a rejected result turned into minutes of repeated work.
+		code, msg := classifyUploadRejection(raw)
+		retryable := resp.StatusCode >= 500
+		_ = w.fail(ctx, task, code, msg, retryable)
 		return fmt.Errorf("upload result rejected %s: %s", resp.Status, string(raw))
 	}
 	return nil
+}
+
+// classifyUploadRejection reads the coordinator's error envelope, falling back to a generic
+// code so the job still ends instead of waiting for a lease timeout.
+func classifyUploadRejection(raw []byte) (string, string) {
+	var body struct {
+		Error struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(raw, &body); err == nil && body.Error.Code != "" {
+		return body.Error.Code, body.Error.Message
+	}
+	return jobs.ErrInternal, "result rejected by the coordinator"
 }
 
 func (w *Worker) heartbeat(ctx context.Context, task *coordClaim, progress int, stage string) error {
