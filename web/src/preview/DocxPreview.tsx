@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { stripActiveContent } from './sanitizeDOM'
+import { useI18n } from '../i18n'
+import { humanBytes } from '../features/playground/format'
 
 /** Above this size a DOCX is reported as too large to preview rather than parsed in JS. */
 export const DOCX_PREVIEW_LIMIT = 20 << 20
@@ -10,6 +12,7 @@ export function DocxPreview({ file }: { file: File }) {
   const hostRef = useRef<HTMLDivElement>(null)
   const styleRef = useRef<HTMLDivElement>(null)
   const [status, setStatus] = useState<Status | null>(null)
+  const { t } = useI18n()
   const tooLarge = file.size > DOCX_PREVIEW_LIMIT
 
   useEffect(() => {
@@ -44,21 +47,25 @@ export function DocxPreview({ file }: { file: File }) {
   if (tooLarge) {
     return (
       <p className="p-4 text-sm text-ink-500">
-        This DOCX is {Math.round(file.size / (1 << 20))} MiB; previews are limited to{' '}
-        {DOCX_PREVIEW_LIMIT >> 20} MiB. The parsed Markdown is still available.
+        {t('preview.docxTooLarge', {
+          size: humanBytes(file.size),
+          limit: humanBytes(DOCX_PREVIEW_LIMIT),
+        })}
       </p>
     )
   }
   const current = status?.file === file ? status.state : null
   if (current === 'error') {
-    return <p className="p-4 text-sm text-warn-500">This DOCX could not be rendered here.</p>
+    return <p className="p-4 text-sm text-warn-500">{t('preview.docxError')}</p>
   }
 
   return (
     <div className="relative h-full">
       <div ref={styleRef} className="hidden" />
       {current !== 'ready' && (
-        <p className="absolute inset-x-0 top-0 p-3 text-xs text-ink-500">Rendering document…</p>
+        <p className="absolute inset-x-0 top-0 p-3 text-xs text-ink-500">
+          {t('preview.docxRendering')}
+        </p>
       )}
       <div className="docx-wrap h-full overflow-auto p-4" ref={hostRef} />
     </div>

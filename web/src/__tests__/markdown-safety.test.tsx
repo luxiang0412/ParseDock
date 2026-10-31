@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it } from 'vitest'
 import { MarkdownPane } from '../components/MarkdownPane'
+import { I18nProvider } from '../i18n'
 
 const HOSTILE = `
 # Report
@@ -25,13 +26,15 @@ A real paragraph with **bold** and a [safe link](https://example.com/docs).
 
 function renderPane(markdown: string) {
   return render(
-    <MarkdownPane
-      markdown={markdown}
-      fileName="report.md"
-      phase="completed"
-      onRelease={() => {}}
-      canRelease={false}
-    />,
+    <I18nProvider initialLocale="en">
+      <MarkdownPane
+        markdown={markdown}
+        fileName="report.md"
+        phase="completed"
+        onRelease={() => {}}
+        canRelease={false}
+      />
+    </I18nProvider>,
   )
 }
 

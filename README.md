@@ -29,8 +29,8 @@ second host, and branch protection needs a paid private repo (or a public one).
 
 ### Playground (web UI)
 
-`web/` is a React + Vite workbench: upload a document, watch it parse, and compare the original
-with the Markdown the API returned. It runs behind a same-origin proxy that injects the API key —
+`web/` is a React + Vite workbench: drag a document anywhere onto the page, watch it parse, and
+compare the original with the Markdown the API returned. The UI is bilingual (English / 简体中文). It runs behind a same-origin proxy that injects the API key —
 the browser never holds it — and it never acknowledges a result on its own.
 
 ```bash

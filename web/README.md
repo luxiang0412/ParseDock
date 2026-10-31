@@ -63,3 +63,8 @@ scripts/        API type drift check, dist secret scan
   sandbox-free previews built from parsed data, CSP at the proxy).
 * Previews use the local `File`; object URLs are revoked when the file changes or the pane
   unmounts.
+* **Drag and drop works anywhere on the page**, not only on the drop zone (a page-level overlay
+  appears while a file is dragged).
+* **Two locales** (English, 简体中文). Strings live in `src/i18n/`: adding a key to `en` fails the
+  build until `zh.ts` has it too. Tests use `data-testid` for actions whose label is translated
+  (`parse`, `job-status`, `source-pane`, `markdown-pane`).

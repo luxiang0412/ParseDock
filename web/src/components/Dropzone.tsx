@@ -1,6 +1,7 @@
 import clsx from 'clsx'
 import { useCallback, useId, useRef, useState } from 'react'
-import { ACCEPTED_EXTENSIONS, humanBytes, isAccepted } from '../features/playground/format'
+import { ACCEPTED_EXTENSIONS, isAccepted } from '../features/playground/format'
+import { useI18n } from '../i18n'
 
 export function Dropzone({
   onSelect,
@@ -9,6 +10,7 @@ export function Dropzone({
   onSelect: (file: File) => void
   disabled?: boolean
 }) {
+  const { t } = useI18n()
   const inputId = useId()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -19,15 +21,13 @@ export function Dropzone({
       const file = files?.[0]
       if (!file) return
       if (!isAccepted(file)) {
-        setRejected(
-          `${file.name} is not an accepted type. Accepted: ${ACCEPTED_EXTENSIONS.join(' ')}`,
-        )
+        setRejected(t('drop.rejected', { name: file.name, list: ACCEPTED_EXTENSIONS.join(' ') }))
         return
       }
       setRejected(null)
       onSelect(file)
     },
-    [onSelect],
+    [onSelect, t],
   )
 
   return (
@@ -62,12 +62,12 @@ export function Dropzone({
           </svg>
         </span>
         <span className="text-sm font-medium">
-          Drop a document here, or <span className="text-accent-700 underline underline-offset-2 dark:text-accent-300">browse</span>
+          {t('drop.title')}{' '}
+          <span className="text-accent-700 underline underline-offset-2 dark:text-accent-300">
+            {t('drop.browse')}
+          </span>
         </span>
-        <span className="max-w-md text-xs leading-5 text-ink-500">
-          PDF, Word, Excel, PowerPoint, CSV/TSV, text/Markdown, images and HTML. The file is
-          uploaded to the ParseDock server for parsing; the preview on the left stays local.
-        </span>
+        <span className="max-w-md text-xs leading-5 text-ink-500">{t('drop.formats')}</span>
         <input
           ref={inputRef}
           id={inputId}
@@ -82,11 +82,7 @@ export function Dropzone({
           {rejected}
         </p>
       )}
-      <p className="mt-2 text-center text-[0.7rem] text-ink-400">
-        No file is retained by the browser beyond this tab · server results follow the API TTL
-        until you release them
-      </p>
-      <span className="sr-only">{humanBytes(0)}</span>
+      <p className="mt-2 text-center text-[0.7rem] text-ink-400">{t('drop.privacy')}</p>
     </div>
   )
 }

@@ -4,12 +4,8 @@ import { Dropzone } from './Dropzone'
 import { Button } from './Button'
 import { ModeToggle } from './ModeToggle'
 import { ACCEPTED_EXTENSIONS, humanBytes, previewKind } from '../features/playground/format'
-
-const MODE_HINT: Record<Mode, string> = {
-  auto: 'fast engine, escalating scans when OCR quality is low',
-  fast: 'fastest engine; best for text-layer PDFs and Office files',
-  accurate: 'prefers structure and provenance; slower, and results still vary by format',
-}
+import { useI18n } from '../i18n'
+import { MODE_NOTE } from '../features/playground/modes'
 
 /** The file picker + mode + start button, shown before and after a job exists. */
 export function Intake({
@@ -31,15 +27,17 @@ export function Intake({
   onReset: () => void
   hasJob: boolean
 }) {
+  const { t } = useI18n()
   const pickerRef = useRef<HTMLInputElement>(null)
+
   if (!file) {
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-8">
         <Dropzone onSelect={onSelect} />
         <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
-          <span className="text-xs text-ink-500">Parse mode</span>
+          <span className="text-xs text-ink-500">{t('mode.label')}</span>
           <ModeToggle value={mode} onChange={onMode} />
-          <p className="w-full text-center text-[0.7rem] text-ink-400">{MODE_HINT[mode]}</p>
+          <p className="w-full text-center text-[0.7rem] text-ink-400">{t(MODE_NOTE[mode])}</p>
         </div>
       </div>
     )
@@ -58,13 +56,13 @@ export function Intake({
           <div className="min-w-0">
             <p className="truncate text-sm font-medium">{file.name}</p>
             <p className="font-mono text-[0.7rem] text-ink-500">
-              {humanBytes(file.size)} · {file.type || 'unknown type'}
+              {humanBytes(file.size)} · {file.type || t('intake.unknownType')}
             </p>
           </div>
         </div>
 
         <div className="flex flex-1 items-center gap-2 sm:flex-none">
-          <span className="hidden text-xs text-ink-500 sm:inline">Mode</span>
+          <span className="hidden text-xs text-ink-500 sm:inline">{t('mode.label')}</span>
           <ModeToggle value={mode} onChange={onMode} disabled={busy} />
         </div>
 
@@ -79,7 +77,7 @@ export function Intake({
               e.target.value = ''
               if (picked) onSelect(picked)
             }}
-            aria-label="Choose another document"
+            aria-label={t('intake.chooseAnother')}
           />
           <Button
             variant="ghost"
@@ -87,15 +85,15 @@ export function Intake({
             onClick={() => pickerRef.current?.click()}
             disabled={busy}
           >
-            {hasJob ? 'New file' : 'Change'}
+            {hasJob ? t('intake.newFile') : t('intake.change')}
           </Button>
           {!hasJob && (
             <>
               <Button variant="ghost" size="sm" onClick={onReset} disabled={busy}>
-                Clear
+                {t('intake.clear')}
               </Button>
-              <Button size="sm" onClick={onStart} disabled={busy}>
-                {busy ? 'Parsing…' : 'Parse'}
+              <Button size="sm" onClick={onStart} disabled={busy} data-testid="parse">
+                {busy ? t('intake.parsing') : t('intake.parse')}
               </Button>
             </>
           )}

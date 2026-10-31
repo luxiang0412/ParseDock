@@ -1,12 +1,6 @@
 import { humanBytes } from '../features/playground/format'
 
-export function UnsupportedPreview({
-  file,
-  reason,
-}: {
-  file: File
-  reason: string
-}) {
+export function UnsupportedPreview({ file, reason }: { file: File; reason: string }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
       <div className="rounded-full border border-dashed border-ink-300 p-3 text-ink-400 dark:border-ink-700">

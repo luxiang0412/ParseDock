@@ -1,15 +1,23 @@
 import { describe, expect, it } from 'vitest'
-import { ApiError, messageForCode, toApiError } from './errors'
+import { ApiError, friendlyForCode, toApiError } from './errors'
+import { translate } from '../i18n'
 
-describe('messageForCode', () => {
+const en: Parameters<typeof friendlyForCode>[1] = (key, vars) => translate('en', key, vars)
+const zh: Parameters<typeof friendlyForCode>[1] = (key, vars) => translate('zh-CN', key, vars)
+
+describe('friendlyForCode', () => {
   it('maps known codes to actionable sentences', () => {
-    expect(messageForCode('unsupported_type')).toMatch(/not accepted/i)
-    expect(messageForCode('encrypted_file')).toMatch(/password protected/i)
-    expect(messageForCode('gone')).toMatch(/released or expired/i)
+    expect(friendlyForCode('unsupported_type', en)).toMatch(/not accepted/i)
+    expect(friendlyForCode('encrypted_file', en)).toMatch(/password protected/i)
+    expect(friendlyForCode('gone', en)).toMatch(/released or expired/i)
+  })
+  it('speaks Chinese when asked', () => {
+    expect(friendlyForCode('file_too_large', zh)).toMatch(/上传上限/)
+    expect(friendlyForCode('rate_limited', zh, undefined, 7)).toContain('7')
   })
   it('falls back to the server message for unknown codes', () => {
-    expect(messageForCode('http_502', 'bad gateway')).toBe('bad gateway')
-    expect(messageForCode(undefined)).toMatch(/went wrong/i)
+    expect(friendlyForCode('http_502', en, 'bad gateway')).toBe('bad gateway')
+    expect(friendlyForCode(undefined, en)).toMatch(/went wrong/i)
   })
 })
 
@@ -24,7 +32,7 @@ describe('toApiError', () => {
     expect(err.code).toBe('rate_limited')
     expect(err.status).toBe(429)
     expect(err.retryAfter).toBe(7)
-    expect(err.friendly).toMatch(/7 s/)
+    expect(err.friendly(en)).toMatch(/7 s/)
   })
 
   it('survives a non-JSON body', async () => {

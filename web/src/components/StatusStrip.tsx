@@ -1,22 +1,24 @@
 import type { Job } from '../api/client'
 import type { Phase } from '../features/playground/phase'
 import { describeExpiry, formatClock } from '../features/playground/format'
+import { useI18n } from '../i18n'
+import type { MessageKey } from '../i18n/messages'
 import { Button } from './Button'
 import { Spinner } from './Spinner'
 
-const LABEL: Record<Phase, string> = {
-  idle: 'Ready',
-  selected: 'Ready to parse',
-  uploading: 'Uploading',
-  queued: 'Queued',
-  running: 'Parsing',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-  releasing: 'Releasing server copy',
-  released: 'Server copy released',
-  expired: 'Result expired',
-  error: 'Error',
+const LABEL: Record<Phase, MessageKey> = {
+  idle: 'status.idle',
+  selected: 'status.selected',
+  uploading: 'status.uploading',
+  queued: 'status.queued',
+  running: 'status.running',
+  completed: 'status.completed',
+  failed: 'status.failed',
+  cancelled: 'status.cancelled',
+  releasing: 'status.releasing',
+  released: 'status.released',
+  expired: 'status.expired',
+  error: 'status.error',
 }
 
 const TONE: Record<Phase, string> = {
@@ -53,9 +55,10 @@ export function StatusStrip({
   onRelease: () => void
   releasing: boolean
 }) {
+  const { t } = useI18n()
   const working = phase === 'uploading' || phase === 'queued' || phase === 'running'
   const percent = job?.progress_percent ?? 0
-  const stage = job?.progress_stage ?? (phase === 'uploading' ? 'sending file' : '')
+  const stage = job?.progress_stage ?? (phase === 'uploading' ? t('status.uploadingStage') : '')
 
   return (
     <div
@@ -64,7 +67,7 @@ export function StatusStrip({
     >
       <div className="flex items-center gap-2" role="status" aria-live="polite">
         {working && <Spinner size={13} />}
-        <span className={`font-medium ${TONE[phase]}`}>{LABEL[phase]}</span>
+        <span className={`font-medium ${TONE[phase]}`}>{t(LABEL[phase])}</span>
         {stage && working && <span className="font-mono text-[0.7rem] text-ink-500">{stage}</span>}
       </div>
 
@@ -73,7 +76,7 @@ export function StatusStrip({
           <div
             className="h-1.5 flex-1 overflow-hidden rounded-full bg-ink-200 dark:bg-ink-800"
             role="progressbar"
-            aria-label="Parse progress"
+            aria-label={t('status.progress')}
             aria-valuemin={0}
             aria-valuemax={100}
             {...(percent > 0 ? { 'aria-valuenow': percent } : {})}
@@ -90,34 +93,32 @@ export function StatusStrip({
       )}
 
       {elapsedMs !== null && (
-        <span className="font-mono text-[0.7rem] text-ink-500" title="Time since the job was created">
+        <span className="font-mono text-[0.7rem] text-ink-500" title={t('status.elapsedTitle')}>
           {formatClock(elapsedMs)}
         </span>
       )}
 
       {job?.result_expires_at && phase === 'completed' && (
         <span className="text-[0.7rem] text-ink-500">
-          server copy expires {describeExpiry(job.result_expires_at)}
+          {t('status.expiresIn', { when: describeExpiry(job.result_expires_at, t) })}
         </span>
       )}
       {job?.retention_status === 'release_pending' && (
-        <span className="text-[0.7rem] text-ink-500">deletion in progress on the server…</span>
+        <span className="text-[0.7rem] text-ink-500">{t('status.deleting')}</span>
       )}
       {phase === 'released' && (
-        <span className="text-[0.7rem] text-ink-500">
-          downloaded Markdown stays readable here; new downloads return 410
-        </span>
+        <span className="text-[0.7rem] text-ink-500">{t('status.releasedNote')}</span>
       )}
 
       <div className="ml-auto flex items-center gap-2">
         {canCancel && (
           <Button size="sm" variant="danger" onClick={onCancel}>
-            Cancel job
+            {t('status.cancel')}
           </Button>
         )}
         {canRelease && (
           <Button size="sm" variant="secondary" onClick={onRelease} disabled={releasing}>
-            {releasing ? 'Releasing…' : 'Release server copy'}
+            {releasing ? t('status.releasingAction') : t('status.release')}
           </Button>
         )}
       </div>

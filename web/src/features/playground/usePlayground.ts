@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { api, type Job, type Mode } from '../../api/client'
-import { ApiError, messageForCode } from '../../api/errors'
+import { ApiError } from '../../api/errors'
 import { holdsServerCopy, initialState, phaseOf, reducer } from './phase'
 import { useJobEvents } from './useJobEvents'
 
@@ -82,7 +82,11 @@ export function usePlayground() {
         if (fresh && job.job_id === jobIdRef.current) dispatch({ type: 'job', job: fresh })
         return
       }
-      dispatch({ type: 'error', message: err instanceof Error ? err.message : 'result download failed' })
+      dispatch({
+        type: 'error',
+        code: 'internal_error',
+        message: err instanceof Error ? err.message : 'result download failed',
+      })
     }
   }, [])
 
@@ -172,7 +176,7 @@ export function usePlayground() {
       } catch (err) {
         if (controller.signal.aborted) return
         if (err instanceof ApiError) {
-          dispatch({ type: 'error', code: err.code, message: err.friendly })
+          dispatch({ type: 'error', code: err.code, message: err.message })
         } else {
           dispatch({ type: 'error', message: err instanceof Error ? err.message : 'upload failed' })
         }
@@ -189,8 +193,11 @@ export function usePlayground() {
       applyJob(updated)
       void refresh(job.job_id)
     } catch (err) {
-      const message = err instanceof ApiError ? err.friendly : 'cancel failed'
-      dispatch({ type: 'error', message })
+      dispatch({
+        type: 'error',
+        code: err instanceof ApiError ? err.code : 'cancelFailed',
+        message: err instanceof Error ? err.message : 'cancel failed',
+      })
     }
   }, [applyJob, refresh, state.job, state.phase])
 
@@ -199,7 +206,7 @@ export function usePlayground() {
     const job = state.job
     const version = state.resultVersion ?? job?.result_version ?? null
     if (!job || !version) {
-      dispatch({ type: 'error', message: messageForCode('conflict') })
+      dispatch({ type: 'error', code: 'conflict', message: 'missing result_version' })
       return
     }
     dispatch({ type: 'releasing' })
@@ -218,8 +225,11 @@ export function usePlayground() {
       }
       void wait()
     } catch (err) {
-      const message = err instanceof ApiError ? err.friendly : 'release failed'
-      dispatch({ type: 'error', message })
+      dispatch({
+        type: 'error',
+        code: err instanceof ApiError ? err.code : 'releaseFailed',
+        message: err instanceof Error ? err.message : 'release failed',
+      })
     }
   }, [applyJob, state.job, state.resultVersion])
 

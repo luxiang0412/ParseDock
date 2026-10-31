@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { useI18n } from '../i18n'
+import { humanBytes } from '../features/playground/format'
 
 export const XLSX_PREVIEW_LIMIT = 16 << 20
 const MAX_SHEETS = 5
@@ -14,6 +16,7 @@ interface Sheet {
 type Loaded = { file: File; sheets: Sheet[] } | 'error'
 
 export function XlsxPreview({ file }: { file: File }) {
+  const { t } = useI18n()
   const tooLarge = file.size > XLSX_PREVIEW_LIMIT
   const [loaded, setLoaded] = useState<Loaded | null>(null)
   const [active, setActive] = useState<{ file: File; index: number } | null>(null)
@@ -55,20 +58,22 @@ export function XlsxPreview({ file }: { file: File }) {
   if (tooLarge) {
     return (
       <p className="p-4 text-sm text-ink-500">
-        This workbook is {Math.round(file.size / (1 << 20))} MiB; previews are limited to{' '}
-        {XLSX_PREVIEW_LIMIT >> 20} MiB. The parsed Markdown (tables) is still available.
+        {t('preview.xlsxTooLarge', {
+          size: humanBytes(file.size),
+          limit: humanBytes(XLSX_PREVIEW_LIMIT),
+        })}
       </p>
     )
   }
   if (loaded === 'error') {
-    return <p className="p-4 text-sm text-warn-500">This workbook could not be read here.</p>
+    return <p className="p-4 text-sm text-warn-500">{t('preview.xlsxError')}</p>
   }
   const current = loaded && loaded.file === file ? loaded.sheets : null
-  if (!current) return <p className="p-4 text-sm text-ink-500">Reading workbook…</p>
+  if (!current) return <p className="p-4 text-sm text-ink-500">{t('preview.xlsxReading')}</p>
 
   const index = active?.file === file ? active.index : 0
   const sheet = current[index] ?? current[0]
-  if (!sheet) return <p className="p-4 text-sm text-ink-500">The workbook has no visible sheets.</p>
+  if (!sheet) return <p className="p-4 text-sm text-ink-500">{t('preview.xlsxNoSheets')}</p>
 
   return (
     <div className="flex h-full flex-col">
@@ -89,7 +94,9 @@ export function XlsxPreview({ file }: { file: File }) {
           </button>
         ))}
         {current.length === MAX_SHEETS && (
-          <span className="ml-2 text-xs text-ink-500">first {MAX_SHEETS} sheets</span>
+          <span className="ml-2 text-xs text-ink-500">
+            {t('preview.xlsxFirstSheets', { count: MAX_SHEETS })}
+          </span>
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto p-2">
@@ -113,7 +120,7 @@ export function XlsxPreview({ file }: { file: File }) {
         </table>
         {sheet.truncated && (
           <p className="mt-2 text-xs text-ink-500">
-            preview limited to the first {MAX_ROWS} rows and {MAX_COLS} columns
+            {t('preview.csvLimit', { rows: MAX_ROWS, cols: MAX_COLS })}
           </p>
         )}
       </div>

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { previewKind } from '../features/playground/format'
+import { useI18n } from '../i18n'
 import { CsvPreview } from './CsvPreview'
 import { DocxPreview } from './DocxPreview'
 import { ImagePreview } from './ImagePreview'
@@ -10,6 +11,7 @@ import { UnsupportedPreview } from './UnsupportedPreview'
 import { XlsxPreview } from './XlsxPreview'
 
 export function Preview({ file }: { file: File }): ReactNode {
+  const { t } = useI18n()
   switch (previewKind(file.name)) {
     case 'pdf':
       return <PdfPreview file={file} />
@@ -29,6 +31,6 @@ export function Preview({ file }: { file: File }): ReactNode {
     case 'xlsx':
       return <XlsxPreview file={file} />
     default:
-      return <UnsupportedPreview file={file} reason={noPreviewReason(previewKind(file.name))} />
+      return <UnsupportedPreview file={file} reason={t(noPreviewReason(previewKind(file.name)))} />
   }
 }
