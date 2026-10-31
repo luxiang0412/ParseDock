@@ -230,12 +230,42 @@ Document IR already has the vocabulary for this: `SourceLocation.BBox` with
 `ocr_quality_unknown` (`internal/documentir/ir.go`). What is missing is a backend
 that fills them per OCR element.
 
+### 6.1 Table geometry: measured with a ruled-table fixture (B)
+
+`benchmark/fixtures/ocr/zh_table.pdf` is a two-page image-only PDF with one ruled
+table drawn at a known position (left 0.9 in, top 1.2 in, 4 columns × 1.6 in,
+5 rows × 0.32 in → in points ≈ x 65…526, y 86…201; in 300 dpi pixels
+≈ x 270…2 190, y 360…840).
+
+| Input | `--layout` | Tables | bbox | Unit |
+| --- | --- | --- | --- | --- |
+| born-digital PDF (`pdf_text_en_3p`) | n/a | 1 | x 114.8…480.5, y 459.9…564.9 (page 595 × 842) | **PDF points** |
+| scanned table (this fixture) | off (our adapter) | **0** | – | nothing emitted |
+| scanned table | `--layout true` | 4 (over-segmented) | x 267.1…2 192.8, y 356.1…842.6 | **raster pixels** |
+
+The scanned bbox matches the drawn table in pixel space to within ~3 px, and its
+`x1` (2 192) is 3.7× the page width in points — so it is pixels, not points.
+(`y1 = 842.6` only looks like the page height in points by coincidence: the
+table's bottom edge is at 840 px.)
+
+Consequences:
+
+* `internal/engines/xberg.go` labels every xberg table bbox
+  `pdf_user_space_v1`. That is correct for born-digital PDFs and **wrong** for
+  OCR'd pages.
+* The mislabel is currently **latent**, not active: the adapter does not pass
+  `--layout`, and without it xberg reports **no tables at all** on scanned pages,
+  so no scanned geometry is published today.
+* Before `--layout` is ever exposed: normalise with
+  `ocr_processed_image_{width,height}` ÷ page size and emit `image_px_v1`, or
+  withhold the field. Emitting points-space geometry scaled from pixels without
+  a fixture like the one above is exactly the fabricated precision this spike is
+  supposed to prevent.
+
 Two hazards, both real today:
 
-1. `internal/engines/xberg.go` labels xberg table bboxes `pdf_user_space_v1`
-   unconditionally. On a scanned page xberg's geometry is in pixels (§ above).
-   Unproven for tables specifically (no scanned table fixture yet) but the unit
-   mismatch is demonstrated for blocks on the same pages.
+1. The `pdf_user_space_v1` label above (latent for tables; already demonstrated
+   for blocks on OCR'd pages, where `top` reaches 3 228 on an 842-point page).
 2. `word_count = 0` from paddle-ocr means our `ocr_low_confidence` warning can
    only ever be produced by the tesseract backend, which is exactly the backend
    that is worse at Chinese. The warning currently says nothing about quality for
