@@ -8,8 +8,10 @@ breaking CPU-only CI.
 
   PR08-01 GPU worker image starts and MinerU runs inside it
   PR08-02 worker registers device_type=gpu with measurable free VRAM
-  PR08-03 device=gpu_required is routed to mineru and completes on the GPU worker
-  PR08-04 the result records engine/device provenance
+  PR08-03 device=gpu_required either fails closed (gpu_unavailable) or completes
+           with *proof* of GPU execution; CPU execution never passes
+  PR08-04 device=gpu_preferred completes and records the real device (never a
+           claimed "gpu"), with the evidence named in routing.reason
 
 The VRAM-aware admission refusal (gpu_required + insufficient free VRAM → 409) is
 unit-tested by TestGPUAdmissionRespectsFreeVRAM, so it needs no GPU here.
@@ -108,8 +110,14 @@ def main():
                 pass
             time.sleep(0.1)
 
+        # The worker logic under test must be the code in this tree, not whatever
+        # binary the image was built with. Mounting it read-only changes nothing
+        # about the image (the MinerU runtime and its models stay identical) and
+        # keeps the check honest: an old worker would otherwise pass on the
+        # coordinator's behalf.
+        mount = ["-v", f"{BIN}:/usr/local/bin/docparse:ro"]
         r = docker("run", "-d", "--name", CONTAINER, "--device", "nvidia.com/gpu=all",
-                   "--network", "host", "-v", f"{vol}:/work", GPU_IMAGE,
+                   "--network", "host", "-v", f"{vol}:/work", *mount, GPU_IMAGE,
                    "--role", "worker", "--coordinator-url", f"http://127.0.0.1:{PORT}",
                    "--internal-token", TOKEN, "--engines", "mineru", "--device-type", "gpu",
                    "--worker-id", "gpu-w1", "--work-dir", "/work/scratch")
@@ -156,10 +164,56 @@ def main():
                 if st.get("processing_status") in ("completed", "failed"):
                     break
             time.sleep(3)
-        results.append(("PR08-03", st.get("processing_status") == "completed",
-                        f"gpu_required → {st.get('processing_status')} ({st.get('error_code')})"))
-        results.append(("PR08-04", st.get("engine") == "mineru" and "gpu_required" in (st.get("routing_reason") or ""),
-                        f"engine={st.get('engine')} reason={(st.get('routing_reason') or '')[:80]}"))
+        # PR-D1: a gpu_required job may only be published with per-task proof that
+        # the parse ran on a GPU. Completing on the CPU - which is what a silent
+        # MinerU fallback does - is a failure, not a pass. Fetch the IR so the
+        # check is on the recorded device, not on our hope.
+        def ir_of(job_id):
+            code, body = http(f"/v1/jobs/{job_id}/result?format=json",
+                              headers={"X-Internal-Token": TOKEN, "X-Parsedock-Owner": OWNER})
+            if code != 200:
+                return None
+            return json.loads(body)
+
+        if st.get("processing_status") == "completed":
+            ir = ir_of(jid) or {}
+            device = (ir.get("routing") or {}).get("actual_device")
+            reason = (ir.get("routing") or {}).get("reason") or ""
+            results.append(("PR08-03", device == "gpu",
+                            f"gpu_required completed with actual_device={device!r}, "
+                            f"reason={reason[-70:]!r} (a GPU claim needs evidence)"))
+        else:
+            results.append(("PR08-03", st.get("error_code") == "gpu_unavailable",
+                            f"gpu_required → {st.get('processing_status')} "
+                            f"{st.get('error_code')!r} (expected fail-closed without GPU proof)"))
+
+        # PR08-04: gpu_preferred may fall back to the CPU, but the result must say so.
+        body, hdrs = multipart("scan2.pdf", open(pdf, "rb").read(),
+                               {"device": "gpu_preferred", "mode": "accurate"})
+        hdrs.update({"X-Internal-Token": TOKEN, "X-Parsedock-Owner": OWNER})
+        code, resp = http("/v1/jobs", "POST", body, hdrs, timeout=120)
+        if code != 202:
+            results.append(("PR08-04", False, f"create → {code} {resp[:200]!r}"))
+            raise SystemExit(report(results))
+        jid2 = json.loads(resp)["job_id"]
+        st2 = {}
+        deadline = time.time() + 600
+        while time.time() < deadline:
+            code, resp = http(f"/v1/jobs/{jid2}", headers={"X-Internal-Token": TOKEN,
+                                                           "X-Parsedock-Owner": OWNER})
+            if code == 200:
+                st2 = json.loads(resp)
+                if st2.get("processing_status") in ("completed", "failed"):
+                    break
+            time.sleep(3)
+        ir2 = ir_of(jid2) or {}
+        device2 = (ir2.get("routing") or {}).get("actual_device")
+        reason2 = (ir2.get("routing") or {}).get("reason") or ""
+        honest = device2 in ("cpu", "unknown")
+        results.append(("PR08-04",
+                        st2.get("processing_status") == "completed" and honest and "exec=" in reason2,
+                        f"gpu_preferred → {st2.get('processing_status')} engine={st2.get('engine')} "
+                        f"actual_device={device2!r} reason={reason2[-70:]!r}"))
 
     finally:
         docker("rm", "-f", CONTAINER)

@@ -106,6 +106,7 @@ func TestSweepScratchSkipsRecentDirs(t *testing.T) {
 // stubEngine returns a fixed document and records how often it ran.
 type stubEngine struct {
 	name    string
+	device  string
 	modes   []string
 	text    string
 	warn    string
@@ -116,9 +117,14 @@ type stubEngine struct {
 	parseMS int64
 }
 
-func (s *stubEngine) Name() string                { return s.name }
-func (s *stubEngine) Version() string             { return "stub-1" }
-func (s *stubEngine) Device() string              { return "cpu" }
+func (s *stubEngine) Name() string    { return s.name }
+func (s *stubEngine) Version() string { return "stub-1" }
+func (s *stubEngine) Device() string {
+	if s.device != "" {
+		return s.device
+	}
+	return "cpu"
+}
 func (s *stubEngine) Formats() []string           { return []string{"pdf", "png"} }
 func (s *stubEngine) Modes() []string             { return s.modes }
 func (s *stubEngine) Probe(context.Context) error { return nil }
@@ -163,7 +169,7 @@ func TestEscalationUsesAccurateEngine(t *testing.T) {
 		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
 
-	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	doc, used, _ := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
 	if used.Name() != "accurate" {
 		t.Fatalf("engine = %s, want accurate", used.Name())
 	}
@@ -195,7 +201,7 @@ func TestEscalationRejectsLowConfidenceRetry(t *testing.T) {
 		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
 
-	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	doc, used, _ := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
 	if used.Name() != "fast" || doc.Routing.Fallback {
 		t.Fatalf("worse retry replaced the fast result: engine=%s fallback=%v", used.Name(), doc.Routing.Fallback)
 	}
@@ -215,7 +221,7 @@ func TestEscalationRejectsEmptyRetry(t *testing.T) {
 		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
 
-	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	doc, used, _ := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
 	if used.Name() != "fast" || !strings.Contains(doc.Routing.Reason, "decision=rejected:empty") {
 		t.Fatalf("empty retry accepted: engine=%s reason=%q", used.Name(), doc.Routing.Reason)
 	}
@@ -250,7 +256,7 @@ func TestEscalationFailureKeepsFastResult(t *testing.T) {
 		ctx, cancel := c.ctx()
 		defer cancel()
 
-		doc, used := w.maybeEscalate(ctx, task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+		doc, used, _ := w.maybeEscalate(ctx, task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
 		if used.Name() != "fast" || doc.Routing.Fallback {
 			t.Fatalf("%s: fast result lost: engine=%s fallback=%v", c.name, used.Name(), doc.Routing.Fallback)
 		}
@@ -275,7 +281,7 @@ func TestNoEscalationOnUnknownQuality(t *testing.T) {
 		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
 
-	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	doc, used, _ := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
 	if used.Name() != "fast" || accurate.calls != 0 {
 		t.Fatalf("unknown quality escalated: engine=%s accurate_calls=%d", used.Name(), accurate.calls)
 	}
@@ -300,7 +306,7 @@ func TestEscalationDisabledAndExplicitModes(t *testing.T) {
 		w := New(Config{WorkDir: t.TempDir(), EscalateScans: c.enabled}, reg,
 			slog.New(slog.NewTextHandler(io.Discard, nil)))
 		task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: c.mode, Device: "auto"}
-		if _, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf"); used.Name() != "fast" {
+		if _, used, _ := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf"); used.Name() != "fast" {
 			t.Fatalf("%s: escalated unexpectedly to %s", c.name, used.Name())
 		}
 	}
@@ -342,5 +348,90 @@ func TestClassifyUploadRejection(t *testing.T) {
 	code, _ = classifyUploadRejection([]byte("not json"))
 	if code != jobs.ErrInternal {
 		t.Fatalf("fallback code = %q", code)
+	}
+}
+
+// --- PR-D1: gpu_required is a contract, not a label -------------------------
+
+func TestGPURequirementMatrix(t *testing.T) {
+	cases := []struct {
+		name     string
+		device   string
+		evidence engines.Execution
+		wantErr  bool
+	}{
+		{"gpu_required + proven GPU", jobs.DeviceGPURequired,
+			engines.GPUEvidence("mineru:daemon-log-window", "sessions on CUDA"), false},
+		{"gpu_required + known CPU provider", jobs.DeviceGPURequired,
+			engines.CPUEvidence("mineru:daemon-log-window", "sessions on CPUExecutionProvider"), true},
+		{"gpu_required + unprovable", jobs.DeviceGPURequired,
+			engines.UnknownEvidence("docling-serve:no-marker", "no device reported"), true},
+		{"gpu_required + adapter said nothing", jobs.DeviceGPURequired, engines.Execution{}, true},
+		{"gpu_preferred + CPU fallback is allowed", jobs.DeviceGPUPreferred,
+			engines.CPUEvidence("docling-rs:default-cpu", "cpu"), false},
+		{"gpu_preferred + unknown is allowed", jobs.DeviceGPUPreferred,
+			engines.UnknownEvidence("mineru:no-session-line", "unknown"), false},
+		{"cpu request never fails on evidence", jobs.DeviceCPU,
+			engines.CPUEvidence("xberg:adapter-cpu-only", "cpu"), false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			err := gpuRequirementError(c.device, "engine-x", c.evidence)
+			if c.wantErr && err == nil {
+				t.Fatalf("gpu_required accepted %v", c.evidence)
+			}
+			if !c.wantErr && err != nil {
+				t.Fatalf("unexpected rejection: %v", err)
+			}
+			if err != nil {
+				msg := err.Error()
+				// The operator must be able to see *why* from the error alone.
+				for _, want := range []string{"gpu_required", "engine-x", "cannot prove GPU execution"} {
+					if !strings.Contains(msg, want) {
+						t.Fatalf("error %q missing %q", msg, want)
+					}
+				}
+			}
+		})
+	}
+}
+
+// actual_device must never claim "gpu" without proof, whatever the engine says.
+func TestActualDeviceComesFromEvidence(t *testing.T) {
+	for _, c := range []struct {
+		evidence engines.Execution
+		want     string
+	}{
+		{engines.GPUEvidence("mineru:daemon-log-window", ""), "gpu"},
+		{engines.CPUEvidence("docling-rs:default-cpu", ""), "cpu"},
+		{engines.UnknownEvidence("docling-serve:no-marker", ""), "unknown"},
+		{engines.Execution{}, "unknown"},
+	} {
+		if got := actualDevice(c.evidence); got != c.want {
+			t.Fatalf("actualDevice(%v) = %q, want %q", c.evidence, got, c.want)
+		}
+	}
+}
+
+// Registration must not present a visible GPU as a verified inference capability.
+func TestRegistrationDoesNotClaimVerifiedGPU(t *testing.T) {
+	w := &Worker{Cfg: Config{DeviceType: "gpu"}, Reg: engines.NewRegistry(&stubEngine{
+		name: "mineru", modes: []string{"accurate"}, device: "gpu",
+	})}
+	for name, state := range w.gpuEvidenceAtRegistration() {
+		if state == "verified" || state == "gpu" {
+			t.Fatalf("engine %s claimed verified GPU inference from device visibility", name)
+		}
+		if state != "unverified" {
+			t.Fatalf("gpu worker engine %s = %q, want unverified", name, state)
+		}
+	}
+	cpu := &Worker{Cfg: Config{DeviceType: "cpu"}, Reg: engines.NewRegistry(&stubEngine{
+		name: "xberg", modes: []string{"fast", "auto"}, device: "cpu",
+	})}
+	for name, state := range cpu.gpuEvidenceAtRegistration() {
+		if state != "cpu_only" {
+			t.Fatalf("cpu worker engine %s = %q, want cpu_only", name, state)
+		}
 	}
 }

@@ -238,6 +238,10 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		}
 		return nil, &Error{Code: code, Message: fmt.Sprintf("xberg produced %d bytes of unusable output: %s", len(res.Stdout), msg)}
 	}
+	// Evidence: this adapter never passes --acceleration, and the pinned build is
+	// CPU-only (it answers "compiled without CUDA support" if asked for one).
+	req.Report(xbergExecution(res.Stderr))
+
 	doc := documentir.New()
 	doc.ParserEngine = x.Name()
 	doc.ParserVersion = x.Version()

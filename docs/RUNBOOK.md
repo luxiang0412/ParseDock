@@ -217,3 +217,43 @@ make gate             # engine quality/latency gate
 bash scripts/ci-local.sh lifecycle   # ACK/TTL/lease/restart/cancel behaviour
 bash scripts/ci-local.sh all         # everything CI runs
 ```
+
+## GPU jobs: reading the evidence
+
+Since PR-D1 a `gpu_required` job is published only when the adapter can prove that
+*this task* ran on a GPU. When it cannot, the job fails with the existing
+`gpu_unavailable` code and the message names the engine, the evidence and its
+source, for example:
+
+```
+gpu_required: mineru cannot prove GPU execution (unknown(mineru:no-session-line)):
+the daemon initialised no ONNX session during this task (models already loaded),
+so the device of this task is unknown
+```
+
+Checklist when that happens:
+
+1. `docker exec <worker> nvidia-smi` — the device being visible is necessary, not
+   sufficient.
+2. Read the engine's own evidence:
+   * MinerU: `$MINERU_HOME/logs/doclib.log`.
+     * `providers=['CPUExecutionProvider'], gpu=None` plus
+       `ONNX device selection failed; using CPU … libvulkan.so.1` ⇒ the image
+       cannot use the GPU (known packaging bug, PR-D2).
+     * `providers=['CUDAExecutionProvider'], gpu=0` written **during** the task ⇒
+       the job should have been accepted; cross-check the worker log line
+       `msg="execution evidence"` for the same job.
+   * docling-rs: stderr `… built without that provider … using CPU` means a GPU
+     provider was requested and silently refused; it is reported as CPU and
+     `gpu_required` fails.
+3. Count the outcomes over a window from the worker log (one line per parse):
+
+```
+docker logs <worker> 2>&1 | grep '"msg":"execution evidence"' \
+  | python3 -c 'import sys,json,collections
+c=collections.Counter(json.loads(l)["kind"] for l in sys.stdin if l.startswith("{"))
+print(c)'
+```
+
+`gpu_preferred` jobs may fall back; their IR still records `cpu` or `unknown`, so
+a dashboard must read `routing.actual_device`, never `requested_device`.

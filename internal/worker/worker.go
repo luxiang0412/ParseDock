@@ -223,6 +223,12 @@ func (w *Worker) register(ctx context.Context) error {
 		"cpu_cores":        numCPU(),
 		"memory_bytes":     totalMemory(),
 		"max_concurrency":  w.Cfg.MaxConcurrency,
+		// A visible GPU is not a verified inference capability. The coordinator
+		// uses device_type + free VRAM for admission; this field states, for the
+		// record, that per-task GPU proof is decided at execution time and is not
+		// implied by the device being present.
+		"gpu_inference_verified": false,
+		"gpu_evidence":           w.gpuEvidenceAtRegistration(),
 	}
 	var out struct {
 		WorkerID string `json:"worker_id"`
@@ -237,8 +243,28 @@ func (w *Worker) register(ctx context.Context) error {
 	free := w.freeVRAMBytes()
 	w.Log.Info("worker registered", "worker_id", w.Cfg.WorkerID, "engines", w.Cfg.Engines,
 		"device", w.Cfg.DeviceType, "concurrency", w.Cfg.MaxConcurrency,
-		"free_vram_mb", free>>20, "vram_known", free >= 0)
+		"free_vram_mb", free>>20, "vram_known", free >= 0,
+		"gpu_inference_verified", false, "gpu_evidence", w.gpuEvidenceAtRegistration())
 	return nil
+}
+
+// gpuEvidenceAtRegistration describes, per engine, whether this worker can prove
+// GPU execution *per task*. It is deliberately not derived from nvidia-smi: a
+// visible device says nothing about which provider a parse will use. Engines
+// that can only run on the CPU are listed as such; engines that might use a GPU
+// but expose no per-task marker are "unverified" until an adapter can prove it.
+func (w *Worker) gpuEvidenceAtRegistration() map[string]string {
+	out := map[string]string{}
+	if !isGPUDevice(w.Cfg.DeviceType) {
+		for _, name := range w.Reg.Names() {
+			out[name] = "cpu_only"
+		}
+		return out
+	}
+	for _, name := range w.Reg.Names() {
+		out[name] = "unverified"
+	}
+	return out
 }
 
 func (w *Worker) loop(ctx context.Context, slot int) {
@@ -379,6 +405,7 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	}
 	stage.Store("parsing")
 
+	var evidence engines.Execution
 	result, perr := engine.Parse(parseCtx, engines.Request{
 		JobID: task.JobID, Path: local, Format: task.Format, MimeType: task.MimeType,
 		Mode: task.Mode, Device: w.Cfg.DeviceType, WorkDir: workDir,
@@ -387,7 +414,25 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 			progress.Store(int64(p))
 			stage.Store(s)
 		},
+		ReportExecution: func(e engines.Execution) { evidence = e },
 	})
+	if perr == nil && evidence.Kind == "" {
+		evidence = engines.UnknownEvidence("engine:no-report",
+			engine.Name()+" reported no evidence about the execution device")
+	}
+	if perr == nil {
+		w.Log.Info("execution evidence", "job", task.JobID, "engine", engine.Name(),
+			"requested_device", task.Device, "kind", string(evidence.Kind),
+			"source", evidence.Source)
+	}
+	// A gpu_required job is published only when this task provably ran on a GPU.
+	// The check happens before enrichment, escalation and upload, so an
+	// unprovable or CPU-executed attempt can never surface as a GPU success.
+	if perr == nil {
+		if err := gpuRequirementError(task.Device, engine.Name(), evidence); err != nil {
+			return w.fail(ctx, task, jobs.ErrGPUUnavailable, err.Error(), false)
+		}
+	}
 	// Enrichment and escalation both run inside the heartbeat-protected phase: a
 	// large workbook can take a while to unzip, and a lost lease would let the
 	// coordinator reclaim a job that is still being processed.
@@ -414,7 +459,14 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		}
 	}
 	if perr == nil {
-		result, engine = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
+		var altEvidence engines.Execution
+		result, engine, altEvidence = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
+		if altEvidence.Kind != "" {
+			evidence = altEvidence
+		}
+		if err := gpuRequirementError(task.Device, engine.Name(), evidence); err != nil {
+			return w.fail(ctx, task, jobs.ErrGPUUnavailable, err.Error(), false)
+		}
 	}
 	if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
 		// The job was cancelled while the engine was running: stop here even if
@@ -465,10 +517,18 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	result.ParserVersion = engine.Version()
 	result.Routing.RequestedMode = task.Mode
 	result.Routing.RequestedDevice = task.Device
-	result.Routing.ActualDevice = engine.Device()
+	// actual_device comes from evidence, never from the engine's declaration: an
+	// engine that claims "gpu" but ran on CPU must not produce a GPU result.
+	result.Routing.ActualDevice = actualDevice(evidence)
 	result.Routing.Engine = engine.Name()
 	if result.Routing.Reason == "" {
 		result.Routing.Reason = task.RoutingReason
+	}
+	if isGPUDevice(w.Cfg.DeviceType) {
+		// On a GPU worker the evidence is part of the audit trail; CPU-only
+		// deployments keep their existing reason strings byte for byte.
+		result.Routing.Reason = strings.TrimSuffix(result.Routing.Reason, "; ") +
+			"; exec=" + evidence.String()
 	}
 	result.Finalize()
 
@@ -487,6 +547,26 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	return nil
 }
 
+// gpuRequirementError enforces the gpu_required contract: the task is published
+// only when the adapter could prove that this task ran on a GPU. "The worker has
+// a GPU" and "the provider initialised at start-up" are not enough, and neither
+// is a clean exit code - a CPU fallback exits 0.
+func gpuRequirementError(requestedDevice, engineName string, evidence engines.Execution) error {
+	if requestedDevice != jobs.DeviceGPURequired {
+		return nil
+	}
+	if evidence.VerifiedGPU() {
+		return nil
+	}
+	return fmt.Errorf("gpu_required: %s cannot prove GPU execution (%s): %s",
+		engineName, evidence, evidence.Detail)
+}
+
+// actualDevice is the IR value for the device that executed this task. It is
+// derived from evidence only; the engine's declared device is a capability
+// claim, not an observation.
+func actualDevice(evidence engines.Execution) string { return evidence.Device() }
+
 // maybeEscalate retries a poor OCR result once with an accurate engine.
 //
 // The retry is justified only by evidence (a measured low confidence on a CJK
@@ -495,17 +575,17 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 // here claims the retry is "more accurate": the routing reason records the
 // trigger, the attempt count, both engines, both durations and the decision.
 func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engines.Engine,
-	doc *documentir.Document, workDir, inputPath string) (*documentir.Document, engines.Engine) {
+	doc *documentir.Document, workDir, inputPath string) (*documentir.Document, engines.Engine, engines.Execution) {
 	if !w.Cfg.EscalateScans || doc == nil {
-		return doc, used
+		return doc, used, engines.Execution{}
 	}
 	trigger, ok := engines.EscalationTriggerFor(task.Mode, task.Format, doc)
 	if !ok {
-		return doc, used
+		return doc, used, engines.Execution{}
 	}
 	alt, err := w.Reg.Pick("", task.Format, "accurate")
 	if err != nil || alt.Name() == used.Name() {
-		return doc, used
+		return doc, used, engines.Execution{}
 	}
 	decision := engines.EscalationDecision{
 		Trigger: trigger, Attempts: 2, FastMs: doc.Metrics.ParseMs, AccurateName: alt.Name(),
@@ -513,18 +593,20 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 	w.Log.Info("escalating OCR result to accurate engine", "job", task.JobID,
 		"from", used.Name(), "to", alt.Name(), "trigger", trigger.String())
 
+	var altEvidence engines.Execution
 	res, perr := alt.Parse(ctx, engines.Request{
 		// Always retry from the worker's own input copy, never from an engine's
 		// scratch copy (which the first engine may have already overwritten).
 		JobID: task.JobID, Path: inputPath,
 		Format: task.Format, MimeType: task.MimeType, Mode: task.Mode,
 		Device: w.Cfg.DeviceType, WorkDir: workDir, Timeout: 0,
-		Progress: func(int, string) {},
+		Progress:        func(int, string) {},
+		ReportExecution: func(e engines.Execution) { altEvidence = e },
 	})
 	if res != nil {
 		decision.AccurateMs = res.Metrics.ParseMs
 	}
-	reject := func(reason string) (*documentir.Document, engines.Engine) {
+	reject := func(reason string) (*documentir.Document, engines.Engine, engines.Execution) {
 		decision.Reason = reason
 		// The retry cost real time even when its result is discarded, so it is
 		// charged to the result that is actually published.
@@ -537,7 +619,7 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 		doc.Routing.Reason = strings.TrimSuffix(doc.Routing.Reason, "; ") + "; " + engines.EscalationReason(used.Name(), decision)
 		w.Log.Info("escalation rejected; keeping the fast result", "job", task.JobID,
 			"reason", reason, "fast", used.Name(), "accurate", alt.Name())
-		return doc, used
+		return doc, used, engines.Execution{}
 	}
 	switch {
 	case perr != nil:
@@ -568,7 +650,7 @@ func (w *Worker) maybeEscalate(ctx context.Context, task *coordClaim, used engin
 	w.Log.Info("escalation accepted", "job", task.JobID,
 		"trigger", trigger.String(), "fast", used.Name(), "accurate", alt.Name(),
 		"total_ms", res.Metrics.ParseMs)
-	return res, alt
+	return res, alt, altEvidence
 }
 
 // hasLowConfidence reports whether the engine measured a confidence below the

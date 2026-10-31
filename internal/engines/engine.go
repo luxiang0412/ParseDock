@@ -30,6 +30,21 @@ type Request struct {
 	// Progress is called throttled by the worker; adapters may report coarse
 	// stages. It must be safe to call from the parse goroutine.
 	Progress func(percent int, stage string)
+	// ReportExecution, when non-nil, receives what this adapter could prove about
+	// the device that executed the parse. It must be called at most once, before
+	// Parse returns, and is safe to call from the parse goroutine. Adapters that
+	// cannot prove anything simply never call it; the worker then treats the
+	// evidence as unknown rather than assuming the engine's declared device.
+	ReportExecution func(Execution)
+}
+
+// Report is a small helper so adapters can be terse:
+//
+//	if req.ReportExecution != nil { req.ReportExecution(CPUEvidence(...)) }
+func (r Request) Report(e Execution) {
+	if r.ReportExecution != nil {
+		r.ReportExecution(e)
+	}
 }
 
 // Engine adapts one parser.
