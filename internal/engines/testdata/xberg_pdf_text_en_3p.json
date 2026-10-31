@@ -1,0 +1,169 @@
+{
+ "extraction_time_ms": 29.292398000000002,
+ "peak_memory_bytes": 45293568,
+ "result": {
+  "content": "# Quarterly Logistics Review\n\n## Section 1: Operational detail\n\nPage marker 1. The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from\n\n4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.\n\nTwo risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware\n\n2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.\n\n| Region | Pallets | On-time % | Cost / pallet |\n| --- | --- | --- | --- |\n| North | 48,120 | 97.4 | 3.85 |\n| Central | 41,600 | 95.1 | 4.02 |\n| South | 38,680 | 93.8 | 4.31 |\n| Total | 128,400 | 95.7 | 4.03 |\n\n## Section 2: Operational detail\n\nPage marker 2. The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from\n\n4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.\n\nTwo risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware\n\n2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.\n\n## Section 3: Operational detail\n\nPage marker 3. The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from\n\n4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.\n\nTwo risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware\n\n2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.\n",
+  "counts": {
+   "images": 0,
+   "pages": 3,
+   "tables": 1
+  },
+  "extraction_confidence": {
+   "combined": 1.0,
+   "ocr_aggregate": null,
+   "schema_compliance": "all_valid",
+   "text_coverage": 1.0
+  },
+  "extraction_method": "native",
+  "metadata": {
+   "additional": {
+    "extraction_method": "native",
+    "final_uri": "engine-input.pdf",
+    "source_index": 0,
+    "source_kind": "uri",
+    "source_uri": "engine-input.pdf"
+   },
+   "authors": [
+    "ParseDock fixture generator"
+   ],
+   "created_at": "2026-10-30T14:44:16Z",
+   "created_by": "(unspecified)",
+   "format": {
+    "fabricated_text_pages": [],
+    "format_type": "pdf",
+    "height": 842,
+    "implausible_text_pages": [],
+    "is_encrypted": false,
+    "page_count": 3,
+    "pdf_version": "1.4",
+    "producer": "ReportLab PDF Library - (opensource)",
+    "scanned_confidence": 0.0,
+    "scanned_pages": [],
+    "width": 595
+   },
+   "modified_at": "2026-10-30T14:44:16Z",
+   "ocr_used": false,
+   "output_format": "markdown",
+   "subject": "(unspecified)",
+   "title": "Quarterly Logistics Review"
+  },
+  "mime_type": "application/pdf",
+  "pages": [
+   {
+    "content": "# Quarterly Logistics Review\n\n## Section 1: Operational detail\n\nPage marker 1. The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from\n\n4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.\n\nTwo risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware\n\n2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.\n\n| Region | Pallets | On-time % | Cost / pallet |\n| --- | --- | --- | --- |\n| North | 48,120 | 97.4 | 3.85 |\n| Central | 41,600 | 95.1 | 4.02 |\n| South | 38,680 | 93.8 | 4.31 |\n| Total | 128,400 | 95.7 | 4.03 |\n",
+    "page_number": 1,
+    "tables": [
+     {
+      "bounding_box": {
+       "x0": 114.8031005859375,
+       "x1": 480.472412109375,
+       "y0": 459.8660888671875,
+       "y1": 564.8660888671875
+      },
+      "cells": [
+       [
+        "Region",
+        "Pallets",
+        "On-time %",
+        "Cost / pallet"
+       ],
+       [
+        "North",
+        "48,120",
+        "97.4",
+        "3.85"
+       ],
+       [
+        "Central",
+        "41,600",
+        "95.1",
+        "4.02"
+       ],
+       [
+        "South",
+        "38,680",
+        "93.8",
+        "4.31"
+       ],
+       [
+        "Total",
+        "128,400",
+        "95.7",
+        "4.03"
+       ]
+      ],
+      "columns": [
+       "Region",
+       "Pallets",
+       "On-time %",
+       "Cost / pallet"
+      ],
+      "markdown": "| Region | Pallets | On-time % | Cost / pallet |\n| --- | --- | --- | --- |\n| North | 48,120 | 97.4 | 3.85 |\n| Central | 41,600 | 95.1 | 4.02 |\n| South | 38,680 | 93.8 | 4.31 |\n| Total | 128,400 | 95.7 | 4.03 |\n",
+      "page_number": 1,
+      "table_id": "table-1"
+     }
+    ]
+   },
+   {
+    "content": "## Section 2: Operational detail\n\nPage marker 2. The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from\n\n4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.\n\nTwo risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware\n\n2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.\n",
+    "page_number": 2
+   },
+   {
+    "content": "## Section 3: Operational detail\n\nPage marker 3. The pilot program moved 128,400 pallets across three regional hubs in the second quarter, a 12.5 percent increase over the same period last year. Average dock-to-stock time fell from\n\n4.2 hours to 3.1 hours after the scheduling change, while the number of missed appointments dropped by 38 percent. Warehouse B remains the constraint: its inbound lane utilisation reached 94 percent during peak weeks.\n\nTwo risks need attention. First, the cold-chain corridor depends on a single carrier and any interruption would delay roughly 900 shipments per week. Second, the new scanning stations are running firmware\n\n2.4.1, which has a known issue with duplicate labels. A remediation plan is due on 15 November 2026 and will be tracked weekly.\n",
+    "page_number": 3
+   }
+  ],
+  "quality_score": 1.0,
+  "tables": [
+   {
+    "bounding_box": {
+     "x0": 114.8031005859375,
+     "x1": 480.472412109375,
+     "y0": 459.8660888671875,
+     "y1": 564.8660888671875
+    },
+    "cells": [
+     [
+      "Region",
+      "Pallets",
+      "On-time %",
+      "Cost / pallet"
+     ],
+     [
+      "North",
+      "48,120",
+      "97.4",
+      "3.85"
+     ],
+     [
+      "Central",
+      "41,600",
+      "95.1",
+      "4.02"
+     ],
+     [
+      "South",
+      "38,680",
+      "93.8",
+      "4.31"
+     ],
+     [
+      "Total",
+      "128,400",
+      "95.7",
+      "4.03"
+     ]
+    ],
+    "columns": [
+     "Region",
+     "Pallets",
+     "On-time %",
+     "Cost / pallet"
+    ],
+    "markdown": "| Region | Pallets | On-time % | Cost / pallet |\n| --- | --- | --- | --- |\n| North | 48,120 | 97.4 | 3.85 |\n| Central | 41,600 | 95.1 | 4.02 |\n| South | 38,680 | 93.8 | 4.31 |\n| Total | 128,400 | 95.7 | 4.03 |\n",
+    "page_number": 1,
+    "table_id": "table-1"
+   }
+  ]
+ }
+}

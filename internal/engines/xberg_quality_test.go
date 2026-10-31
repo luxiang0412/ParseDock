@@ -11,15 +11,7 @@ import (
 func outWith(backend string, scores ...*float64) *xbergOutput {
 	o := &xbergOutput{}
 	for i, s := range scores {
-		p := struct {
-			PageNumber    int    `json:"page_number"`
-			Content       string `json:"content"`
-			OCRConfidence struct {
-				Score     *float64 `json:"score"`
-				WordCount int      `json:"word_count"`
-				Backend   string   `json:"backend"`
-			} `json:"ocr_confidence"`
-		}{PageNumber: i + 1}
+		p := xbergPage{PageNumber: i + 1}
 		p.OCRConfidence.Score = s
 		p.OCRConfidence.Backend = backend
 		if s != nil {

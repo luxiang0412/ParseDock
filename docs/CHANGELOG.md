@@ -91,6 +91,17 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
   CommonMark would reinterpret it. Page furniture (`header`/`footer` elements and
   `content_layer=furniture`) no longer appears in the Markdown **or text** body; it stays
   in JSON.
+* **xberg asks for Markdown content** (`--content-format markdown`; the engine default is
+  plain text). DOCX/PDF results now carry headings, lists, quotes and inline formatting
+  (measured on the fixtures: `docx_report` 0/3 → 3/3 headings and 0/4 → 4/4 list items,
+  `pdf_text_en_3p` 0/4 → 4/4 headings). Tables stay at their position in the page instead of
+  being appended at the end (or twice, for CSV/content-only results); the structured
+  table's bounding box and cell line breaks are merged into the inline one. xberg's
+  Markdown writer starts a new paragraph at a source line beginning with a digit
+  ("4.2 hours …"); the adapter joins those back on text-layer PDF pages (192 joins, 0 wrong,
+  0 missed against xberg's own plain output on the 69 synthetic PDFs). Sheets keep a
+  `## <sheet>` heading. Empty spreadsheet rows are no longer mistaken for the Markdown
+  delimiter row and dropped.
 
 ### Added
 

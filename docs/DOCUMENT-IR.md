@@ -227,7 +227,7 @@ must unmarshal and round-trip unchanged.
 | Engine | pages | bbox | reading order | headings | tables | sheet names | confidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | docling-rs / docling-serve | ✅ `pages` map | ✅ + origin | ✅ body tree | ✅ `section_header` + level | ✅ cells + spans | ✅ `groups[label=sheet].name` | ❌ |
-| xberg | ✅ page split | ✅ tables only | page text order + tables | ⚠️ from `style_name` annotations | ✅ grid | ❌ (warning) | ⚠️ document-level quality score |
+| xberg | ✅ page split | ✅ tables only | page Markdown order (`--content-format markdown`); tables at their inline position, enriched with the structured table's bbox | ✅ Markdown headings; lists, quotes and inline formatting (`rich_text`) | ✅ grid | ❌ (warning; sheets become `##` headings from `sheet_name`) | ⚠️ document-level quality score |
 | MinerU (flash) | ✅ `<!-- page N of M -->` | ❌ | markdown order | ⚠️ from markdown | ✅ via markdown tables | ❌ | ❌ |
 | Tika | ⚠️ only when form feeds exist (never for PDF in 4.2) | ❌ | text order | ⚠️ markdown headings for OOXML | ⚠️ markdown tables for OOXML | ❌ | ❌ |
 | legacy `.doc/.xls/.ppt` | ❌ (`legacy_format` warning) | ❌ | text/table order | xberg: no; docling: section headings where present | xberg: grid per sheet; docling: table cells | xlsx only via `.xls` sheet index | ❌ |
