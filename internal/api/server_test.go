@@ -363,8 +363,8 @@ func TestProxyTransportOutlastsSyncParse(t *testing.T) {
 	})
 	auth := map[string]string{"Authorization": "Bearer " + testKey}
 	short := newGateway(t, slow, func(c *Config) { c.ProxyResponseHeaderTimeout = 50 * time.Millisecond })
-	if rec := call(short, "POST", "/v1/parse", auth); rec.Code != 502 {
-		t.Fatalf("a header timeout shorter than the upstream must 502, got %d", rec.Code)
+	if rec := call(short, "POST", "/v1/parse", auth); rec.Code != 503 {
+		t.Fatalf("a header timeout shorter than the upstream must answer coordinator_unavailable (503), got %d", rec.Code)
 	}
 	long := newGateway(t, slow, func(c *Config) { c.ProxyResponseHeaderTimeout = 2 * time.Second })
 	if rec := call(long, "POST", "/v1/parse", auth); rec.Code != 200 {
