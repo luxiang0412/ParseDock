@@ -65,10 +65,11 @@ type doclingText struct {
 }
 
 type doclingTable struct {
-	SelfRef string        `json:"self_ref"`
-	Label   string        `json:"label"`
-	Prov    []doclingProv `json:"prov"`
-	Data    struct {
+	SelfRef  string        `json:"self_ref"`
+	Label    string        `json:"label"`
+	Prov     []doclingProv `json:"prov"`
+	Children []doclingRef  `json:"children"`
+	Data     struct {
 		NumRows    int                `json:"num_rows"`
 		NumCols    int                `json:"num_cols"`
 		TableCells []doclingTableCell `json:"table_cells"`
@@ -199,14 +200,44 @@ func mapDocling(doc *documentir.Document, raw []byte, pageKind string) error {
 		}
 	}
 
-	if d.Body != nil {
+	// Reading order comes from one of two places. With provenance (PDF and image
+	// inputs) the body tree is the reading order and the texts array may be
+	// column-interleaved, so the tree wins. Without provenance (Office inputs)
+	// docling lists the paragraphs in d.Texts order but the body tree only
+	// references a handful of inline runs; walking the tree there puts a caption
+	// dozens of elements away from the table it introduces.
+	if hasProvenance(&d) && d.Body != nil {
+		// Reading order is the body tree; the texts array may be column-interleaved.
 		walk(d.Body.Children, 0)
 	}
+	// Without provenance the tree is not a reading order at all: it references a
+	// handful of inline runs and would drop everything it does not mention. The
+	// texts array is iterated below and owns the order for those inputs.
+	// DOCX (and other Office inputs) arrive with most content outside the body
+	// tree: the body references one text node and a couple of groups, while the
+	// paragraphs live in d.Texts in document order. Tables carry no provenance, so
+	// the only reading-order anchor is the set of text nodes their own header
+	// cells live in - those are contiguous and sit exactly where the table was.
+	anchors, owned := tableAnchors(&d, groupIdx)
 	// Anything not reachable from the body would be lost; append it in document
 	// array order so content is never silently dropped.
 	for i := range d.Texts {
+		// Anchor first: the text node a table starts at may itself have been
+		// reached from the body, and the table must still be inserted at that
+		// position rather than after everything else.
+		for _, tbl := range anchors[i] {
+			if !visited[tbl.SelfRef] {
+				visited[tbl.SelfRef] = true
+				addDoclingTable(doc, tbl, pageKind, "", pageSizes)
+			}
+		}
 		t := &d.Texts[i]
 		if visited[t.SelfRef] || t.Text == "" {
+			continue
+		}
+		// A table's own header cells are rendered by the table element itself;
+		// keeping them as paragraphs would print the header twice.
+		if owned[i] {
 			continue
 		}
 		doc.Elements = append(doc.Elements, textToElement(doc, t, pageKind, "", pageSizes))
@@ -217,6 +248,70 @@ func mapDocling(doc *documentir.Document, raw []byte, pageKind string) error {
 		}
 	}
 	return nil
+}
+
+// hasProvenance reports whether any text carries a source location. Office
+// converters emit none, which is what tells the two ordering strategies apart.
+func hasProvenance(d *doclingDoc) bool {
+	for i := range d.Texts {
+		if len(d.Texts[i].Prov) > 0 {
+			return true
+		}
+	}
+	for i := range d.Tables {
+		if len(d.Tables[i].Prov) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// tableAnchors maps "index of the first text node that belongs to this table" to
+// the tables that start there, and reports which text indices belong to a table
+// at all. Only tables the body never references are anchored; a table the body
+// does reference keeps the engine's own reading order.
+//
+// A table with no reachable text node (no anchor) is not anchored here and keeps
+// the fallback of being appended, which is what happened to every table before.
+func tableAnchors(d *doclingDoc, groupIdx map[string]*doclingGroup) (map[int][]*doclingTable, map[int]bool) {
+	textIndex := map[string]int{}
+	for i := range d.Texts {
+		textIndex[d.Texts[i].SelfRef] = i
+	}
+	anchors := map[int][]*doclingTable{}
+	owned := map[int]bool{}
+	for i := range d.Tables {
+		t := &d.Tables[i]
+		var refs []int
+		seenGroups := map[string]bool{}
+		stack := append([]doclingRef{}, t.Children...)
+		for len(stack) > 0 {
+			r := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if idx, ok := textIndex[r.Ref]; ok {
+				refs = append(refs, idx)
+				continue
+			}
+			if g, ok := groupIdx[r.Ref]; ok && !seenGroups[r.Ref] {
+				seenGroups[r.Ref] = true
+				stack = append(stack, g.Children...)
+			}
+		}
+		if len(refs) == 0 {
+			continue
+		}
+		first := refs[0]
+		for _, r := range refs[1:] {
+			if r < first {
+				first = r
+			}
+		}
+		anchors[first] = append(anchors[first], t)
+		for _, r := range refs {
+			owned[r] = true
+		}
+	}
+	return anchors, owned
 }
 
 func textToElement(doc *documentir.Document, t *doclingText, pageKind, sheet string,
