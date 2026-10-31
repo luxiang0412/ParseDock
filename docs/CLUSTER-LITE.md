@@ -19,7 +19,7 @@
  │  /v1/* internal            │  cleaner, leases, fencing
  │  /internal/tasks/*         │
  └─────┬───────────┬──────────┘
-       │           │  worker protocol (pull)
+       │           │  worker protocol (pull), X-Internal-Token = worker token
        ▼           ▼
   worker-cpu-1  worker-gpu-1     any host, any count
 ```
@@ -131,9 +131,21 @@ path with the coordinator storing only manifests, (c) object storage + pre-signe
 ## 6. Deployment notes
 
 * Coordinator internal API must listen on a private interface; never publish `8081`.
-* **mTLS between replicas, coordinator and workers (PR-07).** `PARSEDOCK_INTERNAL_TOKEN`
-  remains the application-level authorisation layer, but transport identity is now
-  cryptographic:
+* **Two credentials.** `PARSEDOCK_INTERNAL_TOKEN` is held by the API replicas (and
+  operators); it is the only one that may assert `X-Parsedock-Owner`.
+  `PARSEDOCK_WORKER_TOKEN` (`--worker-token`) is held by the workers and opens only
+  `/internal/workers/*` and `/internal/tasks/*` (`403` on `/v1` and on metrics /
+  diagnostics), so a compromised worker host cannot read or ACK tenants' results. The
+  worker routes still accept the internal token, and without a worker token the
+  coordinator behaves as before (with a startup warning).
+* **Remote workers in compose.** `deploy/compose.cluster-lite.yaml` publishes 8081 on
+  `COORDINATOR_BIND` through a regular `cluster` network (Docker publishes nothing for a
+  container that is only on `internal: true` networks), and the remote worker joins that
+  network, not the internal one.
+* **mTLS between replicas, coordinator and workers (PR-07).** The tokens remain the
+  application-level authorisation layer, but transport identity is now cryptographic,
+  and any hop that leaves a host must use it (the tokens are cleartext on plain HTTP).
+  Certificate roles are not bound to tokens:
 
   | role | flags |
   | --- | --- |

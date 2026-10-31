@@ -1,16 +1,27 @@
 # CI (GitHub Actions) — PR-01 baseline
 
-Everything CI runs is implemented in `scripts/ci-local.sh <phase>`, so a local
-`make ci` executes exactly the same commands as the workflow. The workflow files
-exist to schedule, parallelise and collect artifacts — not to hold logic.
+The Go/contract/lifecycle/image jobs are implemented in `scripts/ci-local.sh <phase>`,
+so for those a local `make ci` (= `ci-local.sh all`: static, unit, contract, lifecycle,
+image) executes the same commands as the workflow. Two blocking jobs are **not** phases
+of `ci-local.sh all`:
+
+* `web` holds its steps inline in `ci.yml` (`npm ci`, `api:types:check`, lint,
+  typecheck, unit tests, build, dist secret scan); the local equivalent is
+  `make web-test` (after `cd web && npm ci`).
+* `sdk` runs `scripts/sdk-check.sh --fast`; the local equivalent is
+  `bash scripts/sdk-check.sh --fast` (`make sdk-check` runs the full script, including
+  the Java build).
+
+A green `ci-local.sh all` therefore does not cover the whole PR pipeline; run the two
+commands above as well before claiming CI parity.
 
 ## Workflows
 
 | File | Trigger | Jobs | Blocking |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `ci-summary` | yes — see "Merge gate" |
+| `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `web`, `sdk`, `ci-summary` | yes — see "Merge gate" |
 | `.github/workflows/engine-changes.yml` | every PR (path-classified inside) | `detect`, `real-engines`, `container` | recommended for engine/docker changes |
-| `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `sdks` (Python lifecycle + error matrix + **real engines** + Java build **and integration test** + version consistency), `container-smoke` (includes SBOM + licence classification) | no (evidence) |
+| `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `sdks` (check name `sdk-check`: Python lifecycle + error matrix + **real engines** + Java build **and integration test** + version consistency), `playground` (check name `playground-e2e`: Playwright against a real backend), `container` (check name `container-smoke`: includes SBOM + licence classification) | no (evidence) |
 | `.github/workflows/release-python.yml` | tag `v*`, manual | build sdist/wheel, `twine check`, install the wheel, publish to PyPI over OIDC | no (publishing) |
 | `.github/workflows/release-maven.yml` | tag `v*`, manual | GPG preflight, build + sign, deploy a **pending** bundle to the Central Portal (`autoPublish=false`) | no (publishing) |
 | `.github/workflows/release-gate.yml` | tags `v*`, manual | `licence-gate` (blocking audit, no publish step) | yes, for releases |
@@ -23,20 +34,31 @@ safe to include in branch protection.
 
 | Phase | Steps (the script is authoritative) | Why |
 | --- | --- | --- |
-| `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, workflows valid |
-| `unit` | `go test ./...`, `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
-| `sdk` | `scripts/sdk-check.sh --fast` — Python lifecycle + error matrix, one version across artefacts | the SDK contract: ACK rule, error codes/retry policy, SSE resume; catches an OpenAPI/IR change that would break a client
+| `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `golangci-lint` (pinned, `.golangci.yml`), `govulncheck` (pinned, with the pinned toolchain), `ruff` (pinned, `ruff.toml`), `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, no lint findings, no reachable known vulnerability, workflows valid |
+| `unit` | `go test ./cmd/... ./internal/... ./migrations/...` (never `./...`: it would pick up Go code under `web/node_modules`; `go.mod` also `ignore`s that directory), `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
+| `sdk` | `scripts/sdk-check.sh --fast` — Python lifecycle + error matrix, one version across artefacts | the SDK contract: ACK rule, error codes/retry policy, SSE resume; catches an OpenAPI/IR change that would break a client |
+| `web` (inline in `ci.yml`) | `npm ci`, `npm run api:types:check` (`schema.d.ts` vs `api/openapi.yaml`), lint, typecheck, `npm test`, `npm run build`, `check-dist-secrets.mjs` | the playground builds, its API types match the spec, no API key reaches `dist/` |
 | `contract` | OpenAPI 3.1 validation (public + internal, pinned generator), `openapi_contract.py`, SDK regeneration drift (`sdk/python-generated`, `sdk/java-generated`), Document IR schema drift | specs, router, generated SDKs and the published schema cannot drift |
-| `lifecycle` | `make acceptance` (T03–T17), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
+| `lifecycle` | `make acceptance` (T03–T17 except T11, which needs real engines), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
 | `image` | control-plane image build, `--check`, image id/digest, `repro-check.sh`, licence audit (report + classification) | reproducible artefact + clean control plane |
 | `engines` | install xberg + docling-rs at locked versions, `acceptance-real`, quality **and** perf bench on a fixed fixture scope, `summarize.py` + `score.py` into a run-scoped directory (`build/ci/bench-*`), `gate.py` | real parsers and the quality/latency gate (nightly / engine changes) |
 | `container` | build both images, `container-smoke.sh` (xberg + docling-rs through the API), SBOM + PASS/BLOCK classification | container parity with real engines |
 
 ## Reproducibility
 
-* `images.lock.json` is the single source of truth: Go 1.24.4, base images
+* `images.lock.json` is the single source of truth: Go 1.27.3, base images
   (`golang@sha256:…`, `debian@sha256:…`, CUDA base), `openapi-generator@sha256:…`,
-  Tika digest, xberg/docling-rs/model versions, actionlint version.
+  Tika digest, xberg/docling-rs/model versions, and the CI tools: actionlint,
+  golangci-lint (release tarball, SHA-256 pinned in `scripts/install-golangci-lint.sh`),
+  govulncheck (module version + `h1:` hash pinned in `scripts/install-govulncheck.sh`),
+  ruff (`requirements-ci.txt`).
+* `scripts/govulncheck.sh` runs the scan with `GOTOOLCHAIN=local` and refuses to start
+  unless `go env GOVERSION` equals the locked Go version. `go run …/govulncheck@latest`
+  under `GOTOOLCHAIN=auto` switches to a newer toolchain and reports on *its* standard
+  library: on go1.24.4 that showed a clean result while the pinned toolchain had 42
+  reachable stdlib vulnerabilities. Locally, put the pinned `go` first on `PATH`
+  (`go install golang.org/dl/go1.27.3@latest && go1.27.3 download`, or the toolchain
+  that `GOTOOLCHAIN=auto` already downloaded) before `ci-local.sh static`.
 * `scripts/verify_pins.py` fails on drift: floating `FROM`, action tag instead of
   commit SHA, unpinned pip requirement, workflow tool image tag, `go.mod` bump.
 * Docker build: pinned builder, `GOTOOLCHAIN=local`, `-trimpath -buildvcs=false
@@ -49,7 +71,8 @@ safe to include in branch protection.
 
 ## Merge gate
 
-`ci-summary` aggregates the five job results through `scripts/ci_summary.py`
+`ci-summary` aggregates the seven job results (`static`, `unit`, `contract`,
+`lifecycle`, `image`, `web`, `sdk`) through `scripts/ci_summary.py`
 (unit-tested in `tests/unit/test_ci_summary.py`). A missing, cancelled, skipped or
 failed job makes the summary fail, which fails the workflow run. The previous
 inline `grep` implementation passed while `contract` was failing (substring match) —
@@ -58,7 +81,7 @@ that regression is covered by a test, and a negative-control PR proved the fix
 
 **Enforcement caveat:** this repository is private on a free GitHub plan, where
 branch protection and rulesets return `HTTP 403`. The check names and the
-enablement command are documented in `docs/PR01-REPORT.md` §6b; until the owner
+enablement command are documented in `docs/history/PR01-REPORT.md` §6b; until the owner
 upgrades the plan (or makes the repo public), a red pipeline is visible but not
 technically unmergeable.
 
@@ -87,10 +110,14 @@ Each job uploads `build/ci/` (`ci-<phase>`):
 ## Local equivalents
 
 ```bash
-make ci              # static + unit + contract + lifecycle + image (≈3m30s on the dev host)
+make ci              # static + unit + contract + lifecycle + image (191.7 s on the dev host, review batch)
+make web-test        # the `web` job (after `cd web && npm ci`)
+bash scripts/sdk-check.sh --fast   # the `sdk` job
 make ci-phase PHASE=contract
 make verify-pins
 make lint-workflows
+make lint            # golangci-lint + ruff (pinned)
+make vulncheck       # govulncheck with the pinned toolchain
 make container-smoke # needs parsedock:smoke + parsedock-worker-cpu:smoke
 make license-audit   # enforce mode (fails on GPL)
 ```
@@ -101,12 +128,11 @@ make license-audit   # enforce mode (fails on GPL)
   the critical path (~4m10s) and dominates the PR pipeline. It grew with PR-02/07/09/12
   runtime contracts; splitting it is a candidate if the wall time becomes painful.
 * No self-hosted GPU runner: GPU workers are verified manually (`make gpu-check`,
-  `docs/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
+  `docs/history/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
   GPU, so it is safe to run anywhere but proves nothing there.
 * The Java half of `sdk-check` (Maven downloads, the integration test and the two
-  examples) runs in the nightly `sdks` job; the PR `sdk` job only runs the Python
-  layers and `--fast`,
-  not on every PR; the Python half runs in `unit`.
+  examples) runs in the nightly `sdks` job, not on every PR; the PR `sdk` job runs
+  `sdk-check.sh --fast` (Python layers + version consistency).
 * The engine quality gate is enforced in `engines` (nightly + engine-changes), not on every
   PR: installing xberg and docling-rs takes minutes.
 * Docker layer caching across runs is intentionally **not** used for the worker

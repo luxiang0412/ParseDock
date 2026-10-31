@@ -104,7 +104,7 @@ if [[ $WITH_JAVA -eq 1 ]]; then
   PARSEDOCK_MOCK_DELAY_MS=200 "$BIN" --role standalone \
     --listen "127.0.0.1:$PORT" --internal-listen "127.0.0.1:$INT_PORT" \
     --data-dir "$DATA" --work-dir "$DATA/work" --engines "$JAVA_ENGINES" \
-    --internal-token itest --api-keys "java-it-token:java-it" "${JAVA_EXTRA[@]}" \
+    --internal-token itest --api-keys "java-it-token-0001:java-it" "${JAVA_EXTRA[@]}" \
     --result-ttl 120s --cleanup-interval 1s >"$DATA/server.log" 2>&1 &
   SRV=$!
   cleanup() { kill "$SRV" 2>/dev/null || true; rm -rf "$DATA"; }
@@ -115,14 +115,14 @@ if [[ $WITH_JAVA -eq 1 ]]; then
   done
   mvn -q -f sdk/java-client-test/pom.xml test \
     -Dparsedock.base="http://127.0.0.1:$PORT" \
-    -Dparsedock.token=java-it-token \
+    -Dparsedock.token=java-it-token-0001 \
     -Dparsedock.fixture="$JAVA_FIXTURE"
 
   echo "== examples =="
   # The examples are user-facing documentation; run them so they cannot rot.
-  ( cd examples/python && PARSEDOCK_API="http://127.0.0.1:$PORT" PARSEDOCK_TOKEN=java-it-token \
+  ( cd examples/python && PARSEDOCK_API="http://127.0.0.1:$PORT" PARSEDOCK_TOKEN=java-it-token-0001 \
       make -s run )
-  ( cd examples/java && PARSEDOCK_API="http://127.0.0.1:$PORT" PARSEDOCK_TOKEN=java-it-token \
+  ( cd examples/java && PARSEDOCK_API="http://127.0.0.1:$PORT" PARSEDOCK_TOKEN=java-it-token-0001 \
       make -s run )
 
   cleanup

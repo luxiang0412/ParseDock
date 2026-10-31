@@ -1,14 +1,21 @@
 # Optional Playground profile: static web app + same-origin /v1 proxy in front of the CPU stack.
 #
 #   export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)
+#   export PARSEDOCK_WORKER_TOKEN=$(openssl rand -hex 24)
 #   export PARSEDOCK_API_KEYS="$(openssl rand -hex 24):acme"
 #   export PLAYGROUND_KEY="$(openssl rand -hex 24)"   # a bare token, not token:owner
 #   docker compose -f deploy/compose.cpu.yaml -f deploy/compose.playground.yaml \
 #       --profile playground up -d --build
 #   open http://localhost:8090
 #
-# Everything else stays as it is: only this service publishes a port, the API replicas stay
-# reachable on the internal network, and no worker image is built or published here.
+# The playground holds a full-scope key (jobs:write+read+ack for owner "playground") and
+# injects it into every proxied request, so anyone who can reach its port acts as that
+# owner. It therefore listens on 127.0.0.1 only; set PLAYGROUND_BIND=0.0.0.0 (or a
+# private address) only behind your own authentication.
+#
+# Everything else stays as it is: this overlay adds one published port (the playground)
+# next to the API replicas' ports from compose.cpu.yaml, the coordinator and workers stay
+# on the internal network, and no worker image is built or published here.
 name: parsedock
 
 services:
@@ -29,6 +36,12 @@ services:
     image: ${PARSEDOCK_PLAYGROUND_IMAGE:-parsedock-playground:0.1.0}
     restart: unless-stopped
     security_opt: ["no-new-privileges:true"]
+    # The official nginx image starts its master as root and drops to the `nginx` user
+    # for workers, so it keeps exactly the capabilities for that: chown of the cache
+    # dirs and setuid/setgid. (nginx-unprivileged would avoid even these, but is a
+    # different image; not adopted here.)
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETGID, SETUID]
     read_only: true
     tmpfs:
       # nginx writes its pid, caches and the envsubst-generated server block; everything
@@ -39,9 +52,9 @@ services:
     environment:
       PARSEDOCK_API_UPSTREAM: http://api-1:8080
       # The key lives here and in nginx only. Never expose it as a VITE_* variable.
-      PARSEDOCK_PROXY_TOKEN: ${PLAYGROUND_KEY:?set a dedicated playground API key (<token>:<owner>)}
+      PARSEDOCK_PROXY_TOKEN: ${PLAYGROUND_KEY:?set PLAYGROUND_KEY to a bare token (no ":owner")}
       NGINX_PORT: "8080"
-    ports: ["${PLAYGROUND_PORT:-8090}:8080"]
+    ports: ["${PLAYGROUND_BIND:-127.0.0.1}:${PLAYGROUND_PORT:-8090}:8080"]
     # Only the public API network: the playground must not reach the coordinator or workers.
     networks: [frontend]
     depends_on: [api-1]

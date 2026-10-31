@@ -1,10 +1,12 @@
 name: CI
 
-# Blocking PR pipeline (PR-01). Every job runs the same commands as
-# `scripts/ci-local.sh <phase>`, so a local `make ci` and CI cannot drift.
+# Blocking PR pipeline (PR-01). The static/unit/contract/lifecycle/image jobs run
+# `scripts/ci-local.sh <phase>`, so a local `make ci` and CI cannot drift for them;
+# `web` has inline npm steps (local: `make web-test`) and `sdk` runs
+# `scripts/sdk-check.sh --fast`.
 #
 # Required checks (branch protection): static, unit, contract, lifecycle, image,
-# ci-summary. Real-engine acceptance lives in nightly.yml + engine-changes.yml so
+# web, sdk, ci-summary. Real-engine acceptance lives in nightly.yml + engine-changes.yml so
 # the PR path stays under the 8 minute budget.
 
 on:
@@ -42,7 +44,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: static phase (pins, fmt, vet, build, tidy drift)
+      - name: static phase (pins, fmt, vet, golangci-lint, govulncheck, ruff, build, tidy drift)
         run: bash scripts/ci-local.sh static
       - name: upload
         if: always()
@@ -108,7 +110,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: lifecycle phase (T03-T16, PR-00 runtime, backup/restore)
+      - name: lifecycle phase (T03-T17 except T11, PR-00 runtime, backup/restore)
         run: bash scripts/ci-local.sh lifecycle
       - name: upload evidence (acceptance + PR-00 JSON, stack logs)
         if: always()
@@ -211,7 +213,7 @@ jobs:
           persist-credentials: false
       - name: aggregate results (merge gate)
         # scripts/ci_summary.py is unit-tested; a substring grep here once let a
-        # failing contract job pass the summary (see docs/PR01-REPORT.md §6).
+        # failing contract job pass the summary (see docs/history/PR01-REPORT.md §6).
         env:
           RESULTS: >-
             static=${{ needs.static.result }}

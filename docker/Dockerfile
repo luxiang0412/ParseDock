@@ -4,7 +4,7 @@
 
 # Base images are pinned by digest (images.lock.json); scripts/verify-pins.sh
 # fails the build when a Dockerfile, workflow or go.mod drifts from the lock.
-FROM golang:1.24.4-bookworm@sha256:10f549dc8489597aa7ed2b62008199bb96717f52a8e8434ea035d5b44368f8a6 AS build
+FROM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS build
 ENV GOTOOLCHAIN=local
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -31,6 +31,10 @@ USER 10001:10001
 ENV PARSEDOCK_DATA_DIR=/data \
     PARSEDOCK_WORK_DIR=/work \
     PARSEDOCK_LOG_LEVEL=info
+# 8080 is the public API. 8081 is the coordinator's INTERNAL listener (/v1 for the
+# gateway, /internal/* for workers and operators): documented for tooling, but it must
+# never be published to a public interface — keep it on a private network, behind the
+# internal/worker tokens and, across hosts, mutual TLS (docs/DEPLOYMENT.md §6c).
 EXPOSE 8080 8081
 ENTRYPOINT ["/usr/local/bin/docparse"]
 CMD ["--role", "standalone", "--listen", "0.0.0.0:8080", "--internal-listen", "0.0.0.0:8081"]

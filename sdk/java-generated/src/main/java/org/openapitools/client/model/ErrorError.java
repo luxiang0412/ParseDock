@@ -72,6 +72,8 @@ public class ErrorError {
     
     EXPANDED_TOO_LARGE("expanded_too_large"),
     
+    ENGINE_OUT_OF_MEMORY("engine_out_of_memory"),
+    
     QUOTA_EXCEEDED("quota_exceeded"),
     
     INSUFFICIENT_STORAGE("insufficient_storage"),

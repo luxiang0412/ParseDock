@@ -55,11 +55,11 @@ client → api replica (auth, scopes, rate limit, quota pre-check) → coordinat
 | `internal/jobs` | status/retention constants, stable error codes, ID/token generation |
 | `migrations/*.sql` | applied at start via `migrations/embed.go` — append, never edit old files |
 | `api/openapi*.yaml` | public + internal specs (the contract) |
-| `tests/` | `contract/`, `integration/` (real processes), `unit/`, `load/`, `chaos/` |
-| `scripts/ci-local.sh` | the single source of truth for CI phases |
+| `tests/` | `contract/`, `integration/` (real processes), `unit/`, `load/` |
+| `scripts/ci-local.sh` | the single source of truth for the static/unit/contract/lifecycle/image/engines/container phases (the `web` job is inline in `ci.yml`, `sdk` runs `scripts/sdk-check.sh --fast`) |
 | `benchmark/` | fixtures (`generated/`, 110-doc `corpus/`), bench/score/gate scripts |
 | `web/` | React + Vite playground (its own `package.json`; not part of the Go build) |
-| `docs/` | design + operations; `docs/PHASE1-SUMMARY.md` is the status page, `docs/CHANGELOG.md` what shipped, `docs/RELEASING.md` how a release is cut |
+| `docs/` | living design + operations docs; `docs/PHASE1-SUMMARY.md` is the status page, `docs/CHANGELOG.md` what shipped, `docs/RELEASING.md` how a release is cut, `docs/ERROR-CODES.md` the code table. `docs/history/` (dated reports) and `docs/briefs/` (task inputs) are not maintained |
 | `sdk/` | hand-written Python package (`sdk/python`), generated clients (`sdk/*-generated`, never hand-edit) and the Java integration test (`sdk/java-client-test`) |
 | `examples/` | runnable Python and Java projects (`make run`) |
 | `.agents/skills/` | agent-facing guides for the two SDKs |
@@ -68,13 +68,16 @@ client → api replica (auth, scopes, rate limit, quota pre-check) → coordinat
 
 ```bash
 make build          # → runtime/bin/docparse (bin/ is a gitignored stray; use runtime/bin)
-make test           # go vet + go test ./... + scoring unit tests (the rest run in `ci-local.sh unit`)
-bash scripts/ci-local.sh all      # exactly what CI runs: static, unit, contract, lifecycle, image (~3.5 min)
-bash scripts/ci-local.sh lifecycle   # T03–T17 + PR-00/02/07/09/12 runtime contracts (fast feedback)
+make test           # go vet + go test on ./cmd/... ./internal/... ./migrations/... + scoring unit tests (the rest run in `ci-local.sh unit`)
+make lint           # golangci-lint (.golangci.yml) + ruff (ruff.toml), pinned via images.lock.json
+make vulncheck      # govulncheck; needs the pinned go (images.lock.json) on PATH, refuses any other
+bash scripts/ci-local.sh all      # CI's static, unit, contract, lifecycle, image phases (~3.2 min); NOT the
+                                  # web and sdk jobs: also run `make web-test` and `bash scripts/sdk-check.sh --fast`
+bash scripts/ci-local.sh lifecycle   # T03–T17 except T11 + PR-00/02/07/09/12 runtime contracts (fast feedback)
 bash scripts/ci-local.sh engines     # real engines + bench + quality gate (needs installed engines)
 make sdk            # regenerate both SDKs (dockerised, pinned); never hand-edit sdk/*-generated
 make sdk-check      # Python e2e + CLI + one version across artefacts + Java build
-make acceptance     # T03–T16 (mock engine)
+make acceptance     # T03–T17 except T11 (mock engine; T01/T02/T11 are `make acceptance-real`)
 make drill          # online backup + restore, prints RTO
 make gate           # benchmark quality/latency gate vs benchmark/results/baseline.json
 cd web && npm ci    # playground deps (lockfile-exact); then npm run lint/typecheck/test/build
@@ -130,13 +133,26 @@ port clashes and confusing failures in the integration tests.
 * **Document IR schema is drift-checked.** Edit
   `internal/documentir/schema/document-ir-0.1.schema.json`, then `make schema` to publish it.
 * **Error codes are a public contract.** Add to `internal/jobs/job.go` + the OpenAPI enum +
-  `docs/DEPLOYMENT.md`; classifiers live in `internal/engines/exec.go` (`ClassifyCLIError`).
+  a row in `docs/ERROR-CODES.md` (`tests/contract/openapi_contract.py` fails unless the three
+  sets are equal), then `make sdk` and `npm run api:types`; classifiers live in
+  `internal/engines/exec.go` (`ClassifyCLIError`).
 * **The Go binary and both SDKs must share one version** (`scripts/check_versions.py`).
 * **The playground never holds the API key** — the dev/preview proxy and nginx inject it from the
   environment. Never rename it to `VITE_*` (Vite inlines those) and never ACK a result
   automatically; `web/scripts/check-dist-secrets.mjs` fails CI if a key reaches `dist/`.
 * **`web/src/api/schema.d.ts` is generated** from `api/openapi.yaml` (`npm run api:types`); the
   CI drift check fails if it is stale, so an API change and the client move together.
+* **Workers have their own credential.** `--worker-token` / `PARSEDOCK_WORKER_TOKEN` opens only
+  `/internal/workers|tasks/*`; the compose files refuse to start without it. A harness that
+  starts a cluster must pass a worker token distinct from the internal token.
+* **Plaintext API keys must be ≥ 16 characters** (startup error otherwise, a warning under
+  `--dev-insecure`). Fixture keys in harnesses and examples must respect the floor.
+* **`internal/jobs/codes.go` must list every `Err*` constant** in the package;
+  `TestKnownErrorCodesMatchConstants` fails otherwise.
+* **govulncheck must run on the pinned toolchain** (`scripts/govulncheck.sh`, `make vulncheck`,
+  `GOTOOLCHAIN=local`). `go run …/govulncheck@latest` auto-switches to a newer toolchain and
+  scans *its* standard library: on go1.24.4 that looked clean while 42 reachable stdlib
+  vulnerabilities were present.
 * **Benchmark inputs must be run-scoped.** `PARSEDOCK_BENCH_RAW` / `PARSEDOCK_BENCH_SUMMARY`
   point at `build/ci/bench-*` in CI; without that, `summarize.py` happily mixes in older runs.
 

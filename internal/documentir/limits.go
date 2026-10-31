@@ -55,7 +55,7 @@ func (l Limits) Validate(d *Document) error {
 		}
 		cells += area
 		if cells > l.MaxTableCells*2 {
-			return fmt.Errorf("document declares more than %d table cells", l.MaxTableCells*10)
+			return fmt.Errorf("document declares more than %d table cells", l.MaxTableCells*2)
 		}
 	}
 	// Rendering cost is driven by *references*, not declarations: every table element renders

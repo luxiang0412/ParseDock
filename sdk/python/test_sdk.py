@@ -32,7 +32,7 @@ from parsedock_sdk import ParseDockClient, ParseDockError  # noqa: E402
 BIN = Path(os.environ.get("DOCPARSE_BIN") or (ROOT / "runtime" / "bin" / "docparse"))
 FIXTURE = ROOT / "benchmark" / "fixtures" / "generated" / "pdf_text_en_3p.pdf"
 API_PORT, INT_PORT = 18180, 18181
-TOKEN = "sdk-test-token"
+TOKEN = "sdk-test-token-01"
 
 
 def free(port: int) -> None:

@@ -5,20 +5,26 @@
 #
 # Phases (one per CI job, so the workflow and a local run execute the *same*
 # commands):
-#   static      pinned-input verification, gofmt, go vet, build
-#   unit        go test ./... + scoring unit tests
+#   static      pinned-input verification, gofmt, go vet, golangci-lint, govulncheck,
+#               ruff, build, actionlint, go mod tidy drift
+#   unit        go test (cmd, internal, migrations) + scoring unit tests
 #   contract    OpenAPI validation, spec/SDK/router drift, SDK regeneration drift
-#   lifecycle   mock acceptance (T03-T16), PR-00/PR-02/PR-07 runtime contracts, backup/restore
+#   lifecycle   mock acceptance (T03-T17 except T11), PR-00/02/07/09/12 runtime contracts,
+#               backup/restore
 #   image       control-plane image build, smoke, digest, licence audit (report)
 #   engines     install real engines, real-engine acceptance, bench + score
 #   container   worker image build, container smoke with real engines, SBOM
-#   all         static + unit + contract + lifecycle + image (local full run)
+#   all         static + unit + contract + lifecycle + image (local full run; the CI
+#               `web` and `sdk` jobs are not phases here: `make web-test`, `make sdk-check`)
 #
 # Every phase writes build/ci/<phase>.log and build/ci/<phase>.json (timings,
 # status). Artifacts are copied to build/ci/ for upload.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Explicit Go package patterns (same as the Makefile): `./...` also matches Go packages
+# that npm installs under web/node_modules.
+GO_PKGS="./cmd/... ./internal/... ./migrations/..."
 OUT="$ROOT/build/ci"
 mkdir -p "$OUT"
 PHASE="${1:?usage: ci-local.sh <phase|all>}"
@@ -59,7 +65,13 @@ PY
 phase_static() {
   step "verify pins" python3 "$ROOT/scripts/verify_pins.py" || return 1
   step "gofmt" make -C "$ROOT" fmt-check || return 1
-  step "go vet" bash -c "cd '$ROOT' && go vet ./..." || return 1
+  step "go vet" bash -c "cd '$ROOT' && go vet $GO_PKGS" || return 1
+  # Pinned linters and scanners (versions in images.lock.json, checked by verify_pins.py).
+  step "golangci-lint (pinned)" bash -c "bash '$ROOT/scripts/install-golangci-lint.sh' >/dev/null && cd '$ROOT' && runtime/bin/golangci-lint run $GO_PKGS" || return 1
+  # Refuses to run unless `go` is the pinned toolchain: an auto-switched toolchain
+  # would scan a different standard library and can report a false clean result.
+  step "govulncheck (pinned toolchain)" bash "$ROOT/scripts/govulncheck.sh" || return 1
+  step "python lint (ruff, pinned)" bash -c "bash '$ROOT/scripts/install-ruff.sh' >/dev/null && cd '$ROOT' && runtime/ci-venv/bin/ruff check tests scripts benchmark sdk/python examples" || return 1
   step "go build" make -C "$ROOT" build || return 1
   # Workflow linting uses the pinned actionlint and no external shellcheck so the
   # result does not depend on the runner image.
@@ -69,7 +81,7 @@ phase_static() {
 
 phase_unit() {
   step "SDK and version consistency (python)" bash -c "bash '$ROOT/scripts/sdk-check.sh' --no-java" || return 1
-  step "go test" bash -c "cd '$ROOT' && go test ./... -count=1 -timeout 300s" || return 1
+  step "go test" bash -c "cd '$ROOT' && go test $GO_PKGS -count=1 -timeout 300s" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
   step "CI merge-gate unit tests" python3 "$ROOT/tests/unit/test_ci_summary.py" || return 1
   step "fixture integrity" python3 "$ROOT/tests/unit/test_fixtures.py" || return 1
@@ -91,7 +103,7 @@ phase_contract() {
 
 phase_lifecycle() {
   step "build binary" make -C "$ROOT" build || return 1
-  step "acceptance lifecycle (T03-T16)" python3 "$ROOT/tests/integration/acceptance.py" --profile lifecycle || return 1
+  step "acceptance lifecycle (T03-T17 except T11)" python3 "$ROOT/tests/integration/acceptance.py" --profile lifecycle || return 1
   step "PR-00 runtime contract" python3 "$ROOT/tests/integration/pr00_contract.py" || return 1
   step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
   step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1

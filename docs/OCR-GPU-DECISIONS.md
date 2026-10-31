@@ -1,8 +1,8 @@
 # OCR / GPU decisions
 
 > Spike 2026-10-31. Evidence for every verdict is in
-> `docs/OCR-BACKEND-RESEARCH.md` (capabilities) and
-> `docs/OCR-GPU-BENCHMARK.md` (measurements); raw data in
+> `docs/history/OCR-BACKEND-RESEARCH.md` (capabilities) and
+> `docs/history/OCR-GPU-BENCHMARK.md` (measurements); raw data in
 > `benchmark/results/ocr-cpu.{json,md}` and `benchmark/results/ocr-gpu.json`.
 >
 > Scope of this document: what we will do, what we will not do, and which
@@ -21,7 +21,7 @@
 | 6 | Keep MinerU Flash | **CONDITIONAL** — keep the image and profile, stop claiming GPU acceleration until re-measured |
 | 7 | Minimal API/config changes | **GO** for the backend/engine passthrough flags and the `ocr_quality_unknown` warning; **DEFER** password support and IR OCR geometry |
 | 8 | Image size, dependencies, licence, security | **Acceptable** for the CPU path; **+4.95 GB** for a CUDA image; L1 unchanged |
-| 9 | PR split | A–F in `docs/OCR-ROUTING-PROPOSAL.md` §5 |
+| 9 | PR split | A–F in `docs/history/OCR-ROUTING-PROPOSAL.md` §5 |
 | 10 | Judgements still lacking a real Gold Set | listed in §4 |
 
 ## 2. Why each verdict
@@ -102,7 +102,7 @@ model-cache problem, to gain nothing measurable.
 
 ### 2.6 MinerU flash: CONDITIONAL
 
-* Keep it as the `gpu` profile's accurate option — but the docs and `docs/GPU-REPORT.md`
+* Keep it as the `gpu` profile's accurate option — but the docs and `docs/history/GPU-REPORT.md`
   must stop asserting GPU acceleration until it is re-measured.
 * If it turns out to be CPU-only in this image, its value drops to "a
   layout+babeldoc pipeline with more dependencies and a daemon", and the accurate

@@ -6,8 +6,8 @@
 > protection on a free private repo). Every PR below carries its own **Status:** line
 > with what was verified and what was deliberately left out.
 >
-> **PR-00 (Phase 1 readiness) is complete**: see `docs/PHASE1-READINESS.md` and
-> `docs/PR00-ISSUE-MATRIX.md`. Landed here: scored decisions generated from data,
+> **PR-00 (Phase 1 readiness) is complete**: see `docs/history/PHASE1-READINESS.md` and
+> `docs/history/PR00-ISSUE-MATRIX.md`. Landed here: scored decisions generated from data,
 > text-format routing, ACK/Cancel/Heartbeat/lease semantics, public/internal
 > OpenAPI split, per-representation ETag, any-order multipart, SSE scope, IR
 > provenance fixes, worker scratch reclamation, internal binding guard,
@@ -28,7 +28,7 @@ usable v0.1 service.
 * GitHub Actions (or Jenkins) jobs: `go vet`, `go test ./...`, `go build`,
   OpenAPI validation, `make sdk`, lifecycle acceptance (mock engine) on every PR,
   real-engine acceptance nightly.
-* Pin Go toolchain in `go.mod` (currently `go 1.24.4`) and add `make verify-pins`
+* Pin Go toolchain in `go.mod` (currently `go 1.27.3`; was 1.24.4 until 2026-11-01) and add `make verify-pins`
   that fails if `go.sum`/image digests change without a review label.
 
 **Tests.** CI must fail if: acceptance has a FAIL, spec validation reports issues,
@@ -37,12 +37,13 @@ generated SDK differs from the committed one.
 **DoD.** A green PR pipeline runs in < 8 min (mock profile) and produces the raw
 acceptance JSON as an artifact.
 
-**Status: DONE (PR-01).** Four workflows (`ci`, `engine-changes`, `nightly`,
-`release-gate`), all logic in `scripts/ci-local.sh`, pinned inputs in
+**Status: DONE (PR-01).** Four workflows at PR-01 time (`ci`, `engine-changes`, `nightly`,
+`release-gate`; `release-python` and `release-maven` were added for v0.1.0, and `ci.yml`
+later gained the `web` and `sdk` jobs, see `docs/CI.md`), phase logic in `scripts/ci-local.sh`, pinned inputs in
 `images.lock.json` enforced by `scripts/verify_pins.py`, reproducible binary proven
 by `scripts/repro-check.sh`, SDK drift checked, licence audit split into control
 plane PASS / worker BLOCK. Measured on GitHub-hosted runners: 3 m 53 s – 3 m 58 s
-per PR run; nightly 1 m 56 s. Details and residual risks: `docs/PR01-REPORT.md`.
+per PR run; nightly 1 m 56 s. Details and residual risks: `docs/history/PR01-REPORT.md`.
 Residual (out of PR-01 scope): GPU runner (PR-08), two-host cluster test (PR-07),
 registry publish step (PR-08/PR-12) which must depend on `release-gate`.
 
@@ -100,7 +101,7 @@ admission (PR-02) were fixed in the same cycle.
 
 ---
 
-## Real-corpus backlog (from `docs/REAL-CORPUS-TEST.md`, 958 files)
+## Real-corpus backlog (from `docs/REAL-CORPUS-TEST.md` §2, the original run: 958 eligible files)
 
 These are requirements that only a real corpus exposed. They are distributed into
 the slices below; nothing here is a bug that is still open (the three defects found
@@ -113,8 +114,8 @@ in that run were fixed in PR #3).
 | RC-3 | Scan-aware routing | 332/958 files (36 %) are scans; CJK scans need the PP-OCR path, Latin scans are fine with xberg | **PR-04** |
 | RC-4 | Upload cap vs real documents | 9 files are 58–74 MiB; the default 64 MiB cap rejects them | **PR-06** |
 | RC-5 | Rate limits must account for status polling | a batch client polling at 5 rps/thread exhausted the default 20 rps (429 on 36 files) | **PR-09** |
-| RC-7 | Chinese scans on the fast path use Tesseract (CER 0.075) while PP-OCRv6 is already inside xberg (CER 0.000) | spike 2026-10-31; PR-A/B in `docs/OCR-ROUTING-PROPOSAL.md` |
-| RC-8 | `device=gpu_required` is only enforced by the scheduler; docling-rs warns on stderr and falls back to CPU with exit 0 | spike 2026-10-31; PR-D in `docs/OCR-ROUTING-PROPOSAL.md` |
+| RC-7 | Chinese scans on the fast path use Tesseract (CER 0.075) while PP-OCRv6 is already inside xberg (CER 0.000) | spike 2026-10-31; PR-A/B in `docs/history/OCR-ROUTING-PROPOSAL.md` |
+| RC-8 | `device=gpu_required` is only enforced by the scheduler; docling-rs warns on stderr and falls back to CPU with exit 0 | spike 2026-10-31; PR-D in `docs/history/OCR-ROUTING-PROPOSAL.md` |
 | RC-9 | MinerU Flash GPU usage unverified (0 % util through the worker image) | spike 2026-10-31; `docs/OCR-GPU-DECISIONS.md` §2.6 |
 | RC-6 | Encrypted PDFs are 8/554 of real documents | explicit `encrypted_file` today; product decision on password support | PR-06 decision |
 
@@ -277,7 +278,7 @@ two hosts without further code changes.
 **Tests.** GPU acceptance: `gpu_required` succeeds on GPU worker, `409` without it;
 VRAM measured via `nvidia-smi` during the run; egress denied test.
 
-**DoD.** `docs/GPU-REPORT.md` §4 items become PASS with raw evidence.
+**DoD.** `docs/history/GPU-REPORT.md` §4 items become PASS with raw evidence.
 
 **Status: PARTIAL (PR-08).** Delivered and verified on the RTX 2080 Ti host:
 
@@ -286,7 +287,7 @@ VRAM measured via `nvidia-smi` during the run; egress denied test.
   registers `device_type=gpu` with **18 832 MiB free VRAM**, a `device=gpu_required`
   scanned-PDF job is routed to `mineru` and completes, and the result carries the
   provenance. Three image defects found by actually running it are documented in
-  `GPU-REPORT.md` §4 (broken venv shebang, root-owned mounted volume, `HOME=/root`).
+  `docs/history/GPU-REPORT.md` §4 (broken venv shebang, root-owned mounted volume, `HOME=/root`).
 * Free-VRAM reporting on every heartbeat (`-1` unknown, `0` genuinely full) and
   VRAM-aware admission: `--engine-min-vram-mb mineru:8192` makes `gpu_required` return
   `409 gpu_unavailable` naming the requirement when no live GPU worker has that much
@@ -371,7 +372,8 @@ without restructuring.
 
 **DoD.** Both SDKs versioned with the service and published by release pipeline.
 
-**Status: PARTIAL (PR-10).** Delivered and verified:
+**Status: PARTIAL (PR-10).** Python package published to PyPI; the Java artefact, `schemathesis`
+fuzzing and the async client are still open (see "Not delivered"). Delivered and verified:
 
 * `sdk/python` is an installable package (`pyproject.toml`, `pip install -e sdk/python`) with
   a `parsedock` console script: `parsedock parse ./f.pdf -o out.md`, `parsedock status`,
@@ -383,15 +385,21 @@ without restructuring.
 * The Java client builds with Maven and the jar contains `org/openapitools/client/ApiClient`
   (the generated package name, which the check now asserts exactly after the first version
   wrongly looked for `dev/parsedock/client`).
-* `scripts/sdk-check.sh` runs all of it (`make sdk-check`); the Python half runs in the
-  PR `unit` phase (`--no-java`), the Java half in the new nightly `sdk-check` job.
+* `scripts/sdk-check.sh` runs all of it (`make sdk-check`); the PR `sdk` job in `ci.yml`
+  runs `sdk-check.sh --fast` (Python layers + version consistency), the Java half runs in
+  the nightly `sdks` job (check name `sdk-check`).
+* Publishing (v0.1.0, `docs/SDK.md` "Publishing status", `docs/RELEASING.md`): `parsedock==0.1.0`
+  is **live on PyPI** (`release-python.yml`, Trusted Publishing/OIDC). The Java bundle
+  `com.luxiangs:parsedock-client:0.1.0` was uploaded and validated in the Central Portal by
+  `release-maven.yml` and **waits for the manual Publish** (`autoPublish=false`); until then it
+  does not resolve from Maven Central.
 * `docs/SDK.md` documents the lifecycle rules the wrapper enforces (ACK only after the sink,
   `result_version` required, idempotent ACK, `410` is expected, polling shares the rate
   budget) and the honest gaps.
 
-**Not delivered:** publishing to PyPI/Maven Central (needs registry credentials and a
-licence/notice bundle; the release pipeline still publishes images only), `schemathesis`
-property-based contract fuzzing (the repo has 36 OpenAPI-derived contract checks plus a live
+**Not delivered:** the Maven Central release itself (the validated bundle needs the one-click
+Publish in the Central Portal), `schemathesis`
+property-based contract fuzzing (the repo has 47 OpenAPI-derived contract checks (2026-11-01) plus a live
 end-to-end SDK test; property fuzzing belongs in the nightly job with a pinned version), and
 the `httpx` async client (declared as an optional extra but not implemented).
 
@@ -484,6 +492,50 @@ volume large enough to make RTO minutes rather than sub-second — the drill *me
 whatever data it is given, so it will report the real number on production-sized data.
 
 ---
+
+## Review hardening batch (`review/integration`, 2026-11-01)
+
+Four review-fix branches merged into `review/integration` (`git log --oneline main..review/integration`),
+plus two follow-ups on the merged branch. User/operator-visible changes are in
+`docs/CHANGELOG.md` → "Unreleased".
+
+* **Worker and engines** (`fix/review-worker-engines`): a transient heartbeat failure no
+  longer abandons the task; deadlines are reported as timeouts; OOM kills are classified as
+  `engine_out_of_memory` (now part of the error-code contract) with a tighter stderr
+  classifier; `RunCLI` bounds its wait and reaps the process group; HTTP engine
+  deadlines/cancels are mapped, oversized Tika output is refused, PDF pages are counted via
+  `/meta`; routing precedence, wildcard ranking, xberg table kinds; GPU re-registration is
+  throttled and reports the model/VRAM of the card it measures; the scratch sweeper is scoped.
+* **Coordinator** (`fix/review-coordinator`): invalid `priority`/`ttl_seconds` → `400`
+  (TTL capped without overflow); idempotency keys over 200 characters → `400`; a cancel that
+  loses the race to completion → `409`; events are written with their transition and SSE
+  drains after a terminal status; retention finalisation is locked and compare-and-set,
+  `Fail` deletes via `deleting`; quota and cleanup reads fail closed; worker-reported error
+  codes are validated and engine metric labels bounded; internal error details are logged,
+  not returned; `/v1/parse` failures carry the status their code has everywhere else.
+* **API security** (`fix/review-api-security`): separate worker token (`--worker-token`;
+  the worker token opens only `/internal/workers|tasks/*`), standalone token generation,
+  redacted `/readyz` unless the internal token is presented, per-request body read timeout
+  (`--body-read-timeout`), per-address failed-auth limiter, bounded limiters, 16-character
+  plaintext key floor and duplicate-owner refusal, client IP into audit lines with
+  `--trusted-proxies`, strict env parsing, playground bound to `127.0.0.1`, capability drops
+  in compose, cluster-lite network fix.
+* **Toolchain and contract** (`fix/review-toolchain-contract`): Go `1.27.3`
+  (`GOTOOLCHAIN=local`), pinned `golangci-lint`, `govulncheck` and `ruff` in the `static`
+  phase, `docs/ERROR-CODES.md`, `internal/jobs/codes.go` checked against the constants.
+* **Follow-ups on the merged branch:** the gateway answers `coordinator_unavailable` with the
+  documented `503`; when `--heartbeat` is not set and `--worker-lease` is not longer than the
+  default, the heartbeat defaults to a third of the lease.
+
+**Evidence (dev host, 2026-11-01):** `bash scripts/ci-local.sh all` PASS in 191.7 s;
+`bash scripts/ci-local.sh lifecycle` PASS in 138.6 s; `python3 tests/contract/openapi_contract.py`
+47 checks, 0 failures; `make web-test` PASS; `govulncheck` on the pinned go1.27.3: 0 reachable
+vulnerabilities (the same scan on go1.24.4 reported 42 reachable standard-library ones);
+`bash scripts/ci-local.sh engines` (real xberg/docling-rs, T01/T02/T11, bench + quality gate)
+PASS in 30.9 s.
+
+**Not verified:** a real multi-host cluster-lite deployment, and GPU hardware. Out of scope: binding mTLS certificate
+roles to tokens; the worker learning the upload limit from the coordinator.
 
 ## Sequencing
 

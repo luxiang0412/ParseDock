@@ -33,6 +33,7 @@ The final answer is always `GET /v1/jobs/{id}`.
 
 ### Example
 
+* Api Key Authentication (apiKeyAuth):
 * Bearer Authentication (bearerAuth):
 
 ```python
@@ -50,6 +51,12 @@ configuration = parsedock_client.Configuration(
 # in accordance with the API server security policy.
 # Examples for each auth method are provided below, use the example that
 # satisfies your auth use case.
+
+# Configure API key authorization: apiKeyAuth
+configuration.api_key['apiKeyAuth'] = os.environ["API_KEY"]
+
+# Uncomment below to setup prefix (e.g. Bearer) for API key, if needed
+# configuration.api_key_prefix['apiKeyAuth'] = 'Bearer'
 
 # Configure Bearer authorization: bearerAuth
 configuration = parsedock_client.Configuration(
@@ -92,7 +99,7 @@ Name | Type | Description  | Notes
 
 ### Authorization
 
-[bearerAuth](../README.md#bearerAuth)
+[apiKeyAuth](../README.md#apiKeyAuth), [bearerAuth](../README.md#bearerAuth)
 
 ### HTTP request headers
 

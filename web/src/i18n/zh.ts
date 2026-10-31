@@ -185,6 +185,7 @@ export const zhCN: Messages = {
   'error.page_limit_exceeded': '文档页数超过本部署的上限。',
   'error.suspicious_compression': '压缩包展开异常，已出于安全原因拒绝。',
   'error.expanded_too_large': '文档展开后超过解析器上限（多为超大表格）。',
+  'error.engine_out_of_memory': '解析器处理该文档时超出内存上限。',
   'error.quota_exceeded': '该所有者已达到配额（并发任务、每日任务数或存储）。',
   'error.insufficient_storage': '服务端磁盘空间不足，请稍后重试。',
   'error.engine_unavailable': '当前没有可用的解析引擎。',

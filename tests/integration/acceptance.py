@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ParseDock Phase 0 acceptance harness: T01-T16.
+"""ParseDock acceptance harness: T01-T17.
 
 Every case spins up real processes (coordinator / API replicas / workers) over
 HTTP and asserts observable behaviour only. Raw evidence (statuses, headers,
@@ -12,9 +12,9 @@ Usage:
   python tests/integration/acceptance.py --profile lifecycle
   python tests/integration/acceptance.py --profile real --engines native,xberg
 
-The lifecycle profile uses the deterministic `mock` engine so ACK/TTL/lease
-fencing can be exercised without models. The real profile exercises actual
-parsers for T01/T02/T11/T12 and skips the fault-injection cases that are
+The lifecycle profile (T03-T10, T12-T17) uses the deterministic `mock` engine so
+ACK/TTL/lease fencing can be exercised without models. The real profile exercises
+actual parsers for T01/T02/T11 and skips the fault-injection cases that are
 already covered by the lifecycle run.
 """
 from __future__ import annotations
@@ -48,7 +48,7 @@ BAD = ROOT / "benchmark" / "fixtures" / "invalid"
 RAW_DIR = ROOT / "benchmark" / "results" / "raw"
 SUMFILE = ROOT / "benchmark" / "results" / "summary" / "acceptance.json"
 
-API_TOKEN = "itest-api-token"
+API_TOKEN = "itest-api-token-0001"
 OWNER = "itest-owner"
 INTERNAL_TOKEN = "itest-internal"
 

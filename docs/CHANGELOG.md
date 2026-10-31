@@ -4,6 +4,90 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 `0.x` is a frozen contract but not yet a stability promise beyond the documented
 [Document IR compatibility policy](DOCUMENT-IR.md#2a-compatibility-policy-what-doc-ir01-promises).
 
+## Unreleased
+
+### Upgrade notes (read first)
+
+* **Compose requires `PARSEDOCK_WORKER_TOKEN`.** The reference compose files refuse to
+  start without a second random token for the workers (distinct from
+  `PARSEDOCK_INTERNAL_TOKEN`): add `PARSEDOCK_WORKER_TOKEN=$(openssl rand -hex 24)` to an
+  existing `.env`. The binary itself still runs without it (startup warning).
+* **Plaintext API keys shorter than 16 characters fail startup** (only a warning under
+  `--dev-insecure`); a token mapped to two owners fails startup too. `sha256:` entries are
+  unaffected.
+* **Invalid numeric/duration environment values are startup errors** (e.g.
+  `PARSEDOCK_WORKER_LEASE=60` without a unit) instead of a silent fallback to the default.
+  An explicitly set `--heartbeat` must be shorter than `--worker-lease` on the coordinator.
+* **`coordinator_unavailable` is `503`** at the gateway (it was `502`), as the OpenAPI spec
+  always documented. The Python SDK retries both.
+* **Stricter request validation:** unparsable `priority`, `priority` outside `0..100` and
+  `ttl_seconds < 1` → `400 invalid_request`; an `Idempotency-Key` longer than 200
+  characters → `400` (it was silently truncated, so two keys sharing a prefix replayed the
+  wrong job); a cancel that loses the race to completion → `409` (it answered `202`).
+* **`/readyz` is redacted** for callers without the internal token: verdicts only, no
+  `free_bytes`, `last_cleanup` or error text.
+* **The Playground binds `127.0.0.1`** by default; set `PLAYGROUND_BIND=0.0.0.0` to expose it.
+* **Go 1.27.3** (was 1.24.4) for builds and images; `GOTOOLCHAIN=local` in CI.
+
+### Security
+
+* **Separate worker credential** (`--worker-token` / `PARSEDOCK_WORKER_TOKEN`). With it,
+  workers can call only the worker protocol; `/v1` (which asserts owners) and the
+  operator endpoints accept only the internal token and answer the worker token with
+  `403`. Optional and backward compatible in the binary (warning when unset); the
+  reference compose files now **require** it and give workers nothing else — add one
+  more `openssl rand -hex 24` to an existing `.env`.
+* Standalone generates random in-process internal/worker tokens when none are set, so
+  its coordinator listener is no longer open to every local process.
+* `/readyz` returns verdicts only to unauthenticated callers; `free_bytes`,
+  `last_cleanup` and error text need the internal token. `checks.cleanup` is always
+  present now.
+* Gateway: failed authentication is rate limited per client address (`429`); limiter
+  maps are bounded; `X-Debug-Owner` is validated; plaintext API keys under 16
+  characters fail startup (unless `--dev-insecure`) and one token for two owners fails
+  startup; the client's own key is no longer forwarded to the coordinator.
+* Client IP reaches the coordinator's audit lines (`client_ip`); `X-Forwarded-For` is
+  believed only from `--trusted-proxies`.
+* Per-request body read deadline (`--body-read-timeout`, default 10 min).
+* Playground: binds `127.0.0.1` by default (`PLAYGROUND_BIND`), keeps CSP/XFO/nosniff on
+  `index.html`, clears `X-Api-Key`; control-plane containers drop all capabilities.
+
+### Fixed
+
+* Synchronous `POST /v1/parse` longer than 30 s returned `502` at the gateway (shared
+  30 s response-header timeout); the gateway proxy now waits 150 s.
+* Malformed numeric/duration environment values are a startup error instead of a
+  silent fallback to the default; `--heartbeat` must be shorter than `--worker-lease`.
+* `--rate-limit=0` disables the per-owner limiter (it was reset to 20).
+* Standalone with TLS used `http://` for its in-process clients; standalone now waits
+  for gateway, worker and coordinator (in that order) before closing the database.
+* `deploy/host`: the worker now gets the 128 MiB upload limit too (it refused anything
+  above its own 64 MiB default); cluster-lite's coordinator port is reachable by remote
+  workers (it was only on an internal network).
+* `X-Api-Key` is documented in `api/openapi.yaml` (`apiKeyAuth`).
+* Worker: a single failed heartbeat no longer cancels a healthy parse (a network blip or a
+  coordinator restart used to fail the job as non-retryable `cancelled`); only an explicit
+  `cancelled`/`lease_lost` stops the attempt, other failures are retried until the lease
+  would have expired. A parse deadline is reported as a timeout, not `cancelled`.
+* Engines: OOM kills are classified as `engine_out_of_memory` (now in the OpenAPI enum and
+  the SDKs); the CLI runner bounds its wait and reaps the whole process group; HTTP engine
+  deadlines and cancellations map to the right codes; oversized Tika output is refused.
+* Coordinator: `/v1/parse` failures carry the HTTP status their code has everywhere else
+  (`quota_exceeded` is `429` with `Retry-After`, a cancelled job `409`); 500 responses no
+  longer contain internal paths or driver messages (details are logged with the request id);
+  worker-reported error codes outside the documented set become `internal_error`; SSE no
+  longer ends without the `completed` event when a completion races the poll; retention
+  finalisation is compare-and-set; quota and cleanup reads fail closed.
+* When `--heartbeat` is left at its default and `--worker-lease` is not longer than it, the
+  heartbeat defaults to a third of the lease instead of letting every lease expire.
+
+### Added
+
+* `docs/ERROR-CODES.md`: every stable error code with HTTP status, retryability, meaning and
+  origin; the contract test fails unless it, `internal/jobs` and the OpenAPI enum agree.
+* CI `static` phase: pinned `golangci-lint`, `govulncheck` (run on the pinned toolchain;
+  0 reachable vulnerabilities on go1.27.3) and `ruff`; `make lint`, `make vulncheck`.
+
 ## v0.1.0 — 2026-10-31
 
 First tagged release. A complete, self-hosted document-parsing service: async job
@@ -103,7 +187,7 @@ Java clients, and measured SLOs.
   inside the xberg distribution. The control-plane image (95 MB) is unaffected.
 * GPU execution is **not** proven on the current test host: MinerU's Vulkan path
   cannot initialise inside the container (driver/toolkit interaction, see
-  `OCR-PR-D2-REPORT.md`); docling-rs CUDA is 15–18× slower than CPU there. The
+  `history/OCR-PR-D2-REPORT.md`); docling-rs CUDA is 15–18× slower than CPU there. The
   recommended GPU route is docling-serve with CUDA.
 * Tables inside **scanned** pages are not structured by the default engine
   configuration; documents with 500+ MiB expanded XLSX sheets fail with

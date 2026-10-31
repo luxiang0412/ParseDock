@@ -12,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test'
 const engines = process.env.E2E_ENGINES ?? 'mock,native'
 const apiPort = 18080
 const webPort = 4173
-const key = process.env.E2E_KEY ?? 'e2e-key'
+const key = process.env.E2E_KEY ?? 'e2e-playground-key-01'
 /**
  * Against the Docker Compose stack (`npm run e2e:compose`) the servers already exist:
  * E2E_COMPOSE_URL=http://127.0.0.1:8090 and no webServer entries are started.

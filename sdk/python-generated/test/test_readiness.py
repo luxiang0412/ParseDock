@@ -36,7 +36,7 @@ class TestReadiness(unittest.TestCase):
         if include_optional:
             return Readiness(
                 status = 'ready',
-                checks = {sqlite=ok, storage=ok, free_bytes=935962714112, accepting_uploads=true, last_cleanup=2026-10-30T07:51:55Z}
+                checks = {sqlite=ok, storage=ok, cleanup=ok, accepting_uploads=true}
             )
         else:
             return Readiness(

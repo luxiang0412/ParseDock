@@ -25,7 +25,9 @@ services:
       - --work-dir=/work/scratch
       - --max-parse-minutes=30
     environment:
-      PARSEDOCK_INTERNAL_TOKEN: ${PARSEDOCK_INTERNAL_TOKEN:?}
+      # The worker credential only (see compose.cpu.yaml). No cap_drop: [ALL] here:
+      # an engine sandbox may need namespace capabilities.
+      PARSEDOCK_WORKER_TOKEN: ${PARSEDOCK_WORKER_TOKEN:?}
       MINERU_HOME: /work/mineru-home
       HF_HOME: /work/mineru-home/hf
       XDG_CACHE_HOME: /work/mineru-home/.cache

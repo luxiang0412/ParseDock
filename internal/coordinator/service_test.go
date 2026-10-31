@@ -934,7 +934,9 @@ func TestStorageQuotaRejectionIsTerminal(t *testing.T) {
 	if got.ProcessingStatus != jobs.StatusFailed || got.ErrorCode != jobs.ErrQuotaExceeded {
 		t.Fatalf("job not failed terminally: %s/%s", got.ProcessingStatus, got.ErrorCode)
 	}
-	if got.RetentionStatus != jobs.RetentionReleasePending {
+	// No lease protects it, so its files were removed through 'deleting'; the cleaner
+	// finalizes the row.
+	if got.RetentionStatus != jobs.RetentionDeleting {
 		t.Fatalf("rejected job not scheduled for cleanup: %s", got.RetentionStatus)
 	}
 	// The attempt is closed, so the reaper will not requeue it.

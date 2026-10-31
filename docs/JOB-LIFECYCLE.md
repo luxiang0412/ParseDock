@@ -2,7 +2,7 @@
 
 > Implementation: `internal/coordinator/{service,cleanup,http}.go`,
 > `internal/storage/store.go`, schema in `migrations/0001_init.sql`.
-> Evidence: `benchmark/results/raw/acceptance-lifecycle-*.json` (T03–T16)
+> Evidence: `benchmark/results/raw/acceptance-lifecycle-*.json` (T03–T17 except T11)
 > and `acceptance-real-*.json` (T01/T02/T11).
 
 ## 1. Two dimensions, never one column
@@ -75,6 +75,14 @@ POST …/ack            202 immediately, deletion asynchronous
 files gone             within one cleanup interval (measured ≤ 2 s with 1 s interval)
 ```
 
+Every transition writes its `job_events` row in the **same transaction** as the status
+change (create, claim, retry, complete, fail, quota rejection, cancel, ACK, release/expiry,
+lease reap). The SSE loop reads the status first and then drains every event up to that
+point, so a stream that ends on a terminal status has always delivered the terminal event
+(`TestSSEDeliversTerminalEventWhenCompletionRacesThePoll`). `scope=processing` skips the
+retention events (`release_pending`, `released`, `expired`) as the OpenAPI spec says;
+`scope=retention` delivers them.
+
 ## 4. ACK contract
 
 Request:
@@ -128,19 +136,38 @@ copy), so the result follows the normal TTL and the caller releases it with
 2. the attempt row is marked `cancelled`, so any later heartbeat returns
    `409 cancelled` and any later result commit fails the fencing check;
 3. the worker aborts the engine process at its next heartbeat (default 10 s;
-   `--heartbeat`), then calls `/fail`, which is an idempotent no-op for a cancelled
-   attempt — a cancelled job is never turned into `failed`;
+   `--heartbeat`) and stops without reporting a failure (`/fail` would be an idempotent
+   no-op for a cancelled attempt anyway) — a cancelled job is never turned into `failed`;
 4. if the engine had already produced a result, the worker discards it instead of
    uploading (PR-03): a cancelled job cannot publish a result that would race the
    cleanup;
 5. input and partial work are removed by the retention path.
+
+Steps 1–2 and the `cancelled` event are one transaction: if the attempt cannot be marked
+cancelled, nothing is (`500`, retry the cancel). A cancel that races a completion and loses —
+the job left `queued`/`running` between the read and the update — answers from the real state,
+so a just-completed job gets the same `409` as a late cancel and no `cancelled` event or audit
+line is written (`TestCancelLosingRaceToCompletionIsConflict`).
 
 Measured: cancellation is observed and the worker stopped **within one heartbeat
 interval** (T17 asserts < 12 s with a 1 s test interval; the mock engine runs 40 s
 so the job is genuinely mid-parse). Per-engine ceilings (`--xberg-timeout`,
 `--docling-rs-timeout`, `--mineru-timeout`, default 10/15/30 min) bound a single
 engine invocation and are capped by `--max-parse-minutes` and the job's
-`processing_deadline_at`.
+`processing_deadline_at`. Hitting that deadline is reported as retryable `timeout`
+(never as `cancelled`), and a worker that is shutting down hands its attempt back as
+retryable `internal_error`.
+
+### Heartbeat failures
+
+Only an explicit answer stops an attempt at once: `409 cancelled` (above) or
+`409 lease_lost` (the attempt was reaped or superseded). Any other heartbeat failure —
+connection refused during a coordinator restart, a timeout, a `5xx` — is retried on the
+next tick for as long as the lease would still be valid by the worker's estimate (the
+`lease_until` of the last accepted heartbeat, measured on the worker's clock when it
+arrived). When the lease is lost either way the worker kills the engine and abandons the
+attempt **without** calling `/fail`; the coordinator requeues the job when it reaps the
+lease, so a transient outage costs one attempt at most instead of failing the job.
 
 ## 5. Failure matrix (§4.3 of the task guide) and how it is covered
 
@@ -154,12 +181,12 @@ engine invocation and are capped by `--max-parse-minutes` and the job's
 | repeated ACK | 202, idempotent | T06 |
 | Coordinator `SIGKILL` during cleanup | restart resumes `deleting`, files removed | T08 (3 jobs, 6 files left at kill, all gone after restart) |
 | Worker `SIGKILL` mid-task | lease expires, job requeued, attempt 2 succeeds; stale token rejected | T09 (attempts: expired → succeeded; stale result/heartbeat `409`) |
-| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and calls `/fail`, which is an idempotent no-op; the job stays `cancelled`; a result produced after the cancel is discarded | `TestCancelledAttemptFinalisation`, `TestCancelRecordsRequestTime`, T17 |
+| Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and stops without reporting; the job stays `cancelled`; a result produced after the cancel is discarded | `TestCancelledAttemptFinalisation`, `TestCancelRecordsRequestTime`, T17 |
 | Cancel a job whose engine already finished | the worker discards the result; no artifact is published | PR-03 worker guard, T17 |
 | No GPU and `device=gpu_required` | `409 gpu_unavailable`, **no job row created** | T12 |
 | Invalid/adversarial upload | `4xx` with stable code, service stays healthy | T13 |
 | Disk below watermark | new upload `507`, existing results still downloadable | T14 |
-| Late result from a superseded attempt | `409 lease_lost`, files deleted, no state change | T15 |
+| Late result from a superseded attempt | `409 lease_lost`, no state change; the unreferenced generation it published is left in place (it may be byte-identical to the winner's) and the cleaner removes it once it is older than the 10-minute orphan cutoff | T15, `TestSupersededCompletionKeepsInput`, `TestRejectedCompletionKeepsCommittedResult` |
 | Released/expired result | `410 gone` during tombstone, foreign owner gets `404`/`401` | T16 |
 
 ## 6. Cleanup algorithm (idempotent, crash-safe)
@@ -173,8 +200,11 @@ every cleanup_interval:
  3  failed/cancelled & active & older than retention → release_pending
  4  for each pending job:
       live download lease? → skip (counted as skipped_active_downloads)
+      (holding the job's publication lock, so no completion is mid-publish)
       mark deleting → delete inputs/ + results/ dirs → released|expired
-      set tombstone_expires_at → emit event
+      set tombstone_expires_at → emit event; the final UPDATE is a compare-and-set
+      on retention_status='deleting', so storage release, event, audit and counters
+      happen exactly once even when two passes race
  5  rows released|expired with tombstone<=now        → DELETE (cascades events/attempts/artifacts)
  6  delete expired download leases
  7  queued|running with max_lifetime_at<=now         → failed(timeout) + release_pending
@@ -191,10 +221,12 @@ Results are content-addressed: `results/<job>/<sha256 of the manifest>/` holds
 `result.md`, `result.txt`, `result.json` and `manifest.json`. The database records the
 generation it committed, so:
 
-* two workers racing to finish the same job write to different directories, and the loser
-  removes only its own generation (never the winner's files);
+* two workers racing to finish the same job write to different directories; the loser
+  deletes nothing synchronously, and the cleaner's `pruneGenerations` removes every
+  generation the database does not reference once it is older than the orphan cutoff
+  (10 min), never the committed one;
 * a retried attempt that produces identical bytes resolves to the same directory, which is
-  harmless — the loser then deletes nothing;
+  harmless — that is exactly why the loser must not delete its directory itself;
 * `release`/`expire` still remove the whole job directory, so retention is unchanged.
 
 Publishing writes into a `.stage-<random>` directory first and renames the files into the
@@ -208,22 +240,30 @@ paths (`Fail`, quota rejection). Both must respect a **live download lease**, be
 streaming a result — or `scripts/backup_online.py`, which pins every snapshot job with the same
 lease table — may still be reading them.
 
-The rule is one atomic transition followed by a lookup:
+The rule is two atomic transitions, the second of which contains the lease check:
 
 ```
 UPDATE jobs SET retention_status='release_pending' WHERE id=? AND retention_status='active'
-   → then: live download lease?  yes / unknown → keep files, let the cleaner finish
-                                  no            → delete now
+UPDATE jobs SET retention_status='deleting', retention_target='released'
+   WHERE id=? AND retention_status='release_pending' AND NOT EXISTS(live download lease)
+   → 1 row          → delete files now; the cleaner finalizes 'deleting' → released
+   → 0 rows / error → keep files in release_pending, let the cleaner finish later
 ```
+
+Files are therefore never removed while the row is still `release_pending`: the inline path
+uses the cleaner's own `deleting` state, so a crash right after the deletion is recovered by
+the cleaner's re-scan of `deleting` rows, and a failed job is visible as `deleting` until the
+next pass finalizes it (`TestFailDeletesThroughDeletingState`).
 
 Pinning only accepts `active` rows, so the database arbitrates the race: either the pin
 commits first (the deletion then sees the lease and defers) or the transition wins and the pin
-fails, making the backup retry with a fresh snapshot. A *failed* lease lookup is treated as
+fails, making the backup retry with a fresh snapshot. A *failed* statement is treated as
 "leased" — unknown is never permission to delete.
 
-Late results from a **superseded** attempt are different: they only remove the result
-directory that attempt wrote. The input belongs to the job, which another attempt may still be
-parsing, so its retention state must not move.
+Late results from a **superseded** attempt are different: they remove nothing at all. The
+generation that attempt wrote is reclaimed later by the cleaner (`pruneGenerations`, after the
+orphan cutoff), and the input belongs to the job, which another attempt may still be parsing, so
+its retention state must not move.
 
 ## 7. Storage layout and atomicity
 

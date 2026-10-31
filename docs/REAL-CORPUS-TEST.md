@@ -2,7 +2,8 @@
 
 > Two runs are recorded. **§2** is the original run (958 eligible files, before legacy Office
 > was accepted). **§2a** is the re-run after PR-04/PR-12, with `.doc`/`.xls` actually sent —
-> it is the current number.
+> it is the current number: **943/972 (97.0 %)**. (938/972 = 96.5 % is the same re-run before
+> its two follow-up fixes; 928/958 = 96.9 % is §2.)
 
 > Run 2026-10-30 against the workspace corpus in `test_data/` (1017 files / 4.30 GiB).
 > Executed locally, no document left the machine, no content stored in the report.
@@ -121,14 +122,17 @@ guard, so the fast result was kept. Quality totals are unchanged from §2 (23.34
 
 ### What is *not* processed, and why (current run)
 
-972 files are eligible (the service accepts the type and size); 938 complete. The other 45
-files the harness skips are not documents at all, and the 34 failures are all limits:
+972 files are eligible (the service accepts the type and size). **943 complete (97.0 %)** after
+the two follow-ups above; the re-run *before* them completed 938 (96.5 %, 34 failures), which is
+the figure some older summaries quoted. The other 45 files the harness skips are not documents
+at all, and the 29 remaining failures are all limits or broken files:
 
 | Group | Files | Bytes | What it is | What it would take |
 | --- | --- | --- | --- | --- |
 | Oversized XLSX | **16** | 1 011 MiB | 52–74 MiB SAP ledgers (expand to 503–609 MiB); 14 hit the upload cap, 2 the 256 MiB result ceiling | sheet-window extraction (deferred by decision) |
 | Encrypted PDFs | 8 | 22 MiB | password-protected | a password field on the API (not planned) |
 | Not a document | 4 | 4 MiB | 2 `.xlsx` DRM containers, 2 zero-filled PDFs | nothing |
+| Truncated PDF | 1 | – | `malformed_file` | nothing |
 | Skipped by the harness | 45 | 1 643 MiB | 9 **ZIP archives** (1.6 GiB — archives, not documents), 24 no-extension cache blobs (`00 00 00 01`, 0.2 MiB), 10 Office lock files (`~$`), 1 KML, 1 SVG | a zip-bundle feature would be needed for the archives |
 
 So of the 4.4 GiB corpus, the **1.6 GiB share is nine zip archives**, and the next largest

@@ -82,7 +82,7 @@ public class JobsApi {
      * Build call for ackJob
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
@@ -146,7 +146,7 @@ public class JobsApi {
         }
 
 
-        String[] localVarAuthNames = new String[] { "bearerAuth" };
+        String[] localVarAuthNames = new String[] { "apiKeyAuth", "bearerAuth" };
         return localVarApiClient.buildCall(basePath, localVarPath, "POST", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarCookieParams, localVarFormParams, localVarAuthNames, _callback);
     }
 
@@ -171,7 +171,7 @@ public class JobsApi {
      * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return AckJob202Response
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -197,7 +197,7 @@ public class JobsApi {
      * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return ApiResponse&lt;AckJob202Response&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -224,7 +224,7 @@ public class JobsApi {
      * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -251,7 +251,7 @@ public class JobsApi {
     /**
      * Build call for cancelJob
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
@@ -313,7 +313,7 @@ public class JobsApi {
         }
 
 
-        String[] localVarAuthNames = new String[] { "bearerAuth" };
+        String[] localVarAuthNames = new String[] { "apiKeyAuth", "bearerAuth" };
         return localVarApiClient.buildCall(basePath, localVarPath, "POST", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarCookieParams, localVarFormParams, localVarAuthNames, _callback);
     }
 
@@ -332,7 +332,7 @@ public class JobsApi {
      * Stop a queued/running job (completed results must be ACKed)
      * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return CancelJob202Response
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -356,7 +356,7 @@ public class JobsApi {
      * Stop a queued/running job (completed results must be ACKed)
      * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return ApiResponse&lt;CancelJob202Response&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -381,7 +381,7 @@ public class JobsApi {
      * Stop a queued/running job (completed results must be ACKed) (asynchronously)
      * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -409,13 +409,13 @@ public class JobsApi {
      * @param _file The document. Required. (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
-     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. (optional)
-     * @param priority Higher runs first within the same queue. (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
-     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. (optional)
-     * @param idempotencyKey2 Alternative to the Idempotency-Key header. (optional)
+     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param idempotencyKey2 Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60; (keys are never truncated).  (optional)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
@@ -518,7 +518,7 @@ public class JobsApi {
         }
 
 
-        String[] localVarAuthNames = new String[] { "bearerAuth" };
+        String[] localVarAuthNames = new String[] { "apiKeyAuth", "bearerAuth" };
         return localVarApiClient.buildCall(basePath, localVarPath, "POST", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarCookieParams, localVarFormParams, localVarAuthNames, _callback);
     }
 
@@ -539,13 +539,13 @@ public class JobsApi {
      * @param _file The document. Required. (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
-     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. (optional)
-     * @param priority Higher runs first within the same queue. (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
-     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. (optional)
-     * @param idempotencyKey2 Alternative to the Idempotency-Key header. (optional)
+     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param idempotencyKey2 Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60; (keys are never truncated).  (optional)
      * @return Job
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -576,13 +576,13 @@ public class JobsApi {
      * @param _file The document. Required. (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
-     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. (optional)
-     * @param priority Higher runs first within the same queue. (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
-     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. (optional)
-     * @param idempotencyKey2 Alternative to the Idempotency-Key header. (optional)
+     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param idempotencyKey2 Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60; (keys are never truncated).  (optional)
      * @return ApiResponse&lt;Job&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -614,13 +614,13 @@ public class JobsApi {
      * @param _file The document. Required. (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
-     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. (optional)
-     * @param priority Higher runs first within the same queue. (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. (optional)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
-     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. (optional)
-     * @param idempotencyKey2 Alternative to the Idempotency-Key header. (optional)
+     * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param idempotencyKey2 Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60; (keys are never truncated).  (optional)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -716,7 +716,7 @@ public class JobsApi {
             localVarHeaderParams.put("Content-Type", localVarContentType);
         }
 
-        String[] localVarAuthNames = new String[] { "bearerAuth" };
+        String[] localVarAuthNames = new String[] { "apiKeyAuth", "bearerAuth" };
         return localVarApiClient.buildCall(basePath, localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarCookieParams, localVarFormParams, localVarAuthNames, _callback);
     }
 
@@ -872,7 +872,7 @@ public class JobsApi {
             localVarHeaderParams.put("Content-Type", localVarContentType);
         }
 
-        String[] localVarAuthNames = new String[] { "bearerAuth" };
+        String[] localVarAuthNames = new String[] { "apiKeyAuth", "bearerAuth" };
         return localVarApiClient.buildCall(basePath, localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarCookieParams, localVarFormParams, localVarAuthNames, _callback);
     }
 

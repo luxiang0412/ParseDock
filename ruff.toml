@@ -1,0 +1,23 @@
+# Python lint for the hand-written tooling (tests, scripts, benchmark, the SDK wrapper,
+# examples). Version pinned in requirements-ci.txt; run by `scripts/ci-local.sh static`.
+# Deliberately minimal: syntax errors (E9) and pyflakes (F: undefined names, unused
+# imports/variables, f-strings without placeholders...). Widen in its own PR.
+target-version = "py312"
+line-length = 120
+extend-exclude = [
+  "sdk/python-generated",
+  "sdk/java-generated",
+  "web",
+  "runtime",
+  "build",
+  "test_data",
+]
+
+[lint]
+select = ["E9", "F"]
+
+[lint.per-file-ignores]
+# Baseline: two query results (`completed`, `input_sha`) are computed but never used. That
+# may be a verification step that was meant to happen, so it is left for a deliberate fix
+# rather than deleted by a lint cleanup.
+"scripts/backup_online.py" = ["F841"]

@@ -3,8 +3,10 @@ package engines
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"strings"
@@ -114,10 +116,19 @@ func (t *Tika) Parse(ctx context.Context, req Request) (*documentir.Document, er
 	start := time.Now()
 	resp, err := t.client().Do(httpReq)
 	if err != nil {
-		return nil, Errf(true, jobs.ErrEngineUnavailable, "tika request: %v", err)
+		return nil, httpRequestFailure(ctx, "tika", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 256<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, tikaMaxOutput+1))
+	if err != nil {
+		return nil, httpRequestFailure(ctx, "tika", err)
+	}
+	if int64(len(raw)) > tikaMaxOutput {
+		// Publishing the first 256 MiB as if it were the whole document would be a silent
+		// data loss; reject it the way the CLI adapters reject an oversized result.
+		return nil, Errf(false, jobs.ErrExpandedTooLarge,
+			"tika produced more than the %d MiB result ceiling; this document needs windowed extraction", tikaMaxOutput>>20)
+	}
 	if resp.StatusCode >= 300 {
 		return nil, Errf(resp.StatusCode >= 500, jobs.ErrMalformed, "tika %s: %s", resp.Status, tail(string(raw), 300))
 	}
@@ -190,15 +201,38 @@ func (t *Tika) Parse(ctx context.Context, req Request) (*documentir.Document, er
 	return doc, nil
 }
 
-// pdfPageCount asks Tika's metadata endpoint for the authoritative page count.
-// It is best effort: an error just means the count stays unknown.
+// tikaMaxOutput is the largest text body the adapter accepts from Tika (a variable so
+// tests can shrink it).
+var tikaMaxOutput int64 = 256 << 20
+
+// httpRequestFailure maps a failed request to an HTTP engine (Tika, docling-serve) to a
+// stable code. A parse deadline or a caller cancel is not an unavailable engine: retrying
+// "engine_unavailable" elsewhere would just hit the same deadline again, and a cancel must
+// not read as an infrastructure fault.
+func httpRequestFailure(ctx context.Context, engine string, err error) *Error {
+	var ne net.Error
+	switch {
+	case errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded):
+		return Errf(true, jobs.ErrTimeout, "%s did not answer before the parse deadline: %v", engine, err)
+	case errors.Is(ctx.Err(), context.Canceled) || errors.Is(err, context.Canceled):
+		return Errf(true, jobs.ErrCancelled, "%s request stopped because the parse was cancelled", engine)
+	case errors.As(err, &ne) && ne.Timeout():
+		return Errf(true, jobs.ErrTimeout, "%s request timed out: %v", engine, err)
+	}
+	return Errf(true, jobs.ErrEngineUnavailable, "%s request: %v", engine, err)
+}
+
+// pdfPageCount asks Tika's metadata-only endpoint (/meta) for the authoritative page
+// count. /rmeta/text, used before, returns the full extracted text inside the JSON, so a
+// sizeable PDF overflowed the 4 MiB decode limit and the count was silently lost. It is
+// best effort: an error just means the count stays unknown.
 func (t *Tika) pdfPageCount(ctx context.Context, path string) int {
 	f, err := os.Open(path)
 	if err != nil {
 		return 0
 	}
 	defer f.Close()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, t.BaseURL+"/rmeta/text", f)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, t.BaseURL+"/meta", f)
 	if err != nil {
 		return 0
 	}
@@ -212,12 +246,21 @@ func (t *Tika) pdfPageCount(ctx context.Context, path string) int {
 	if resp.StatusCode >= 300 {
 		return 0
 	}
-	var meta []map[string]any
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&meta); err != nil || len(meta) == 0 {
+	var raw json.RawMessage
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&raw); err != nil {
 		return 0
 	}
+	// /meta answers with one object; accept the /rmeta list shape too.
+	var meta map[string]any
+	if err := json.Unmarshal(raw, &meta); err != nil {
+		var list []map[string]any
+		if err := json.Unmarshal(raw, &list); err != nil || len(list) == 0 {
+			return 0
+		}
+		meta = list[0]
+	}
 	for _, key := range []string{"xmpTPg:NPages", "meta:page-count", "pdf:page-count"} {
-		if v, ok := meta[0][key]; ok {
+		if v, ok := meta[key]; ok {
 			if n, ok := toInt(v); ok && n > 0 {
 				return n
 			}
@@ -230,6 +273,11 @@ func toInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case float64:
 		return int(n), true
+	case []any:
+		// Tika reports multi-valued metadata as a list.
+		if len(n) > 0 {
+			return toInt(n[0])
+		}
 	case string:
 		var out int
 		if _, err := fmt.Sscanf(strings.TrimSpace(n), "%d", &out); err == nil {

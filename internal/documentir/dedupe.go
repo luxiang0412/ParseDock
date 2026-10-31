@@ -22,9 +22,9 @@ func (d *Document) DropTableShadows() int {
 	if len(d.Tables) == 0 || len(d.Elements) == 0 {
 		return 0
 	}
-	rows := make(map[string][][]string, len(d.Tables))
+	rows := make(map[string]tableText, len(d.Tables))
 	for i := range d.Tables {
-		rows[d.Tables[i].ID] = d.Tables[i].gridText()
+		rows[d.Tables[i].ID] = tableText{rows: d.Tables[i].gridText(), headerRows: max(d.Tables[i].HeaderRows, 1)}
 	}
 	// Where a table's text run was found, the table element belongs at that
 	// position. Engines that append their structured tables after the body (xberg
@@ -50,7 +50,7 @@ func (d *Document) DropTableShadows() int {
 			continue
 		}
 		table, ok := rows[el.TableID]
-		if ok && len(table) > 1 {
+		if ok && len(table.rows) > 1 {
 			if start, count, found := matchTableRun(d.Elements, floor, i, table); found {
 				for k := start; k < start+count; k++ {
 					if !drop[k] {
@@ -90,70 +90,91 @@ func (d *Document) DropTableShadows() int {
 	return removed
 }
 
+// tableText is a table's cell text by row, plus how many leading rows are header rows
+// (at least one: engines that do not flag headers still reformat the first row).
+type tableText struct {
+	rows       [][]string
+	headerRows int
+}
+
 // matchTableRun looks for the table's rows written out as text between start and end.
 // It accepts either a single paragraph with one line per row or a run of consecutive
-// paragraphs. Returns the first index of the run, its element count, and whether it matched.
-func matchTableRun(elements []Element, start, end int, table [][]string) (int, int, bool) {
+// paragraphs. Every element of the run must be a paragraph: headings, list items, other
+// tables and anything else are never shadows, so they are never deleted. Returns the
+// first index of the run, its element count, and whether it matched.
+func matchTableRun(elements []Element, start, end int, table tableText) (int, int, bool) {
+	n := len(table.rows)
 	for k := start; k < end; k++ {
 		if elements[k].Type != ElParagraph {
 			continue
 		}
 		// One paragraph holding the whole block (Office exports: tab-separated, newline rows).
-		if lines := strings.Split(strings.Trim(elements[k].Text, "\n"), "\n"); len(lines) == len(table) {
-			if rowsMatch(lines, table, 0) {
+		if lines := strings.Split(strings.Trim(elements[k].Text, "\n"), "\n"); len(lines) == n {
+			if rowsMatch(lines, table) {
 				return k, 1, true
 			}
 		}
 		// One paragraph per row.
-		if k+len(table) <= end && rowsMatchTexts(elements[k:k+len(table)], table) {
-			return k, len(table), true
+		if k+n <= end && rowsMatchTexts(elements[k:k+n], table) {
+			return k, n, true
 		}
 	}
 	return 0, 0, false
 }
 
-func rowsMatch(lines []string, table [][]string, offset int) bool {
-	texts := make([]string, 0, len(lines))
-	for _, line := range lines {
-		texts = append(texts, line)
-	}
-	return rowsMatchNormalised(texts, table)
-}
-
-func rowsMatchTexts(run []Element, table [][]string) bool {
+func rowsMatchTexts(run []Element, table tableText) bool {
 	texts := make([]string, 0, len(run))
 	for _, el := range run {
+		if el.Type != ElParagraph {
+			return false
+		}
 		texts = append(texts, el.Text)
 	}
-	return rowsMatchNormalised(texts, table)
+	return rowsMatch(texts, table)
 }
 
-// rowsMatchNormalised compares rendered lines with a table's rows.
+// rowsMatch compares rendered lines with a table's rows.
 //
-// One row may differ: header rows are the part engines reformat most (footnote
+// One header row may differ: header rows are the part engines reformat most (footnote
 // marks, spacing inside a cell), and requiring a byte-exact header was why a table
-// whose body matched its shadow exactly was never relocated. The tolerance is
-// capped at a single row and needs at least three rows to apply, so a paragraph
-// that merely quotes one line of a table still cannot trigger a relocation.
-func rowsMatchNormalised(texts []string, table [][]string) bool {
-	if len(texts) < len(table) {
+// whose body matched its shadow exactly was never relocated. The tolerance is capped
+// at a single row, applies only to a header row, and needs at least three rows, so a
+// paragraph that merely quotes one line of a table - or a body row that says something
+// different - still cannot trigger a deletion.
+func rowsMatch(texts []string, table tableText) bool {
+	if len(texts) < len(table.rows) {
 		return false
 	}
 	mismatches := 0
-	for r := range table {
-		if normalizeSpace(texts[r]) == normalizeSpace(strings.Join(table[r], " ")) {
+	for r := range table.rows {
+		if normalizeSpace(texts[r]) == normalizeSpace(strings.Join(table.rows[r], " ")) {
 			continue
 		}
 		mismatches++
-		allowed := 1
-		if len(table) < 3 {
-			allowed = 0
-		}
-		if mismatches > allowed {
+		if len(table.rows) < 3 || r >= table.headerRows || mismatches > 1 || !resemblesRow(texts[r], table.rows[r]) {
 			return false
 		}
 	}
 	return true
+}
+
+// resemblesRow reports whether a reformatted line still carries most of a row's cells, so
+// the header tolerance cannot swallow an unrelated paragraph that happens to sit above
+// the body rows.
+func resemblesRow(line string, row []string) bool {
+	line = normalizeSpace(line)
+	cells, found := 0, 0
+	for _, c := range row {
+		c = normalizeSpace(c)
+		if c == "" {
+			continue
+		}
+		cells++
+		if strings.Contains(line, c) {
+			found++
+		}
+	}
+	return cells > 0 && found*2 >= cells
 }
 
 // gridText returns the table's rows as cell text, ordered by row then column.

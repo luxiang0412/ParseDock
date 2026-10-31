@@ -1,4 +1,7 @@
-# ARCHITECTURE — ParseDock v0.1 (Phase 0)
+# ARCHITECTURE — ParseDock v0.1
+
+> Living document: describes the current code (v0.1.0 + the unreleased changes in
+> `docs/CHANGELOG.md`). It started in Phase 0; dated reports are in `docs/history/`.
 
 ## 1. Goals that shape the design
 
@@ -48,7 +51,23 @@
   code, not a special case.
 * **api** = only the gateway (no DB handle, no file access).
 * **coordinator** = only state and files; never runs engines.
-* **worker** = stateless; all state is a lease it holds.
+* **worker** = stateless; all state is a lease it holds. Workers authenticate with the
+  worker token (`--worker-token`), which opens only the worker protocol.
+* **playground** (optional, `web/`, compose profile `playground`) = a static React app plus
+  a same-origin `/v1` proxy (Vite dev/preview proxy or nginx) that injects the API key from
+  the environment, so the browser never holds it. It is an ordinary API client of an `api`
+  replica, binds `127.0.0.1` by default (`PLAYGROUND_BIND`), and never ACKs a result
+  automatically. See `docs/PLAYGROUND-IMPLEMENTATION.md`.
+
+### OCR escalation (worker-local)
+
+With `mode=auto` the worker first runs the fast engine. If the result is a scannable format
+and carries a `no_text_layer` warning or a measured OCR confidence below the threshold, the
+worker retries it **once** on the accurate engine inside the same attempt
+(`--escalate-scans`, default on). The retry replaces the fast result only if it succeeds,
+is non-empty and does not itself report low confidence; either way the decision is recorded
+in `routing.reason` (`internal/engines/escalate.go`, `internal/worker/worker.go`). The
+coordinator is not involved: the escalated attempt holds the same lease.
 
 ### Why the API is a reverse proxy
 
@@ -96,15 +115,16 @@ cleaner (every 60 s):
 | `cmd/docparse` | flags, role wiring, engine registry construction, `--check` capability dump |
 | `internal/api` | public mux, bearer auth, per-owner token bucket, reverse proxy, body caps, header sanitisation |
 | `internal/coordinator` | SQLite schema/migrations, job service, internal + proxy mux, cleaner |
-| `internal/jobs` | job aggregate, statuses, error codes, ULID ids |
+| `internal/jobs` | job aggregate, statuses, error codes (`job.go`; the known-code set in `codes.go`), ULID ids |
 | `internal/storage` | atomic file store, manifests, disk watermark, magic/zip/PDF pre-flight |
-| `internal/worker` | register/claim/heartbeat/input/result loop, engine selection, scratch dirs |
-| `internal/engines` | adapter interface + native/mock/xberg/docling-rs/docling-serve/tika/mineru |
+| `internal/worker` | register/claim/heartbeat/input/result loop, engine selection, OCR escalation (`maybeEscalate`), scratch dirs, VRAM reporting |
+| `internal/engines` | adapter interface + native/mock/xberg/docling-rs/docling-serve/tika/mineru, escalation triggers (`escalate.go`), CLI runner + error classifier (`exec.go`) |
 | `internal/documentir` | IR types + Markdown/Text renderers + embedded JSON Schema (mirrored to `api/`) |
 | `internal/metrics` | dependency-free Prometheus exposition (no SDK dependency) |
 | `internal/tlsutil` | server/client TLS configs for the internal hop (mTLS, timeouts preserved) |
 | `internal/sysinfo` | host facts, GPU detection, per-device free VRAM |
 | `migrations` | embedded `*.sql` (single source of truth) |
+| `web/` | Playground (React + Vite, own `package.json`; not part of the Go build); `deploy/nginx.playground.conf.template` is its production proxy |
 
 ## 5. Concurrency and resource model
 
@@ -123,9 +143,12 @@ cleaner (every 60 s):
 
 | Boundary | Control |
 | --- | --- |
-| public → api | bearer token → owner; keys stored as SHA-256 with scopes (`jobs:write`/`read`/`ack`); per-owner token bucket; `MaxBytesReader`; `X-Content-Type-Options: nosniff`; validated `X-Request-Id` |
-| api → coordinator | internal shared token; owner header stripped from client input |
-| worker → coordinator | mTLS (PR-07) + internal token + per-task lease token; input/result authorised by token |
+| public → api | bearer token (or `X-Api-Key`) → owner; keys stored as SHA-256 with scopes (`jobs:write`/`read`/`ack`), plaintext keys ≥ 16 chars and one owner per token enforced at startup; failed authentication limited per client address before any owner is known; per-owner token bucket (per replica, bounded map); `MaxBytesReader` + per-request body read deadline; `X-Content-Type-Options: nosniff`; validated `X-Request-Id`; `X-Forwarded-For` believed only from `--trusted-proxies` |
+| api → coordinator | internal (gateway) token — the only credential that may assert `X-Parsedock-Owner`; owner, client-IP and internal headers stripped from client input, the client's own key not forwarded; resolved client IP forwarded and believed only with the internal token; dedicated proxy transport (150 s header timeout > 120 s sync window) |
+| worker → coordinator | mTLS (PR-07) + worker token (`--worker-token`; falls back to the internal token when unset) + per-task lease token; the worker token opens only `/internal/workers/*` and `/internal/tasks/*` and gets `403` on `/v1` and operator endpoints. Certificate roles are not bound to tokens |
+| operator → coordinator | `/internal/metrics`, `/internal/diagnostics/*` and the detailed `/readyz` need the internal token; unauthenticated `/readyz` returns verdicts only (no free bytes, timestamps or error strings) |
+| standalone | the in-process api→coordinator and worker→coordinator hops use random tokens generated at start when none are configured |
+| playground | API key injected by the same-origin proxy from the environment (never `VITE_*`, CI fails if a key reaches `dist/`); listener bound to `127.0.0.1` unless `PLAYGROUND_BIND` says otherwise; CSP/`X-Frame-Options`/nosniff on `index.html` |
 | upload | extension + magic bytes + OOXML structure + zip-bomb ratio + PDF markers + page limit; multipart parts may arrive in any order without buffering the document |
 | representations | `ETag` validates one representation; `X-Result-Version` (manifest hash) is the only ACK token |
 | filenames | server-generated job ids; original name kept as metadata only (`filepath.Base`, control chars stripped) |
@@ -142,15 +165,18 @@ The coordinator writes one JSON object per decision to the process log with
 
 ```json
 {"audit":true,"event":"job_created","owner_id":"acme","job_id":"job_01…",
- "format":"pdf","bytes":4855,"request_id":"req_…","engine_hint":"xberg",
- "mode":"auto","device":"auto","time":"2026-10-30T12:00:00Z"}
+ "format":"pdf","bytes":4855,"request_id":"req_…","client_ip":"203.0.113.9",
+ "engine_hint":"xberg","mode":"auto","device":"auto","time":"2026-10-30T12:00:00Z"}
 ```
 
-Events: `job_created`, `job_acked` (both ACK and cancel-after-complete),
-`job_cancelled`, `job_released`, `job_expired`. Fields are limited to identities,
+Events: `job_created`, `job_acked`, `job_cancelled` (queued/running only — cancelling
+a completed job with an active result is refused with `409` and writes no audit line), `job_released`,
+`job_expired`. Fields are limited to identities,
 ids, sizes, engine/mode and the decision — **never document text, filenames from
 the client, tokens or result bodies**. `request_id` comes from the API gateway and
-is generated/validated there (charset `[A-Za-z0-9._:-]`, ≤128 chars).
+is generated/validated there (charset `[A-Za-z0-9._:-]`, ≤128 chars). `client_ip` is the
+address the gateway resolved (TCP peer, or `X-Forwarded-For` behind a configured trusted
+proxy); it is present on client-initiated events and absent on cleanup/worker events.
 
 Key handling: `--api-keys-file` (one `<secret|sha256:hash>:<owner>[:scopes]` per
 line) is the production form; plaintext `--api-keys` is hashed at startup but

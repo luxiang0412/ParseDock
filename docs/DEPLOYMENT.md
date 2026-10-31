@@ -18,9 +18,10 @@ Images run as uid/gid 10001, no shell in the coordinator image beyond `debian-sl
 ## 2. CPU stack (verified end-to-end)
 
 ```bash
-export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)
+export PARSEDOCK_INTERNAL_TOKEN=$(openssl rand -hex 24)   # api replicas <-> coordinator
+export PARSEDOCK_WORKER_TOKEN=$(openssl rand -hex 24)     # workers <-> coordinator, distinct
 export PARSEDOCK_API_KEYS="$(openssl rand -hex 24):acme"
-cp deploy/.env.example deploy/.env   # or export the two variables
+cp deploy/.env.example deploy/.env   # or export the three variables
 docker compose -f deploy/compose.cpu.yaml --env-file deploy/.env up -d
 curl -H "Authorization: Bearer $KEY" -F file=@doc.pdf http://localhost:8080/v1/jobs
 ```
@@ -40,6 +41,13 @@ What was verified on this host (2026-10-30):
 The coordinator is **not** published on the host: compose puts it on an
 `internal: true` Docker network. Only the two API ports are exposed.
 
+**Upgrading an existing `.env`:** the compose files now require
+`PARSEDOCK_WORKER_TOKEN` (one more `openssl rand -hex 24`) and give the workers only
+that token. The binary itself stays compatible — without `--worker-token` everything
+works with the single internal token, and the coordinator logs a warning — but the
+reference compose files use the split on purpose: with one shared token a compromised
+worker could read or ACK any tenant's results through `/v1`.
+
 ## 2a. Single-host stack with the Playground (4 containers)
 
 `deploy/host/docker-compose.yml` is the smallest deployment that serves both the
@@ -47,8 +55,8 @@ API and the web UI from one host. It publishes exactly two ports and nothing
 else:
 
 ```bash
-cd deploy/host && cp .env.example .env      # then fill in the three secrets
-openssl rand -hex 24                        # PARSEDOCK_INTERNAL_TOKEN, API key, PLAYGROUND_KEY
+cd deploy/host && cp .env.example .env      # then fill in the four secrets
+openssl rand -hex 24                        # PARSEDOCK_INTERNAL_TOKEN, PARSEDOCK_WORKER_TOKEN, API key, PLAYGROUND_KEY
 docker compose up -d
 ```
 
@@ -57,9 +65,14 @@ docker compose up -d
 | `coordinator` | `parsedock:0.1.0` | — (internal net) | `/data` volume: SQLite + inputs + results |
 | `api` | `parsedock:0.1.0` | `8080` | stateless; add replicas freely |
 | `worker-cpu` | `parsedock-worker-cpu:0.1.0` | — (internal net) | tmpfs scratch, 2 parse slots |
-| `playground` | `parsedock-playground:0.1.0` | `8090` | static app + same-origin `/v1` proxy |
+| `playground` | `parsedock-playground:0.1.0` | `127.0.0.1:8090` | static app + same-origin `/v1` proxy |
 
-Both ports are overridable with `API_PORT` / `PLAYGROUND_PORT`.
+Both ports are overridable with `API_PORT` / `PLAYGROUND_PORT`. The Playground injects a
+**full-scope** key (owner `playground`) into every proxied request, so whoever reaches
+its port acts as that owner: it binds `127.0.0.1` by default (`PLAYGROUND_BIND`, also in
+`deploy/compose.playground.yaml`). Set `PLAYGROUND_BIND=0.0.0.0` only behind your own
+authentication. The worker receives the same `--max-upload-mb` as coordinator and API
+(it refuses inputs above its own limit, default 64 MiB).
 `PARSEDOCK_XBERG_OCR_LANG` must match the corpus (`zh` for Chinese scans); a
 wrong value silently degrades OCR instead of failing the job.
 
@@ -92,7 +105,7 @@ weights into `HF_HOME`, and a restart should not pay that cost again.
 docker volume create parsedock-mineru-home          # model cache survives restarts
 docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
   -v parsedock-mineru-home:/work \
-  -e PARSEDOCK_INTERNAL_TOKEN="$TOKEN" \
+  -e PARSEDOCK_WORKER_TOKEN="$WORKER_TOKEN" \
   parsedock-worker-gpu:0.1.0 --role worker \
   --coordinator-url http://10.0.0.10:8081 --engines mineru --device-type gpu \
   --work-dir /work/scratch
@@ -104,14 +117,21 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
   to write `/root/.cache/huggingface/token` and fails.
 * Scratch is always a **subdirectory** (`/work/scratch`), never the volume root: the
   worker's scrubber deletes attempt directories older than an hour, and pointing
-  `--work-dir` at `/work` would delete the multi-GB model cache with them. The entrypoint
+  `--work-dir` at `/work` would delete the multi-GB model cache with them. (The scrubber
+  now only touches directories named like its own `<job_id>/a<attempt>` scratch, which
+  protects a misconfigured root, but scratch still belongs in a subdirectory.) The entrypoint
   appends `--work-dir /work/scratch` when the flag is absent, and
   `deploy/compose.gpu.yaml` sets it explicitly.
 * Telemetry is disabled at build time and again at start-up. Only the `flash` tier is
   reachable; block egress to `mineru.net` by policy and run parsers with
   `--sandbox=unshare-net` where namespaces are available.
+* Give every GPU worker its own MinerU daemon (its own `MINERU_HOME`). The per-task GPU
+  evidence is read from the daemon log written during the task, and those lines carry no
+  task id: a daemon shared between workers would let one task's session lines count as
+  another's.
 * The worker reports the free VRAM of the card it will use (first entry of
-  `CUDA_VISIBLE_DEVICES`, else device 0) on every heartbeat — pin `CUDA_VISIBLE_DEVICES`
+  `CUDA_VISIBLE_DEVICES`, else device 0) when it registers: after every task and, while
+  idle, at most once per `--heartbeat` interval (default 10 s) — pin `CUDA_VISIBLE_DEVICES`
   if the host has several cards. A GPU worker runs one task at a time
   (`--worker-concurrency` is capped at 1) because per-card VRAM cannot be partitioned
   between slots; scale with more workers. Set
@@ -131,26 +151,33 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--listen` | `PARSEDOCK_LISTEN` | `127.0.0.1:8080` | public API |
 | `--internal-listen` | `PARSEDOCK_INTERNAL_LISTEN` | `127.0.0.1:8081` | coordinator |
 | `--coordinator-url` | `PARSEDOCK_COORDINATOR_URL` | `http://127.0.0.1:8081` | api/worker target |
+| `--internal-token` | `PARSEDOCK_INTERNAL_TOKEN` | – (standalone: random, in-process) | gateway ↔ coordinator credential; the only one that may assert an owner on `/v1` and the only one accepted by `/internal/metrics`, `/internal/diagnostics/*`, `/internal/throttle` and the detailed `/readyz`. A non-loopback coordinator refuses to start without it. Standalone generates one when unset, so its listener is never open to other local processes; pass your own to scrape metrics there |
+| `--worker-token` | `PARSEDOCK_WORKER_TOKEN` | – (standalone: random, in-process) | optional worker credential (coordinator + workers). When set, workers present it and it opens only `/internal/workers/*` and `/internal/tasks/*`; on `/v1` and the operator endpoints it gets `403`. The worker routes keep accepting the internal token for compatibility. Must differ from the internal token and needs one. Unset = single shared token (startup warning) |
+| `--trusted-proxies` | `PARSEDOCK_TRUSTED_PROXIES` | – (none) | api: comma-separated CIDRs/addresses whose `X-Forwarded-For` is believed (walked from the right). Default: the TCP peer is the client. The resolved address keys the failed-auth limiter and is forwarded to the coordinator's audit lines as `client_ip` |
+| `--body-read-timeout` | `PARSEDOCK_BODY_READ_TIMEOUT` | `10m` | api + coordinator: longest time to receive one request body (declared bodies ≤ 1 MiB: at most `1m`); a stalled or trickling upload is cut off. `0` disables. There is deliberately no write timeout (SSE, downloads) |
 | `--data-dir` | `PARSEDOCK_DATA_DIR` | `./runtime/data` | SQLite + files (coordinator only) |
+| `--db` | `PARSEDOCK_DB` | `<data-dir>/coordinator.db` | SQLite database path (coordinator only) |
+| `--log-level` | `PARSEDOCK_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` (an unknown value falls back to `info`) |
 | `--engines` | `PARSEDOCK_ENGINES` | `native` | enabled engines |
 | `--result-ttl` | `PARSEDOCK_RESULT_TTL` | `1h` | default result retention |
 | `--max-result-ttl` | `PARSEDOCK_MAX_RESULT_TTL` | `24h` | client TTL ceiling |
 | `--max-job-lifetime` | `PARSEDOCK_MAX_JOB_LIFETIME` | `24h` | absolute job lifetime |
+| `--failed-retention` | `PARSEDOCK_FAILED_RETENTION` | `10m` | how long the files of a `failed`/`cancelled` job are kept for debugging before the cleaner moves it to `release_pending` |
 | `--cleanup-interval` | `PARSEDOCK_CLEANUP_INTERVAL` | `60s` | cleaner period |
 | `--download-lease` | `PARSEDOCK_DOWNLOAD_LEASE` | `60s` | download lease |
 | `--worker-lease` | `PARSEDOCK_WORKER_LEASE` | `60s` | worker lease |
 | `--work-max-age` | `PARSEDOCK_WORK_MAX_AGE` | `1h` | remove crashed attempt dirs older than this |
 | `--work-scrub-interval` | `PARSEDOCK_WORK_SCRUB_INTERVAL` | `10m` | periodic worker scratch sweep |
-| `--heartbeat` | `PARSEDOCK_HEARTBEAT` | `10s` | worker heartbeat |
+| `--heartbeat` | `PARSEDOCK_HEARTBEAT` | `10s` | worker heartbeat; must be > 0. When left at the default and `--worker-lease` is not longer than it, the default becomes a third of the lease; an explicitly set value on the coordinator must be shorter than `--worker-lease` (startup error otherwise) |
 | `--tombstone-ttl` | `PARSEDOCK_TOMBSTONE_TTL` | `10m` | 410 window |
-| `--max-upload-mb` | `PARSEDOCK_MAX_UPLOAD_MB` | `64` | upload cap |
+| `--max-upload-mb` | `PARSEDOCK_MAX_UPLOAD_MB` | `64` | upload cap (> 0). Set the **same value on coordinator, API replicas and workers**: a worker refuses inputs above its own limit |
 | `--max-pages` | `PARSEDOCK_MAX_PAGES` | `2000` | PDF page cap; the pre-flight count is a heuristic (head/tail scan), so this bounds work rather than guaranteeing an exact cut. A 553-page audit annexe in the real corpus needed this. |
 | (limits) | – | 512 MiB expanded, 200:1 ratio | OOXML expansion cap; the parsers themselves cap lower (xberg 500 MiB, docling-rs 10M cells per sheet) |
 | `--min-free-gb` | `PARSEDOCK_MIN_FREE_GB` | `2` | disk watermark |
 | `--max-attempts` | `PARSEDOCK_MAX_ATTEMPTS` | `3` | retries |
-| `--rate-limit` / `--rate-burst` | `PARSEDOCK_RATE_LIMIT(_BURST)` | `20` / `40` | per-owner, **all** requests: status polling counts against it (a batch client polling at 5 rps/thread exhausted the default 20 rps and received `429`; use SSE or raise the limit for batch tenants) |
+| `--rate-limit` / `--rate-burst` | `PARSEDOCK_RATE_LIMIT(_BURST)` | `20` / `40` | per-owner, **all** requests: status polling counts against it (a batch client polling at 5 rps/thread exhausted the default 20 rps and received `429`; use SSE or raise the limit for batch tenants). The bucket lives **in each API replica**: N replicas behind a balancer admit up to N× the rate. `0` disables the limiter (it used to be reset to 20 silently); negative values fail startup. Independently, failed authentication is limited per client address (1/s, burst 20, `429 rate_limited`) |
 | `--api-keys-file` | `PARSEDOCK_API_KEYS_FILE` | – | one `<secret\|sha256:hash>:<owner>[:scopes]` per line; **preferred over `--api-keys`**, because argv is readable by other local users |
-| `--api-keys` | `PARSEDOCK_API_KEYS` | – | comma-separated same format; hashed at startup, kept for development |
+| `--api-keys` | `PARSEDOCK_API_KEYS` | – | comma-separated same format; hashed at startup, kept for development. For both forms: a plaintext token shorter than **16** characters fails startup (a warning under `--dev-insecure`), under 32 logs a warning, and one token mapped to two owners fails startup |
 | `--quota-concurrent` | `PARSEDOCK_QUOTA_CONCURRENT` | `0` (off) | queued+running jobs per owner |
 | `--quota-jobs-per-day` | `PARSEDOCK_QUOTA_JOBS_PER_DAY` | `0` (off) | jobs per owner per rolling 24 h |
 | `--quota-bytes-per-day` | `PARSEDOCK_QUOTA_BYTES_PER_DAY` | `0` (off) | input bytes per owner per rolling 24 h |
@@ -162,21 +189,47 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `HF_HUB_CACHE` (worker image) | – | `/opt/xberg-models` | where the worker image seeds xberg's PaddleOCR/Sceptre models at build time (652 MiB). `paddle-ocr` is the only backend that needs model files beyond the tesseract tessdata; without the seed it would download them at run time, which fails on an internal worker network. |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
 | `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
-| `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `auto` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time. The label is an operator statement: since PR-D1 a `gpu_required` job additionally needs **per-task proof** that the GPU was used, otherwise it fails with `gpu_unavailable` (see `docs/RUNBOOK.md` → "GPU jobs: reading the evidence"). Registration reports `gpu_inference_verified: false`, so a visible device is never presented as a verified capability. |
+| `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `cpu` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time. The label is an operator statement: since PR-D1 a `gpu_required` job additionally needs **per-task proof** that the GPU was used, otherwise it fails with `gpu_unavailable` (see `docs/RUNBOOK.md` → "GPU jobs: reading the evidence"). Registration reports `gpu_inference_verified: false`, so a visible device is never presented as a verified capability. |
 | `--worker-id` | `PARSEDOCK_WORKER_ID` | generated | stable worker identity across restarts |
 | `--worker-concurrency` | `PARSEDOCK_WORKER_CONCURRENCY` | `1` | parallel slots per worker; ignored (capped to 1) for GPU device types |
 | `--work-dir` | `PARSEDOCK_WORK_DIR` | `./runtime/work` | worker scratch; on the GPU image keep it **below** the model-cache volume (`/work/scratch`) |
+| `--poll-interval` | `PARSEDOCK_POLL_INTERVAL` | `250ms` | how long an idle worker waits between claim attempts; the latency floor when the queue is shallow |
 | `--engine-min-vram-mb` | `PARSEDOCK_ENGINE_MIN_VRAM_MB` | – | `engine:MiB` list; `gpu_required` is refused (`409 gpu_unavailable`) unless a live GPU worker has that much free on the card the parser will use |
 | `--tls-cert` / `--tls-key` | `PARSEDOCK_TLS_CERT` / `_KEY` | – | coordinator listener certificate; also used as the client certificate on api/worker |
 | `--tls-client-ca` | `PARSEDOCK_TLS_CLIENT_CA` | – | enables mutual TLS on the coordinator; **startup fails without `--tls-cert/--tls-key`** |
 | `--tls-ca` | `PARSEDOCK_TLS_CA` | – | CA that verifies the coordinator (api/worker) |
 | `--tls-server-name` | `PARSEDOCK_TLS_SERVER_NAME` | – | required when dialling an IP literal |
-| `--tls-insecure` | `PARSEDOCK_TLS_INSECURE` | off | skip verification — development only, refused by the release checklist |
-| `--escalate-scans` | `PARSEDOCK_ESCALATE_SCANS` | `1` | retry a CJK scan once with the accurate engine when the fast engine reports low OCR confidence (only `mode=auto`, only when the retry yields at least as much text) |
-| engine paths | `PARSEDOCK_XBERG_BIN`, `PARSEDOCK_DOCLING_RS_BIN`, … | – | adapters |
+| `--tls-insecure` | `PARSEDOCK_TLS_INSECURE` | off | skip verification — development only, refused by the release checklist; logs a warning at startup |
+| `--dev-insecure` | `PARSEDOCK_DEV_INSECURE=1` | off | tests only: anonymous `/v1` when no keys are configured (`X-Debug-Owner`, validated), short keys accepted, no internal-binding check. Logs a loud warning |
+| `--escalate-scans` | `PARSEDOCK_ESCALATE_SCANS` | `1` | `mode=auto` only: retry a scannable document once with the accurate engine when the fast result carries a `no_text_layer` warning or a measured OCR confidence below the threshold (any script). The retry is discarded, and the fast result kept, when it errors, is empty, or still reports low confidence (`internal/engines/escalate.go`, `internal/worker/worker.go` `maybeEscalate`) |
+| `--xberg-bin` / `--xberg-lib-dir` | `PARSEDOCK_XBERG_BIN` / `_LIB_DIR` | – | xberg CLI path and the directory with its shared libraries |
+| `--xberg-ocr` | `PARSEDOCK_XBERG_OCR` | `1` | enable OCR in xberg |
+| `--docling-rs-bin` / `--docling-rs-models` | `PARSEDOCK_DOCLING_RS_BIN` / `_MODELS` | – | docling-rs CLI path and the directory containing its `.models` |
+| `--docling-rs-text-layer` | `PARSEDOCK_DOCLING_RS_TEXT_LAYER=1` | off | docling-rs text-layer-only mode |
+| `--docling-serve-url` / `--docling-serve-gpu` | `PARSEDOCK_DOCLING_SERVE_URL` / `_GPU=1` | – / off | docling-serve base URL; mark it GPU-capable |
+| `--tika-url` | `PARSEDOCK_TIKA_URL` | – | Tika server base URL |
+| `--mineru-bin` / `--mineru-tier` / `--mineru-home` | `PARSEDOCK_MINERU_BIN` / `_TIER` / `_HOME` | – / `flash` / – | MinerU CLI path, tier (`flash` = local only), ephemeral `MINERU_HOME` |
+| `--check` | – | – | print capabilities and exit |
+| `--version` | – | – | print the service and API versions as JSON and exit |
 
 `docparse --check` prints host facts, the effective config and the routing table as
 JSON — useful as a deployment smoke test and for support tickets.
+
+A malformed numeric or duration environment value (`PARSEDOCK_MAX_UPLOAD_MB=64M`,
+`PARSEDOCK_HEARTBEAT=10`) is a startup error naming the variable (exit code 2); it used
+to fall back to the default silently.
+
+### Internal and worker tokens
+
+Generate both with `openssl rand -hex 24`. The internal token goes to the coordinator
+and the API replicas only; the worker token to the coordinator and the workers only.
+To introduce or rotate the worker token without downtime: set `--worker-token` on the
+coordinator and restart it (workers still holding the internal token keep working,
+because the worker routes accept both), then roll the workers to
+`PARSEDOCK_WORKER_TOKEN` and remove `PARSEDOCK_INTERNAL_TOKEN` from them. Rotating the
+internal token itself means restarting the coordinator and the API replicas with the
+new value (the coordinator accepts one internal token at a time), so requests that
+reach a replica still holding the old value fail with `401` until it is restarted.
 
 ### Key rotation
 
@@ -199,13 +252,27 @@ Coordinator log lines with `audit=true` are the audit trail; forward them to you
 log pipeline separately from application logs (they contain identities and sizes,
 never document text). Example event schema: `docs/ARCHITECTURE.md` §6.
 
+## 4a. Error codes
+
+Every error response is `{"error":{"code","message"}}`, and a failed job carries the
+same `code` in `error_code`. The full table (HTTP status, whether a client should retry,
+meaning, which component raises it) is [`ERROR-CODES.md`](ERROR-CODES.md); alerting and
+client retry policies should key on `code`, never on `message`.
+
 ## 5. Probes
 
 | Endpoint | Role | Meaning |
 | --- | --- | --- |
 | `GET /healthz` (api) | liveness | process is serving |
-| `GET /readyz` (api) | readiness | proxies the coordinator's readiness |
+| `GET /readyz` (api) | readiness | proxies the coordinator's readiness (public view, never with the internal token) |
 | `GET /readyz` (coordinator) | readiness | SQLite ping, free bytes vs watermark, cleaner not stalled (`503` when stalled) |
+
+`/readyz` is unauthenticated, so by default `checks` holds verdicts only: `sqlite`
+(`ok`/`down`), `storage` (`ok`/`below watermark`/`error`), `cleanup` (`ok`/`stalled`) and
+`accepting_uploads`. On the coordinator's internal listener a request carrying the
+internal token additionally gets `free_bytes`, `last_cleanup` and the raw
+`sqlite_error`/`storage_error` strings (which contain paths):
+`curl -s -H "X-Internal-Token: $TOKEN" coordinator:8081/readyz | jq .checks`.
 
 The images do not ship an HTTP client, so the compose file intentionally has no
 container-level `healthcheck`. Point your orchestrator's HTTP probe at these
@@ -234,7 +301,7 @@ after a restore while an active job still downloads.
 * `released`/`expired` rows are tombstones (10 min); after that the job id is gone
   (404) on purpose.
 * Volume growth is bounded by `result_ttl` x ingress rate; monitor `data/` usage and
-  `readyz.checks.free_bytes`.
+  `parsedock_disk_free_bytes` (or `readyz.checks.free_bytes` with the internal token).
 
 ## 6a. Capacity planning (measured)
 
@@ -323,6 +390,12 @@ Notes:
 * Certificates are loaded at start-up; rotation means replacing the file and restarting
   the process (a coordinator restart is already the documented recovery operation).
 * `tests/integration/pr07_tls.py` is the executable version of this section.
+* Every hop that leaves a host must use this: the internal and worker tokens are sent in
+  cleartext over plain HTTP. `deploy/compose.cluster-lite.yaml` carries the matching
+  (commented) `--tls-*` lines for coordinator, API replica and remote worker.
+* mTLS authenticates the host, not its role: a valid worker certificate presenting the
+  internal token is accepted. Keep the internal token off worker hosts (use
+  `--worker-token`); binding certificate roles to tokens is not implemented.
 
 ## 6d. Backups and drill
 
@@ -363,13 +436,14 @@ rule_files: [/etc/prometheus/parsedock-alerts.yaml]
 
 ## 7. Known deployment gaps
 
-* `--internal-token` is a shared static secret; mTLS (PR-07) now provides transport
-  identity on top of it (see §6c). The coordinator refuses to bind a non-loopback
-  internal address without the token, and certificate rotation still needs a restart.
+* `--internal-token` / `--worker-token` are static secrets; mTLS (PR-07) provides
+  transport identity on top of them (see §6c), but certificate roles are not tied to
+  the tokens. The coordinator refuses to bind a non-loopback internal address without
+  the internal token, and certificate/token rotation still needs a restart.
 * No automatic Coordinator failover; the orchestrator must restart the single replica.
 * Public TLS termination is still the ingress/load balancer's job; ParseDock's own TLS
   covers the **internal** hop only.
-* No GPU image built in Phase 0 (recipe and acceptance steps in `GPU-REPORT.md` §4).
+* No GPU image built in Phase 0 (recipe and acceptance steps in `history/GPU-REPORT.md` §4).
 * `apache/tika:latest-full` is a moving tag in the PoC; pin the digest in production.
 * **Distribution gate.** `make license-audit` writes `build/sbom/<image>.json` and
   fails when an image contains a GPL library. `parsedock-worker-cpu` currently fails

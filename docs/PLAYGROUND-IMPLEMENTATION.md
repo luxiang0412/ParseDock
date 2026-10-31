@@ -1,8 +1,8 @@
 # ParseDock Playground — implementation notes
 
-> Built on `main` after PR #27, following `docs/ParseDock-Playground-Implementation-Guide.md`
-> (PG-01…PG-10). Baseline check in `docs/PLAYGROUND-READINESS.md`; test evidence in
-> `docs/PLAYGROUND-TEST-REPORT.md`.
+> Built on `main` after PR #27, following `docs/briefs/ParseDock-Playground-Implementation-Guide.md`
+> (PG-01…PG-10). Baseline check in `docs/history/PLAYGROUND-READINESS.md`; test evidence in
+> `docs/history/PLAYGROUND-TEST-REPORT.md`.
 
 ## 1. What it does
 
@@ -123,7 +123,7 @@ attempt (the same class of bug as the earlier relative `--work-dir`). Covered by
 ## 8. Known limitations
 
 * **PPTX and legacy `.doc/.xls/.ppt`** have no original preview (metadata card); the parsed
-  Markdown is still shown. `docs/PLAYGROUND-READINESS.md` §3 explains why.
+  Markdown is still shown. `docs/history/PLAYGROUND-READINESS.md` §3 explains why.
 * **DOCX/XLSX previews are approximations**: layout is close, not pixel-identical; formulas are
   shown as text, no charts/pivots; large files are refused by the preview caps.
 * **PDF preview stops at 60 pages** (the parse result covers all pages).

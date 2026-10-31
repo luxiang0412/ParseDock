@@ -41,6 +41,7 @@ func MemoryBytes() int64 {
 // GPU describes one detected accelerator.
 type GPU struct {
 	Index      int    `json:"index"`
+	UUID       string `json:"uuid,omitempty"`
 	Name       string `json:"name"`
 	MemoryMB   int64  `json:"memory_mb"`
 	DriverVers string `json:"driver_version"`
@@ -112,28 +113,78 @@ func DetectGPU(ctx context.Context) ([]GPU, error) {
 	c, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(c, "nvidia-smi",
-		"--query-gpu=index,name,memory.total,driver_version",
+		"--query-gpu=index,uuid,name,memory.total,driver_version",
 		"--format=csv,noheader,nounits").Output()
 	if err != nil {
 		return nil, err
 	}
+	return parseGPUList(string(out)), nil
+}
+
+// parseGPUList parses `nvidia-smi --query-gpu=index,uuid,name,memory.total,driver_version
+// --format=csv,noheader,nounits`.
+func parseGPUList(out string) []GPU {
 	var gpus []GPU
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
 		parts := strings.Split(line, ",")
-		if len(parts) < 4 {
+		if len(parts) < 5 {
 			continue
 		}
 		idx, _ := strconv.Atoi(strings.TrimSpace(parts[0]))
-		mem, _ := strconv.ParseInt(strings.TrimSpace(parts[2]), 10, 64)
+		mem, _ := strconv.ParseInt(strings.TrimSpace(parts[3]), 10, 64)
 		gpus = append(gpus, GPU{
 			Index:      idx,
-			Name:       strings.TrimSpace(parts[1]),
+			UUID:       strings.TrimSpace(parts[1]),
+			Name:       strings.TrimSpace(parts[2]),
 			MemoryMB:   mem,
-			DriverVers: strings.TrimSpace(parts[3]),
+			DriverVers: strings.TrimSpace(parts[4]),
 		})
 	}
-	return gpus, nil
+	return gpus
 }
+
+// SelectGPU returns the entry of gpus that names the device visible (an nvidia-smi index
+// or a GPU UUID, as VisibleGPU returns it; CUDA also accepts a unique UUID prefix). It is
+// the same device FreeVRAMMB measures, so the model, the total and the free memory a
+// worker registers always describe one card - on a multi-GPU host gpus[0] is not
+// necessarily the card the parser runs on.
+func SelectGPU(gpus []GPU, visible string) (GPU, bool) {
+	visible = strings.TrimSpace(visible)
+	if visible == "" {
+		return GPU{}, false
+	}
+	if n, err := strconv.Atoi(visible); err == nil {
+		for _, g := range gpus {
+			if g.Index == n {
+				return g, true
+			}
+		}
+		return GPU{}, false
+	}
+	want := strings.ToLower(visible)
+	var match GPU
+	matches := 0
+	for _, g := range gpus {
+		uuid := strings.ToLower(g.UUID)
+		if uuid == "" {
+			continue
+		}
+		if uuid == want {
+			return g, true
+		}
+		if strings.HasPrefix(uuid, want) {
+			match = g
+			matches++
+		}
+	}
+	if matches == 1 {
+		return match, true
+	}
+	return GPU{}, false
+}
+
+// ActiveGPU is SelectGPU for the device this process will use (VisibleGPU).
+func ActiveGPU(gpus []GPU) (GPU, bool) { return SelectGPU(gpus, VisibleGPU()) }
 
 // Container reports whether we appear to run inside a container.
 func Container() bool {

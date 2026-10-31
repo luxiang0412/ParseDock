@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from acceptance import (  # noqa: E402
-    API_TOKEN, FIX, INTERNAL_TOKEN, ROOT, Stack, http_request, multipart,
+    FIX, INTERNAL_TOKEN, ROOT, Stack, http_request, multipart,
 )
 
 RAW = ROOT / "benchmark" / "results" / "raw"
@@ -53,7 +53,7 @@ def main() -> int:
     mock = Stack(
         "pr00-mock", engines="mock", api_count=2, worker_count=1,
         worker_env={"PARSEDOCK_MOCK_DELAY_MS": "250", "PARSEDOCK_MOCK_BLOB_KB": "32768"},
-        api_keys_extra=["rotated-token:itest-owner"],
+        api_keys_extra=["rotated-token-0001:itest-owner"],
         coord_args=["--result-ttl", "120s", "--cleanup-interval", "1s",
                     "--download-lease", "4s", "--worker-lease", "6s",
                     "--tombstone-ttl", "30s", "--work-max-age", "2s",
@@ -303,11 +303,11 @@ def main() -> int:
             jid = r.json()["job_id"]
             final = wait_terminal(mock, jid)
             rotated = http_request(mock.api, "GET", f"/v1/jobs/{jid}",
-                                   headers={"Authorization": "Bearer rotated-token"})
+                                   headers={"Authorization": "Bearer rotated-token-0001"})
             assert rotated.status == 200, (rotated.status, rotated.text()[:200])
             ack = http_request(mock.api, "POST", f"/v1/jobs/{jid}/ack",
                                json.dumps({"result_version": final["result_version"]}).encode(),
-                               {"Authorization": "Bearer rotated-token",
+                               {"Authorization": "Bearer rotated-token-0001",
                                 "Content-Type": "application/json"})
             assert ack.status == 202, (ack.status, ack.text()[:200])
 

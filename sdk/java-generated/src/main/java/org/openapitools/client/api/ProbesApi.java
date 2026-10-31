@@ -255,7 +255,7 @@ public class ProbesApi {
 
     /**
      * Readiness (delegated to the coordinator)
-     * Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;. 
+     * Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;.  The probe is unauthenticated, so &#x60;checks&#x60; carries verdicts only (&#x60;sqlite&#x60;, &#x60;storage&#x60;, &#x60;cleanup&#x60;, &#x60;accepting_uploads&#x60;). Free bytes, the last cleanup time and error details are available to operators on the coordinator&#39;s internal listener with the internal token, and as metrics. 
      * @return Readiness
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -273,7 +273,7 @@ public class ProbesApi {
 
     /**
      * Readiness (delegated to the coordinator)
-     * Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;. 
+     * Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;.  The probe is unauthenticated, so &#x60;checks&#x60; carries verdicts only (&#x60;sqlite&#x60;, &#x60;storage&#x60;, &#x60;cleanup&#x60;, &#x60;accepting_uploads&#x60;). Free bytes, the last cleanup time and error details are available to operators on the coordinator&#39;s internal listener with the internal token, and as metrics. 
      * @return ApiResponse&lt;Readiness&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -292,7 +292,7 @@ public class ProbesApi {
 
     /**
      * Readiness (delegated to the coordinator) (asynchronously)
-     * Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;. 
+     * Returns &#x60;503&#x60; when SQLite is down or the cleaner has stalled. A low disk watermark keeps the service &#x60;ready&#x60; (reads and ACKs must keep working) but reports &#x60;accepting_uploads&#x3D;false&#x60;.  The probe is unauthenticated, so &#x60;checks&#x60; carries verdicts only (&#x60;sqlite&#x60;, &#x60;storage&#x60;, &#x60;cleanup&#x60;, &#x60;accepting_uploads&#x60;). Free bytes, the last cleanup time and error details are available to operators on the coordinator&#39;s internal listener with the internal token, and as metrics. 
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object

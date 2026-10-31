@@ -28,7 +28,7 @@ class Readiness(BaseModel):
     Readiness
     """ # noqa: E501
     status: Optional[StrictStr] = None
-    checks: Optional[Dict[str, Any]] = Field(default=None, json_schema_extra={"examples": [{"sqlite": "ok", "storage": "ok", "free_bytes": 935962714112, "accepting_uploads": True, "last_cleanup": "2026-10-30T07:51:55Z"}]})
+    checks: Optional[Dict[str, Any]] = Field(default=None, json_schema_extra={"examples": [{"sqlite": "ok", "storage": "ok", "cleanup": "ok", "accepting_uploads": True}]})
     __properties: ClassVar[List[str]] = ["status", "checks"]
 
     @field_validator('status')

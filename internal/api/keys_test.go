@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -140,6 +141,136 @@ func TestValidRequestID(t *testing.T) {
 	for _, bad := range []string{"", "with space", "newline\n", strings.Repeat("x", 200)} {
 		if validRequestID(bad) {
 			t.Errorf("%q accepted as request id", bad)
+		}
+	}
+}
+
+func TestCheckKeysLengthPolicy(t *testing.T) {
+	short, err := ParseKeyEntries([]string{"short-key:acme"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckKeys(short, false); err == nil {
+		t.Fatal("a plaintext key under 16 characters must be refused")
+	} else if strings.Contains(err.Error(), "short-key") {
+		t.Fatalf("the error leaks the token: %v", err)
+	}
+	warn, err := CheckKeys(short, true)
+	if err != nil || len(warn) != 1 {
+		t.Fatalf("--dev-insecure must downgrade a short key to a warning: %v %v", warn, err)
+	}
+	mid, _ := ParseKeyEntries([]string{"sixteen-chars-ok:acme"})
+	warn, err = CheckKeys(mid, false)
+	if err != nil || len(warn) != 1 {
+		t.Fatalf("16..31 characters must be accepted with a warning: %v %v", warn, err)
+	}
+	if strings.Contains(warn[0], "sixteen-chars-ok") {
+		t.Fatalf("warning leaks the token: %s", warn[0])
+	}
+	long, _ := ParseKeyEntries([]string{strings.Repeat("k", 32) + ":acme"})
+	if warn, err := CheckKeys(long, false); err != nil || len(warn) != 0 {
+		t.Fatalf("a 32-character key needs no warning: %v %v", warn, err)
+	}
+	// A sha256: entry has no knowable length and is never flagged.
+	hashed, _ := ParseKeyEntries([]string{"sha256:" + strings.Repeat("ab", 32) + ":acme"})
+	if warn, err := CheckKeys(hashed, false); err != nil || len(warn) != 0 {
+		t.Fatalf("hashed entries must pass: %v %v", warn, err)
+	}
+}
+
+func TestCheckKeysDuplicates(t *testing.T) {
+	tok := strings.Repeat("d", 40)
+	sum := sha256.Sum256([]byte(tok))
+	// Same secret, once plaintext and once hashed, for two different owners.
+	keys, err := ParseKeyEntries([]string{tok + ":acme", "sha256:" + hex.EncodeToString(sum[:]) + ":globex"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckKeys(keys, true); err == nil {
+		t.Fatal("one token for two owners must be refused, even with --dev-insecure")
+	} else if strings.Contains(err.Error(), tok) || strings.Contains(err.Error(), hex.EncodeToString(sum[:])) {
+		t.Fatalf("the error leaks the token or hash: %v", err)
+	}
+	same, _ := ParseKeyEntries([]string{tok + ":acme:jobs:read", tok + ":acme"})
+	warn, err := CheckKeys(same, false)
+	if err != nil || len(warn) != 1 {
+		t.Fatalf("a duplicate for the same owner is a warning: %v %v", warn, err)
+	}
+	// Rotation (two different tokens for one owner) is the documented pattern: no noise.
+	rot, _ := ParseKeyEntries([]string{strings.Repeat("a", 32) + ":acme", strings.Repeat("b", 32) + ":acme"})
+	if warn, err := CheckKeys(rot, false); err != nil || len(warn) != 0 {
+		t.Fatalf("rotation pair: %v %v", warn, err)
+	}
+}
+
+// TestNeededScopeMatchesSpec ties the gateway's route->scope mapping to the scope table
+// published in api/openapi.yaml (bearerAuth description), and checks the table covers
+// every /v1 operation. tests/contract/openapi_contract.py runs it as part of the
+// contract phase. The spec is read with line patterns, not a YAML library, to keep the
+// module free of a test-only dependency.
+func TestNeededScopeMatchesSpec(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "api", "openapi.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(string(raw), "\n")
+
+	// Every documented /v1 operation.
+	var ops []string
+	pathRe := regexp.MustCompile(`^  (/\S+):\s*$`)
+	methodRe := regexp.MustCompile(`^    (get|post|put|patch|delete):`)
+	cur := ""
+	for _, l := range lines {
+		if m := pathRe.FindStringSubmatch(l); m != nil {
+			cur = m[1]
+			continue
+		}
+		if m := methodRe.FindStringSubmatch(l); m != nil && strings.HasPrefix(cur, "/v1/") {
+			ops = append(ops, strings.ToUpper(m[1])+" "+cur)
+		}
+	}
+	if len(ops) < 7 {
+		t.Fatalf("parsed only %d /v1 operations from the spec: %v", len(ops), ops)
+	}
+
+	// The scope table: "* `jobs:write` — `POST /v1/jobs`, `POST /v1/parse`". A bare
+	// suffix (`/result`) inherits the previous entry's method on /v1/jobs/{id}.
+	bulletRe := regexp.MustCompile("^\\s*\\* `(jobs:[a-z]+)` — (.+)$")
+	itemRe := regexp.MustCompile("`([^`]+)`")
+	table := map[string]string{}
+	for _, l := range lines {
+		m := bulletRe.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		method := ""
+		for _, it := range itemRe.FindAllStringSubmatch(m[2], -1) {
+			item := it[1]
+			if mm, p, ok := strings.Cut(item, " "); ok {
+				method = mm
+				item = p
+			} else if !strings.HasPrefix(item, "/v1/") {
+				item = "/v1/jobs/{id}" + item
+			}
+			if method == "" {
+				t.Fatalf("scope table item %q has no method", it[1])
+			}
+			table[method+" "+item] = m[1]
+		}
+	}
+	if len(table) == 0 {
+		t.Fatal("no scope table found in the bearerAuth description")
+	}
+	for _, op := range ops {
+		if _, ok := table[op]; !ok {
+			t.Errorf("spec operation %s is missing from the scope table", op)
+		}
+	}
+	for op, scope := range table {
+		method, path, _ := strings.Cut(op, " ")
+		concrete := strings.ReplaceAll(path, "{id}", "job_06GRQJT5HC1DDZMPWRSKSCKM24")
+		if got := NeededScope(method, concrete); got != scope {
+			t.Errorf("NeededScope(%s) = %s, spec scope table says %s", op, got, scope)
 		}
 	}
 }

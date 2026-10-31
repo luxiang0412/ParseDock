@@ -17,12 +17,13 @@
 | Container runtime | Docker Engine 29.9.2, Cgroup v2, overlay2, `nvidia` runtime + CDI (`nvidia.com/gpu=all`) |
 | Compose | Docker Compose v5.6.1 |
 | Java (for Tika / OpenAPI Generator) | OpenJDK 1.8.0_442 |
-| Go | go1.24.4 linux/amd64 |
+| Go | host install go1.24.4 linux/amd64 (Phase 0 measurements). The **build toolchain** is pinned to go1.27.3 by `go.mod` / `images.lock.json` (bumped 2026-11-01: go1.24 is out of support and govulncheck reported 42 reachable stdlib vulnerabilities); with the default `GOTOOLCHAIN=auto` the host `go` switches to it, CI and the Docker build use it with `GOTOOLCHAIN=local` |
 | Python | 3.12.3 |
+| CI tools (pinned in `images.lock.json`) | actionlint 1.7.7, golangci-lint 2.15.0, govulncheck v1.9.0, ruff 0.17.1 — installed into `runtime/` by `scripts/install-*.sh` |
 
 The machine is a workstation, **not** a dedicated benchmark host: the GPU also
 drives the desktop session (~395 MiB VRAM and a few % GPU utilisation at idle).
-GPU figures in `GPU-REPORT.md` therefore use a measured baseline subtraction
+GPU figures in `history/GPU-REPORT.md` therefore use a measured baseline subtraction
 (`nvidia-smi` sampled every 200 ms).
 
 ## 2. Isolation used for the PoC

@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -60,9 +61,10 @@ type Worker struct {
 	Log  *slog.Logger
 	HTTP *http.Client
 
-	inFlight atomic.Int64
-	claimed  atomic.Int64
-	failed   atomic.Int64
+	inFlight   atomic.Int64
+	claimed    atomic.Int64
+	failed     atomic.Int64
+	registered atomic.Bool
 
 	// activeScratch holds attempt directories currently in use, so the scrubber
 	// never deletes a live attempt (F09).
@@ -160,8 +162,18 @@ func (w *Worker) isActiveScratch(dir string) bool {
 	return ok
 }
 
+// scratchJobRe and scratchAttemptRe are the only names the worker creates under its
+// scratch root: <job_id>/a<attempt_no>. Job ids are "job_" plus Crockford base32
+// (jobs.NewJobID); the pattern is a little wider so test and legacy ids still match, but it
+// can never be ".", "..", contain a separator or match a cache directory such as "hub".
+var (
+	scratchJobRe     = regexp.MustCompile(`^job_[A-Za-z0-9_-]{1,124}$`)
+	scratchAttemptRe = regexp.MustCompile(`^a[0-9]{1,9}$`)
+)
+
 // SweepScratch removes attempt directories under root that are older than maxAge
-// and not currently in use. Layout is <root>/<job>/<attempt>/.
+// and not currently in use. Layout is <root>/<job>/<attempt>/; anything not named like
+// that is left alone.
 //
 // It is exported so the behaviour is testable without starting a worker, and so
 // an operator can run it from a maintenance job.
@@ -176,7 +188,10 @@ func SweepScratch(root string, maxAge time.Duration, isActive func(string) bool)
 	cutoff := time.Now().Add(-maxAge)
 	removed := 0
 	for _, jobEntry := range entries {
-		if !jobEntry.IsDir() {
+		// Only names the worker itself creates are candidates: a misconfigured --work-dir
+		// (a volume root holding a model cache, a home directory) must not lose every
+		// directory that is two levels deep and an hour old.
+		if !jobEntry.IsDir() || !scratchJobRe.MatchString(jobEntry.Name()) {
 			continue
 		}
 		jobDir := filepath.Join(root, jobEntry.Name())
@@ -185,7 +200,7 @@ func SweepScratch(root string, maxAge time.Duration, isActive func(string) bool)
 			continue
 		}
 		for _, att := range attempts {
-			if !att.IsDir() {
+			if !att.IsDir() || !scratchAttemptRe.MatchString(att.Name()) {
 				continue
 			}
 			dir := filepath.Join(jobDir, att.Name())
@@ -212,6 +227,7 @@ func SweepScratch(root string, maxAge time.Duration, isActive func(string) bool)
 }
 
 func (w *Worker) register(ctx context.Context) error {
+	free := w.freeVRAMBytes() // measured once: nvidia-smi is not free
 	body := map[string]any{
 		"worker_id":        w.Cfg.WorkerID,
 		"host":             w.Cfg.Host,
@@ -219,7 +235,7 @@ func (w *Worker) register(ctx context.Context) error {
 		"device_type":      w.Cfg.DeviceType,
 		"gpu_model":        w.Cfg.GPUModel,
 		"gpu_memory_bytes": w.Cfg.GPUMemoryBytes,
-		"free_vram_bytes":  w.freeVRAMBytes(),
+		"free_vram_bytes":  free,
 		"cpu_cores":        numCPU(),
 		"memory_bytes":     totalMemory(),
 		"max_concurrency":  w.Cfg.MaxConcurrency,
@@ -240,8 +256,11 @@ func (w *Worker) register(ctx context.Context) error {
 		w.Cfg.WorkerID = out.WorkerID
 		body["worker_id"] = out.WorkerID
 	}
-	free := w.freeVRAMBytes()
-	w.Log.Info("worker registered", "worker_id", w.Cfg.WorkerID, "engines", w.Cfg.Engines,
+	level := slog.LevelInfo
+	if w.registered.Swap(true) {
+		level = slog.LevelDebug // periodic refreshes are not news
+	}
+	w.Log.Log(ctx, level, "worker registered", "worker_id", w.Cfg.WorkerID, "engines", w.Cfg.Engines,
 		"device", w.Cfg.DeviceType, "concurrency", w.Cfg.MaxConcurrency,
 		"free_vram_mb", free>>20, "vram_known", free >= 0,
 		"gpu_inference_verified", false, "gpu_evidence", w.gpuEvidenceAtRegistration())
@@ -269,19 +288,18 @@ func (w *Worker) gpuEvidenceAtRegistration() map[string]string {
 
 func (w *Worker) loop(ctx context.Context, slot int) {
 	lastReg := time.Now()
+	ranTask := false
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
 		}
-		// A GPU worker must refresh its free VRAM before every claim: another slot may
-		// have loaded a model since the last registration, and a stale "roomy" value
-		// would let the coordinator dispatch a job that then OOMs.
-		if isGPUDevice(w.Cfg.DeviceType) || time.Since(lastReg) > time.Minute {
+		if w.registrationDue(time.Since(lastReg), ranTask) {
 			_ = w.register(ctx)
 			lastReg = time.Now()
 		}
+		ranTask = false
 		task, err := w.claim(ctx)
 		if err != nil {
 			w.Log.Warn("claim failed", "err", err)
@@ -299,7 +317,23 @@ func (w *Worker) loop(ctx context.Context, slot int) {
 			w.Log.Warn("task failed", "job", task.JobID, "err", err)
 		}
 		w.inFlight.Add(-1)
+		ranTask = true
 	}
+}
+
+// registrationDue decides whether a slot re-registers (and so re-measures free VRAM)
+// before its next claim.
+//
+// A GPU worker refreshes its free VRAM after every task - a parse is what loads or frees a
+// model - and otherwise at most once per heartbeat interval (never more often than once a
+// second). It used to re-register on every 250 ms idle poll, which ran nvidia-smi twice and
+// an SQLite upsert on the coordinator four times a second per idle GPU worker. CPU workers
+// re-register once a minute as before.
+func (w *Worker) registrationDue(sinceLast time.Duration, ranTask bool) bool {
+	if !isGPUDevice(w.Cfg.DeviceType) {
+		return sinceLast > time.Minute
+	}
+	return ranTask || sinceLast >= max(w.Cfg.HeartbeatInterval, time.Second)
 }
 
 func (w *Worker) claim(ctx context.Context) (*coordClaim, error) {
@@ -337,7 +371,32 @@ type coordClaim struct {
 	MaxLifetimeAt time.Time `json:"max_lifetime_at"`
 }
 
+// attemptFailure is a failure the parse phase wants reported to the coordinator. settle
+// decides, from the lease state and the contexts, whether it is reported as given,
+// re-labelled (parse deadline, worker shutdown) or not reported at all (job cancelled,
+// lease lost).
+type attemptFailure struct {
+	code      string
+	msg       string
+	retryable bool
+}
+
+func failure(code, msg string, retryable bool) *attemptFailure {
+	return &attemptFailure{code: code, msg: msg, retryable: retryable}
+}
+
+// parseOutcome is what a successful parse phase hands to publish.
+type parseOutcome struct {
+	doc      *documentir.Document
+	engine   engines.Engine
+	evidence engines.Execution
+}
+
 func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
+	if !scratchJobRe.MatchString(task.JobID) || task.AttemptNo < 0 {
+		// The id becomes a directory name under the scratch root; never let it escape it.
+		return w.fail(ctx, task, jobs.ErrInternal, "job id is not usable as a scratch directory name", false)
+	}
 	workDir := filepath.Join(w.Cfg.WorkDir, task.JobID, fmt.Sprintf("a%d", task.AttemptNo))
 	if err := os.MkdirAll(workDir, 0o700); err != nil {
 		return w.fail(ctx, task, jobs.ErrInternal, "worker scratch dir: "+err.Error(), false)
@@ -358,97 +417,83 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	parseCtx, cancelParse := context.WithDeadline(ctx, deadline)
 	defer cancelParse()
 
-	var progress atomic.Int64
-	progress.Store(0)
-	stage := atomic.Value{}
-	stage.Store("downloading")
-
 	// Heartbeats start before the input is downloaded and run until the completion response
 	// arrives. Previously they started after the download and stopped before the upload, so a
 	// large input or a slow link could let the lease expire while the worker was visibly
 	// working (and the slot would then be reclaimed under it).
-	hbCtx, cancelHB := context.WithCancel(parseCtx)
-	defer cancelHB()
-	var hbErr atomic.Value
-	go func() {
-		t := time.NewTicker(w.Cfg.HeartbeatInterval)
-		defer t.Stop()
-		for {
-			select {
-			case <-hbCtx.Done():
-				return
-			case <-t.C:
-				// Send on every tick, not only when progress changes: during download and
-				// upload the stage does not change, and a skipped heartbeat is an expiring lease.
-				st, _ := stage.Load().(string)
-				if err := w.heartbeat(hbCtx, task, int(progress.Load()), st); err != nil {
-					hbErr.Store(err)
-					cancelHB()
-					cancelParse()
-					return
-				}
-			}
-		}
-	}()
+	lease := w.startLease(parseCtx, task, cancelParse)
+	defer lease.stop()
 
+	out, ferr := w.parsePhase(parseCtx, task, workDir, deadline, lease)
+	if ferr != nil {
+		return w.settle(ctx, parseCtx, task, lease, ferr)
+	}
+	// The job was cancelled (or the lease lost) while the engine was running: stop here even
+	// if the engine happened to finish, otherwise we would race the cleanup or publish under
+	// a lease another attempt now owns.
+	if stopped, err := w.leaseEnded(task, lease); stopped {
+		return err
+	}
+	return w.publish(parseCtx, task, out)
+}
+
+// parsePhase downloads the input, runs the engine and the post-parse steps (formula
+// enrichment, escalation) that still need the heartbeat-protected lease.
+func (w *Worker) parsePhase(parseCtx context.Context, task *coordClaim, workDir string,
+	deadline time.Time, lease *leaseKeeper) (*parseOutcome, *attemptFailure) {
 	local := filepath.Join(workDir, "input."+task.Format)
 	if err := w.downloadInput(parseCtx, task, local); err != nil {
-		return w.fail(ctx, task, jobs.ErrInternal, "download input: "+err.Error(), true)
+		return nil, failure(jobs.ErrInternal, "download input: "+err.Error(), true)
 	}
 
 	engine, err := w.Reg.Pick(task.EngineHint, task.Format, task.Mode)
 	if err != nil {
-		return w.fail(ctx, task, jobs.ErrUnsupportedType, err.Error(), false)
+		return nil, failure(jobs.ErrUnsupportedType, err.Error(), false)
 	}
 	if task.Device == jobs.DeviceGPURequired && engine.Device() == "cpu" {
-		return w.fail(ctx, task, jobs.ErrGPUUnavailable, "gpu_required job cannot run on a CPU engine", false)
+		return nil, failure(jobs.ErrGPUUnavailable, "gpu_required job cannot run on a CPU engine", false)
 	}
-	stage.Store("parsing")
+	lease.setStage("parsing")
 
 	var evidence engines.Execution
 	result, perr := engine.Parse(parseCtx, engines.Request{
 		JobID: task.JobID, Path: local, Format: task.Format, MimeType: task.MimeType,
 		Mode: task.Mode, Device: w.Cfg.DeviceType, WorkDir: workDir,
-		Timeout: deadline.Sub(time.Now()), PageLimit: 0,
-		Progress: func(p int, s string) {
-			progress.Store(int64(p))
-			stage.Store(s)
-		},
+		Timeout: time.Until(deadline), PageLimit: 0,
+		Progress:        lease.report,
 		ReportExecution: func(e engines.Execution) { evidence = e },
 	})
-	if perr == nil && evidence.Kind == "" {
+	if perr != nil {
+		var ee *engines.Error
+		if errors.As(perr, &ee) {
+			return nil, failure(ee.Code, ee.Message, ee.Retryable)
+		}
+		return nil, failure(jobs.ErrInternal, perr.Error(), true)
+	}
+	if evidence.Kind == "" {
 		evidence = engines.UnknownEvidence("engine:no-report",
 			engine.Name()+" reported no evidence about the execution device")
 	}
-	if perr == nil {
-		w.Log.Info("execution evidence", "job", task.JobID, "engine", engine.Name(),
-			"requested_device", task.Device, "kind", string(evidence.Kind),
-			"source", evidence.Source)
-	}
+	w.Log.Info("execution evidence", "job", task.JobID, "engine", engine.Name(),
+		"requested_device", task.Device, "kind", string(evidence.Kind),
+		"source", evidence.Source)
 	// A gpu_required job is published only when this task provably ran on a GPU.
 	// The check happens before enrichment, escalation and upload, so an
 	// unprovable or CPU-executed attempt can never surface as a GPU success.
-	if perr == nil {
-		if err := gpuRequirementError(task.Device, engine.Name(), evidence); err != nil {
-			return w.fail(ctx, task, jobs.ErrGPUUnavailable, err.Error(), false)
-		}
+	if err := gpuRequirementError(task.Device, engine.Name(), evidence); err != nil {
+		return nil, failure(jobs.ErrGPUUnavailable, err.Error(), false)
 	}
 	// Enrichment and escalation both run inside the heartbeat-protected phase: a
 	// large workbook can take a while to unzip, and a lost lease would let the
 	// coordinator reclaim a job that is still being processed.
-	if perr == nil && engines.ShouldEnrichFormulas(task.Format) {
+	if engines.ShouldEnrichFormulas(task.Format) {
 		n, warns, eerr := engines.EnrichXLSXFormulas(parseCtx, local, result)
 		if eerr != nil {
 			// Enrichment is best effort only for genuine parse problems; a
 			// cancelled/expired context must fail the task instead of uploading a
-			// half-enriched result after the deadline.
+			// half-enriched result after the deadline (settle sorts out which).
 			if parseCtx.Err() != nil {
-				if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
-					w.Log.Info("task cancelled during formula enrichment", "job", task.JobID)
-					return nil
-				}
-				return w.fail(ctx, task, jobs.ErrTimeout,
-					"parse deadline exceeded during formula enrichment", true)
+				return nil, failure(jobs.ErrTimeout, "parse deadline exceeded during formula enrichment", true)
 			}
 			w.Log.Warn("formula enrichment failed", "job", task.JobID, "err", eerr)
 		} else {
@@ -458,38 +503,57 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 			}
 		}
 	}
-	if perr == nil {
-		var altEvidence engines.Execution
-		result, engine, altEvidence = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
-		if altEvidence.Kind != "" {
-			evidence = altEvidence
-		}
-		if err := gpuRequirementError(task.Device, engine.Name(), evidence); err != nil {
-			return w.fail(ctx, task, jobs.ErrGPUUnavailable, err.Error(), false)
-		}
+	var altEvidence engines.Execution
+	result, engine, altEvidence = w.maybeEscalate(parseCtx, task, engine, result, workDir, local)
+	if altEvidence.Kind != "" {
+		evidence = altEvidence
 	}
-	if e, ok := hbErr.Load().(error); ok && e != nil && isCancelled(e) {
-		// The job was cancelled while the engine was running: stop here even if
-		// the engine happened to finish, otherwise we would race the cleanup.
+	if err := gpuRequirementError(task.Device, engine.Name(), evidence); err != nil {
+		return nil, failure(jobs.ErrGPUUnavailable, err.Error(), false)
+	}
+	return &parseOutcome{doc: result, engine: engine, evidence: evidence}, nil
+}
+
+// settle reports a failed attempt. The lease state wins over the failure itself: a
+// cancelled job is a clean stop and a lost lease is not this worker's to report. A parse
+// that hit its deadline is a timeout whatever the engine said about being interrupted, and
+// a worker that is shutting down hands the job back as retryable.
+func (w *Worker) settle(ctx, parseCtx context.Context, task *coordClaim, lease *leaseKeeper, f *attemptFailure) error {
+	if stopped, err := w.leaseEnded(task, lease); stopped {
+		return err
+	}
+	if ctx.Err() != nil {
+		return w.fail(ctx, task, jobs.ErrInternal, "worker stopped during the attempt: "+f.msg, true)
+	}
+	if errors.Is(parseCtx.Err(), context.DeadlineExceeded) && f.code != jobs.ErrTimeout {
+		return w.fail(ctx, task, jobs.ErrTimeout, "parse deadline exceeded: "+f.msg, true)
+	}
+	return w.fail(ctx, task, f.code, f.msg, f.retryable)
+}
+
+// leaseEnded reports whether the coordinator took the attempt away, and what to return.
+func (w *Worker) leaseEnded(task *coordClaim, lease *leaseKeeper) (bool, error) {
+	reason, detail := lease.ended()
+	switch reason {
+	case leaseCancelled:
+		// A cancelled job is a clean stop, not a failure: the coordinator has
+		// already moved it to `cancelled` and marked this attempt cancelled.
 		w.Log.Info("task cancelled by coordinator", "job", task.JobID)
-		return nil
+		return true, nil
+	case leaseLost:
+		// Nothing is reported: the coordinator no longer treats this attempt as the owner
+		// and requeues the job when the lease is reaped. Reporting `cancelled` here (as
+		// before) failed a healthy job permanently after a transient outage.
+		w.Log.Warn("lease lost; abandoning the attempt without reporting it", "job", task.JobID,
+			"attempt", task.AttemptNo, "reason", detail)
+		return true, fmt.Errorf("%s: %s", jobs.ErrLeaseLost, detail)
 	}
-	if perr != nil {
-		if e, ok := hbErr.Load().(error); ok && e != nil {
-			// A cancelled job is a clean stop, not a failure: the coordinator has
-			// already moved it to `cancelled` and marked this attempt cancelled.
-			if isCancelled(e) {
-				w.Log.Info("task cancelled by coordinator", "job", task.JobID)
-				return nil
-			}
-			return w.fail(ctx, task, jobs.ErrCancelled, e.Error(), false)
-		}
-		var ee *engines.Error
-		if errors.As(perr, &ee) {
-			return w.fail(ctx, task, ee.Code, ee.Message, ee.Retryable)
-		}
-		return w.fail(ctx, task, jobs.ErrInternal, perr.Error(), true)
-	}
+	return false, nil
+}
+
+// publish finalises the document and uploads it under the attempt's lease.
+func (w *Worker) publish(parseCtx context.Context, task *coordClaim, out *parseOutcome) error {
+	result, engine, evidence := out.doc, out.engine, out.evidence
 	// Legacy OLE2 Office keeps text and tables only; say so instead of letting a
 	// consumer assume page geometry exists.
 	if isLegacyFormat(task.Format) {
@@ -537,7 +601,7 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 		size += int64(len(el.Text))
 	}
 	if size == 0 {
-		return w.fail(ctx, task, jobs.ErrMalformed, "engine produced no text", false)
+		return w.fail(parseCtx, task, jobs.ErrMalformed, "engine produced no text", false)
 	}
 	if err := w.uploadResult(parseCtx, task, engine, result); err != nil {
 		return err
@@ -765,12 +829,16 @@ func classifyUploadRejection(raw []byte) (string, string) {
 	return jobs.ErrInternal, "result rejected by the coordinator"
 }
 
-func (w *Worker) heartbeat(ctx context.Context, task *coordClaim, progress int, stage string) error {
+// heartbeat renews the lease and returns the coordinator's new lease_until.
+func (w *Worker) heartbeat(ctx context.Context, task *coordClaim, progress int, stage string) (time.Time, error) {
 	body := map[string]any{"lease_token": task.LeaseToken, "progress_percent": progress, "stage": stage}
 	var out struct {
 		LeaseUntil time.Time `json:"lease_until"`
 	}
-	return w.postJSON(ctx, "/internal/tasks/"+task.JobID+"/heartbeat", body, &out)
+	if err := w.postJSON(ctx, "/internal/tasks/"+task.JobID+"/heartbeat", body, &out); err != nil {
+		return time.Time{}, err
+	}
+	return out.LeaseUntil, nil
 }
 
 func (w *Worker) fail(ctx context.Context, task *coordClaim, code, msg string, retryable bool) error {
@@ -822,7 +890,16 @@ func (w *Worker) postJSONOptional(ctx context.Context, path string, in any, out 
 	}
 	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if resp.StatusCode >= 300 {
-		return false, fmt.Errorf("%s: %s", resp.Status, truncate(string(raw), 300))
+		se := &statusError{StatusCode: resp.StatusCode, Status: resp.Status, body: truncate(string(raw), 300)}
+		var env struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(raw, &env) == nil {
+			se.Code = env.Error.Code
+		}
+		return false, se
 	}
 	if out != nil && len(raw) > 0 {
 		if err := json.Unmarshal(raw, out); err != nil {
@@ -832,10 +909,25 @@ func (w *Worker) postJSONOptional(ctx context.Context, path string, in any, out 
 	return true, nil
 }
 
-// isCancelled reports whether the coordinator rejected the heartbeat because the
-// job was cancelled (as opposed to the lease being lost).
-func isCancelled(err error) bool {
-	return strings.Contains(err.Error(), jobs.ErrCancelled)
+// statusError is a non-2xx answer from the coordinator, with the stable error code from
+// its envelope when there was one. Its text is unchanged from the plain error it replaces.
+type statusError struct {
+	StatusCode int
+	Status     string
+	Code       string
+	body       string
+}
+
+func (e *statusError) Error() string { return e.Status + ": " + e.body }
+
+// errorCode returns the coordinator's error code carried by err, or "" (a transport
+// failure, or an answer without an envelope).
+func errorCode(err error) string {
+	var se *statusError
+	if errors.As(err, &se) {
+		return se.Code
+	}
+	return ""
 }
 
 func sleepJitter(ctx context.Context, d time.Duration) {
@@ -865,7 +957,7 @@ func numCPU() int        { return sysinfo.CPU() }
 func totalMemory() int64 { return sysinfo.MemoryBytes() }
 
 // freeVRAMBytes reports the currently free GPU memory, or -1 when unknown. It is
-// queried on every register/heartbeat so admission uses fresh data instead of the
+// queried on every registration (see registrationDue) so admission uses fresh data instead of the
 // value captured at start-up.
 func (w *Worker) freeVRAMBytes() int64 {
 	if !isGPUDevice(w.Cfg.DeviceType) {

@@ -11,6 +11,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -51,6 +53,9 @@ type flags struct {
 	dbPath           string
 	workDir          string
 	internalToken    string
+	workerToken      string
+	trustedProxies   string
+	bodyReadTimeout  time.Duration
 	apiKeys          string
 	apiKeysFile      string
 	quotaConcurrent  int
@@ -119,14 +124,22 @@ type flags struct {
 }
 
 func main() {
-	f := parseFlags()
+	f, err := parseFlags()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fatal:", err)
+		os.Exit(2)
+	}
 	if err := run(f); err != nil && !errors.Is(err, context.Canceled) {
 		fmt.Fprintln(os.Stderr, "fatal:", err)
 		os.Exit(1)
 	}
 }
 
-func parseFlags() *flags {
+// parseFlags reads flags with PARSEDOCK_* environment defaults. A malformed numeric or
+// duration environment value is a startup error: silently falling back to the default
+// would run a deployment with limits nobody configured.
+func parseFlags() (*flags, error) {
+	envErrs = nil
 	f := &flags{}
 	fs := flag.NewFlagSet("docparse", flag.ExitOnError)
 	fs.StringVar(&f.role, "role", env("PARSEDOCK_ROLE", "standalone"), "standalone|coordinator|api|worker")
@@ -136,9 +149,16 @@ func parseFlags() *flags {
 	fs.StringVar(&f.dataDir, "data-dir", env("PARSEDOCK_DATA_DIR", "./runtime/data"), "data directory (coordinator only)")
 	fs.StringVar(&f.dbPath, "db", env("PARSEDOCK_DB", ""), "sqlite path (default <data-dir>/coordinator.db)")
 	fs.StringVar(&f.workDir, "work-dir", env("PARSEDOCK_WORK_DIR", "./runtime/work"), "worker scratch directory")
-	fs.DurationVar(&f.pollInterval, "poll-interval", durationEnv("PARSEDOCK_POLL_INTERVAL", 250*time.Millisecond),
+	fs.DurationVar(&f.pollInterval, "poll-interval", durEnv("PARSEDOCK_POLL_INTERVAL", 250*time.Millisecond),
 		"how long an idle worker waits between claim attempts; this is the latency floor when the queue is shallow")
-	fs.StringVar(&f.internalToken, "internal-token", env("PARSEDOCK_INTERNAL_TOKEN", ""), "shared internal token")
+	fs.StringVar(&f.internalToken, "internal-token", env("PARSEDOCK_INTERNAL_TOKEN", ""),
+		"gateway<->coordinator token; the only credential that may assert an owner (generated in-process for standalone)")
+	fs.StringVar(&f.workerToken, "worker-token", env("PARSEDOCK_WORKER_TOKEN", ""),
+		"separate worker credential (coordinator + workers); when set, workers cannot call /v1 or operator endpoints (generated in-process for standalone)")
+	fs.StringVar(&f.trustedProxies, "trusted-proxies", env("PARSEDOCK_TRUSTED_PROXIES", ""),
+		"api: comma list of CIDRs/addresses whose X-Forwarded-For is believed (default none: the TCP peer is the client)")
+	fs.DurationVar(&f.bodyReadTimeout, "body-read-timeout", durEnv("PARSEDOCK_BODY_READ_TIMEOUT", api.DefaultBodyReadTimeout),
+		"api/coordinator: max time to receive one request body (bodies <= 1 MiB: at most 1m); 0 disables")
 	fs.StringVar(&f.apiKeys, "api-keys", env("PARSEDOCK_API_KEYS", ""), "comma list <token:owner[:scopes]> or sha256:<hex>:owner[:scopes]")
 	fs.StringVar(&f.apiKeysFile, "api-keys-file", env("PARSEDOCK_API_KEYS_FILE", ""), "file with one key entry per line (preferred: argv is world-readable)")
 	fs.IntVar(&f.quotaConcurrent, "quota-concurrent", intEnv("PARSEDOCK_QUOTA_CONCURRENT", 0), "max queued+running jobs per owner (0 = unlimited)")
@@ -165,8 +185,8 @@ func parseFlags() *flags {
 	fs.IntVar(&f.maxPages, "max-pages", intEnv("PARSEDOCK_MAX_PAGES", 2000),
 		"PDF page limit; the pre-flight count is a heuristic, so this bounds work rather than guaranteeing a precise cut")
 	fs.Int64Var(&f.minFreeGB, "min-free-gb", int64Env("PARSEDOCK_MIN_FREE_GB", 2), "disk safety watermark (GiB)")
-	fs.Float64Var(&f.rateLimit, "rate-limit", floatEnv("PARSEDOCK_RATE_LIMIT", 20), "per-owner requests/second")
-	fs.IntVar(&f.rateBurst, "rate-burst", intEnv("PARSEDOCK_RATE_BURST", 40), "per-owner burst")
+	fs.Float64Var(&f.rateLimit, "rate-limit", floatEnv("PARSEDOCK_RATE_LIMIT", 20), "per-owner requests/second, per API replica (0 disables)")
+	fs.IntVar(&f.rateBurst, "rate-burst", intEnv("PARSEDOCK_RATE_BURST", 40), "per-owner burst, per API replica")
 
 	fs.StringVar(&f.workerID, "worker-id", env("PARSEDOCK_WORKER_ID", ""), "worker id (generated when empty)")
 	fs.IntVar(&f.workerConcurrency, "worker-concurrency", intEnv("PARSEDOCK_WORKER_CONCURRENCY", 1), "concurrent tasks per worker")
@@ -206,7 +226,66 @@ func parseFlags() *flags {
 	fs.BoolVar(&f.check, "check", false, "print capabilities and exit")
 	fs.BoolVar(&f.version, "version", false, "print the service and API versions as JSON and exit")
 	_ = fs.Parse(os.Args[1:])
-	return f
+	if len(envErrs) > 0 {
+		return nil, fmt.Errorf("invalid environment: %w", errors.Join(envErrs...))
+	}
+	// A short --worker-lease (the lifecycle tests use 5 s) with the default heartbeat would
+	// let every lease expire between renewals. Only an explicitly configured heartbeat is
+	// held to the rule in validate(); the default follows the lease.
+	heartbeatSet := os.Getenv("PARSEDOCK_HEARTBEAT") != ""
+	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "heartbeat" {
+			heartbeatSet = true
+		}
+	})
+	if !heartbeatSet && f.workerLease > 0 && f.heartbeat >= f.workerLease {
+		f.heartbeat = f.workerLease / 3
+	}
+	return f, nil
+}
+
+// validate rejects flag combinations that would only fail later (or never visibly).
+func (f *flags) validate() error {
+	if f.maxUploadMB <= 0 {
+		return fmt.Errorf("--max-upload-mb must be > 0, got %d", f.maxUploadMB)
+	}
+	if f.maxExpandedMB <= 0 {
+		return fmt.Errorf("--max-expanded-mb must be > 0, got %d", f.maxExpandedMB)
+	}
+	if f.maxPages <= 0 {
+		return fmt.Errorf("--max-pages must be > 0, got %d", f.maxPages)
+	}
+	if f.heartbeat <= 0 {
+		return fmt.Errorf("--heartbeat must be > 0, got %s", f.heartbeat)
+	}
+	// The worker lease is the coordinator's setting; a worker cannot see it.
+	if (f.role == "coordinator" || f.role == "standalone") && f.heartbeat >= f.workerLease {
+		return fmt.Errorf("--heartbeat (%s) must be shorter than --worker-lease (%s), or every lease expires between renewals",
+			f.heartbeat, f.workerLease)
+	}
+	if f.rateLimit < 0 {
+		return fmt.Errorf("--rate-limit must be >= 0 (0 disables it), got %v", f.rateLimit)
+	}
+	if f.bodyReadTimeout < 0 {
+		return fmt.Errorf("--body-read-timeout must be >= 0 (0 disables it), got %s", f.bodyReadTimeout)
+	}
+	if _, err := api.ParseTrustedProxies(f.trustedProxies); err != nil {
+		return err
+	}
+	// A worker may hold only the worker token; the pair is the coordinator's concern.
+	if f.role == "coordinator" || f.role == "standalone" {
+		return coordinator.ValidateTokens(f.internalToken, f.workerToken)
+	}
+	return nil
+}
+
+// workerCredential is what a worker presents: the worker token when the deployment
+// has split the credentials, otherwise the shared internal token.
+func (f *flags) workerCredential() string {
+	if f.workerToken != "" {
+		return f.workerToken
+	}
+	return f.internalToken
 }
 
 func run(f *flags) error {
@@ -264,6 +343,21 @@ func run(f *flags) error {
 	if err := engines.ValidateOCRBackend(f.xbergOCRBackend); err != nil {
 		return err
 	}
+	if f.role == "standalone" {
+		if err := ensureStandaloneTokens(f, logger); err != nil {
+			return err
+		}
+	}
+	if err := f.validate(); err != nil {
+		return err
+	}
+	if f.devInsecure {
+		logger.Warn("DEV-INSECURE MODE: anonymous /v1 access is allowed when no API keys are configured, " +
+			"short API keys are accepted and the internal-listener binding check is off. Never run this in production.")
+	}
+	if f.tlsInsecure {
+		logger.Warn("--tls-insecure: the coordinator certificate is NOT verified; any host on the path can impersonate it. Development only.")
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -311,18 +405,33 @@ func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *
 	// a collector can ship them separately by `audit=true`.
 	svc.Audit = log
 	srv := coordinator.NewServer(svc, f.internalToken, log)
+	srv.WorkerToken = f.workerToken
+	if f.workerToken == "" {
+		log.Warn("no --worker-token: workers share the gateway's internal token, so a compromised worker host " +
+			"can act as any owner on /v1. Set PARSEDOCK_WORKER_TOKEN on the coordinator and the workers.")
+	}
 
-	go svc.StartCleanup(ctx)
+	cleanupCtx, stopCleanup := context.WithCancel(ctx)
+	defer stopCleanup()
+	cleanupDone := make(chan struct{})
+	go func() {
+		defer close(cleanupDone)
+		svc.StartCleanup(cleanupCtx)
+	}()
 
 	mux := http.NewServeMux()
 	mux.Handle("/internal/", srv.InternalMux())
+	// /v1 must be served here: it is the gateway's upstream. It accepts only the
+	// internal (gateway) token, never the worker token.
 	mux.Handle("/v1/", srv.PublicMux())
 	mux.Handle("/healthz", srv.PublicMux())
 	mux.Handle("/readyz", srv.PublicMux())
 
 	httpSrv := &http.Server{
-		Addr:              f.internalListen,
-		Handler:           mux,
+		Addr: f.internalListen,
+		// Uploads arrive through the gateway and results from workers (up to 256 MiB):
+		// bound how long one body may take.
+		Handler:           api.BodyReadDeadline(mux, f.bodyReadTimeout),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		// No WriteTimeout: result downloads and SSE are long-lived.
@@ -341,11 +450,24 @@ func runCoordinator(ctx context.Context, f *flags, cfg coordinator.Config, log *
 	if ready != nil {
 		close(ready)
 	}
-	return serve(ctx, httpSrv, log)
+	err = serve(ctx, httpSrv, log)
+	// Let the cleaner finish its pass before the deferred db.Close.
+	stopCleanup()
+	select {
+	case <-cleanupDone:
+	case <-time.After(10 * time.Second):
+		log.Warn("cleanup pass still running at shutdown; closing the database anyway")
+	}
+	return err
 }
 
 func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
-	keys, err := buildAPIKeys(f)
+	return runGateway(ctx, f, f.coordinatorBaseURL(), log)
+}
+
+// runGateway builds and serves the API gateway (api role and standalone).
+func runGateway(ctx context.Context, f *flags, coordinatorURL string, log *slog.Logger) error {
+	keys, err := buildAPIKeys(f, log)
 	if err != nil {
 		return err
 	}
@@ -353,16 +475,26 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	trusted, err := api.ParseTrustedProxies(f.trustedProxies)
+	if err != nil {
+		return err
+	}
+	bodyTimeout := f.bodyReadTimeout
+	if bodyTimeout == 0 {
+		bodyTimeout = -1 // flag 0 = disabled; api.Config 0 = default
+	}
 	gw, err := api.New(api.Config{
-		CoordinatorURL: f.coordinatorBaseURL(),
-		InternalToken:  f.internalToken,
-		Keys:           keys,
-		DevInsecure:    f.devInsecure,
-		RateLimitRPS:   f.rateLimit,
-		RateBurst:      f.rateBurst,
-		MaxUploadBytes: f.maxUploadMB << 20,
-		TLS:            clientTLS,
-		Log:            log,
+		CoordinatorURL:  coordinatorURL,
+		InternalToken:   f.internalToken,
+		Keys:            keys,
+		DevInsecure:     f.devInsecure,
+		RateLimitRPS:    f.rateLimit,
+		RateBurst:       f.rateBurst,
+		MaxUploadBytes:  f.maxUploadMB << 20,
+		TLS:             clientTLS,
+		Log:             log,
+		BodyReadTimeout: bodyTimeout,
+		TrustedProxies:  trusted,
 	})
 	if err != nil {
 		return err
@@ -373,9 +505,11 @@ func runAPI(ctx context.Context, f *flags, log *slog.Logger) error {
 		Handler:           gw.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// No WriteTimeout: result downloads and SSE are long-lived; uploads are bounded
+		// by the per-request body deadline instead.
 	}
-	log.Info("api gateway listening", "addr", f.listen, "coordinator", f.coordinatorURL,
-		"owners", len(keys), "dev_insecure", f.devInsecure)
+	log.Info("api gateway listening", "addr", f.listen, "coordinator", coordinatorURL,
+		"owners", len(keys), "dev_insecure", f.devInsecure, "trusted_proxies", len(trusted))
 	return serve(ctx, srv, log)
 }
 
@@ -417,7 +551,7 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	gpus, _ := sysinfo.DetectGPU(ctx)
 	cfg := worker.Config{
 		CoordinatorURL:    f.coordinatorBaseURL(),
-		InternalToken:     f.internalToken,
+		InternalToken:     f.workerCredential(),
 		WorkerID:          f.workerID,
 		DeviceType:        f.deviceType,
 		MaxConcurrency:    f.workerConcurrency,
@@ -435,9 +569,13 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	if cfg.WorkerID == "" {
 		cfg.WorkerID = jobs.NewWorkerID()
 	}
-	if f.deviceType == "gpu" && len(gpus) > 0 {
-		cfg.GPUModel = gpus[0].Name
-		cfg.GPUMemoryBytes = gpus[0].MemoryMB << 20
+	// Describe the same card the free-VRAM measurement uses (CUDA_VISIBLE_DEVICES[0], else
+	// device 0); gpus[0] is not that card on a multi-GPU host with a pinned device.
+	if f.deviceType == "gpu" || f.deviceType == "cuda" || f.deviceType == "mps" {
+		if g, ok := sysinfo.ActiveGPU(gpus); ok {
+			cfg.GPUModel = g.Name
+			cfg.GPUMemoryBytes = g.MemoryMB << 20
+		}
 	}
 	if err := os.MkdirAll(f.workDir, 0o750); err != nil {
 		return err
@@ -456,75 +594,122 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 	return w.Run(ctx)
 }
 
+// ensureStandaloneTokens gives the in-process api->coordinator and worker->coordinator
+// hops their own random credentials when none were configured. Without this the
+// coordinator listener of a standalone process accepted any local process (and any
+// user on the host) as gateway or worker.
+func ensureStandaloneTokens(f *flags, log *slog.Logger) error {
+	if f.internalToken == "" {
+		t, err := randomToken()
+		if err != nil {
+			return err
+		}
+		f.internalToken = t
+		log.Info("standalone: generated a random in-process internal token; pass --internal-token to call " +
+			"/internal/* (metrics, diagnostics) on the internal listener yourself")
+	}
+	if f.workerToken == "" {
+		t, err := randomToken()
+		if err != nil {
+			return err
+		}
+		f.workerToken = t
+	}
+	return nil
+}
+
+func randomToken() (string, error) {
+	var b [32]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("generate token: %w", err)
+	}
+	return hex.EncodeToString(b[:]), nil
+}
+
+// standaloneStopTimeout bounds each shutdown stage of a standalone process.
+const standaloneStopTimeout = 30 * time.Second
+
 func runStandalone(ctx context.Context, f *flags, cfg coordinator.Config, log *slog.Logger) error {
-	// The in-process worker must dial the listener this process just started.
+	// The in-process worker and gateway dial the listener this process starts; the
+	// scheme follows the server TLS flags.
 	f.coordinatorURL = standaloneBaseURL(f)
-	// In standalone the worker and gateway talk to the local coordinator listener.
-	f.coordinatorURL = "http://" + f.internalListen
+
+	// The coordinator is stopped last (it owns SQLite and closes it on return), so it
+	// does not inherit the signal context directly.
+	coordCtx, stopCoord := context.WithCancel(context.Background())
+	defer stopCoord()
+	edgeCtx, stopEdge := context.WithCancel(ctx)
+	defer stopEdge()
+
 	ready := make(chan struct{})
-	errCh := make(chan error, 2)
+	coordErr := make(chan error, 1)
 	go func() {
-		errCh <- runCoordinator(ctx, f, cfg, log, ready)
+		coordErr <- runCoordinator(coordCtx, f, cfg, log, ready)
 	}()
 	select {
 	case <-ready:
-	case err := <-errCh:
+	case err := <-coordErr:
 		return err
+	case <-ctx.Done():
+		stopCoord()
+		return awaitStop(coordErr, "coordinator", log)
 	case <-time.After(15 * time.Second):
+		stopCoord()
+		_ = awaitStop(coordErr, "coordinator", log)
 		return errors.New("coordinator did not start")
 	}
 
 	apiErr := make(chan error, 1)
 	go func() {
-		keys, kerr := buildAPIKeys(f)
-		if kerr != nil {
-			apiErr <- kerr
-			return
-		}
-		clientTLS, terr := tlsutil.ClientConfig(f.tlsCA, f.tlsCert, f.tlsKey, f.tlsServerName, f.tlsInsecure)
-		if terr != nil {
-			apiErr <- terr
-			return
-		}
-		gw, err := api.New(api.Config{
-			CoordinatorURL: standaloneBaseURL(f),
-			InternalToken:  f.internalToken,
-			Keys:           keys,
-			DevInsecure:    f.devInsecure,
-			RateLimitRPS:   f.rateLimit,
-			RateBurst:      f.rateBurst,
-			MaxUploadBytes: f.maxUploadMB << 20,
-			TLS:            clientTLS,
-			Log:            log,
-		})
-		if err != nil {
-			apiErr <- err
-			return
-		}
-		go gw.FlushThrottle(ctx)
-		srv := &http.Server{
-			Addr:              f.listen,
-			Handler:           gw.Handler(),
-			ReadHeaderTimeout: 10 * time.Second,
-			IdleTimeout:       120 * time.Second,
-		}
-		log.Info("api gateway listening", "addr", f.listen, "coordinator", f.internalListen)
-		apiErr <- serve(ctx, srv, log)
+		apiErr <- runGateway(edgeCtx, f, f.coordinatorURL, log)
 	}()
-
 	workerErr := make(chan error, 1)
 	go func() {
-		workerErr <- runWorker(ctx, f, log)
+		workerErr <- runWorker(edgeCtx, f, log)
 	}()
 
+	var first error
+	coordDone, apiDone, workerDone := false, false, false
 	select {
-	case err := <-errCh:
-		return err
-	case err := <-apiErr:
-		return err
-	case err := <-workerErr:
-		return err
+	case first = <-coordErr:
+		coordDone = true
+	case first = <-apiErr:
+		apiDone = true
+	case first = <-workerErr:
+		workerDone = true
 	case <-ctx.Done():
+	}
+	if errors.Is(first, context.Canceled) {
+		first = nil
+	}
+
+	// Gateway and worker first, so in-flight requests and the worker's final report
+	// still reach a live coordinator; then the coordinator, which closes the database.
+	stopEdge()
+	if !apiDone {
+		_ = awaitStop(apiErr, "api gateway", log)
+	}
+	if !workerDone {
+		_ = awaitStop(workerErr, "worker", log)
+	}
+	stopCoord()
+	if !coordDone {
+		_ = awaitStop(coordErr, "coordinator", log)
+	}
+	return first
+}
+
+// awaitStop waits (bounded) for a component started by runStandalone to return.
+func awaitStop(ch <-chan error, name string, log *slog.Logger) error {
+	select {
+	case err := <-ch:
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Warn("component stopped with an error", "component", name, "err", err)
+			return err
+		}
+		return nil
+	case <-time.After(standaloneStopTimeout):
+		log.Warn("component did not stop in time", "component", name, "timeout", standaloneStopTimeout.String())
 		return nil
 	}
 }
@@ -675,14 +860,31 @@ func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {
 
 // buildAPIKeys loads hashed API credentials from a file (preferred) or from the
 // --api-keys value. Plaintext entries are hashed immediately and never retained.
-func buildAPIKeys(f *flags) ([]api.Key, error) {
-	if f.apiKeysFile != "" {
-		return api.ParseKeysFile(f.apiKeysFile)
-	}
-	if f.apiKeys == "" {
+// The key policy (length, one token per owner) is enforced here, at startup.
+func buildAPIKeys(f *flags, log *slog.Logger) ([]api.Key, error) {
+	var (
+		keys []api.Key
+		err  error
+	)
+	switch {
+	case f.apiKeysFile != "":
+		keys, err = api.ParseKeysFile(f.apiKeysFile)
+	case f.apiKeys != "":
+		keys, err = api.ParseKeys(f.apiKeys)
+	default:
 		return nil, nil
 	}
-	return api.ParseKeys(f.apiKeys)
+	if err != nil {
+		return nil, err
+	}
+	warnings, err := api.CheckKeys(keys, f.devInsecure)
+	if err != nil {
+		return nil, err
+	}
+	for _, w := range warnings {
+		log.Warn(w)
+	}
+	return keys, nil
 }
 
 func splitList(s string) []string {
@@ -735,14 +937,9 @@ func hostname() string {
 	return h
 }
 
-func durationEnv(k string, def time.Duration) time.Duration {
-	if v := os.Getenv(k); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
-		}
-	}
-	return def
-}
+// envErrs collects malformed PARSEDOCK_* values seen while computing flag defaults;
+// parseFlags turns them into a startup error.
+var envErrs []error
 
 func env(k, def string) string {
 	if v := os.Getenv(k); v != "" {
@@ -753,36 +950,48 @@ func env(k, def string) string {
 
 func intEnv(k string, def int) int {
 	if v := os.Getenv(k); v != "" {
-		if n, err := strconv.Atoi(v); err == nil {
-			return n
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			envErrs = append(envErrs, fmt.Errorf("%s=%q is not an integer", k, v))
+			return def
 		}
+		return n
 	}
 	return def
 }
 
 func int64Env(k string, def int64) int64 {
 	if v := os.Getenv(k); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return n
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			envErrs = append(envErrs, fmt.Errorf("%s=%q is not an integer", k, v))
+			return def
 		}
+		return n
 	}
 	return def
 }
 
 func floatEnv(k string, def float64) float64 {
 	if v := os.Getenv(k); v != "" {
-		if n, err := strconv.ParseFloat(v, 64); err == nil {
-			return n
+		n, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			envErrs = append(envErrs, fmt.Errorf("%s=%q is not a number", k, v))
+			return def
 		}
+		return n
 	}
 	return def
 }
 
 func durEnv(k string, def time.Duration) time.Duration {
 	if v := os.Getenv(k); v != "" {
-		if d, err := time.ParseDuration(v); err == nil {
-			return d
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			envErrs = append(envErrs, fmt.Errorf("%s=%q is not a duration (e.g. 30s, 10m)", k, v))
+			return def
 		}
+		return d
 	}
 	return def
 }

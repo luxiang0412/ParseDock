@@ -80,17 +80,34 @@ func loadPool(path string) (*x509.CertPool, error) {
 	return pool, nil
 }
 
+// WorkerResponseHeaderTimeout bounds how long a worker (or any short internal RPC)
+// waits for the coordinator to start answering. Every worker endpoint answers
+// immediately, so a stalled coordinator is detected quickly.
+const WorkerResponseHeaderTimeout = 30 * time.Second
+
 // Transport returns a client transport that keeps the standard dial and handshake
 // timeouts (a zero-valued Transport has none, so a stalled handshake would block a
 // worker's registration forever) and applies cfg. When cfg is nil the default
 // transport is cloned unchanged, so callers can always use the result.
+//
+// The response-header timeout is WorkerResponseHeaderTimeout. Callers whose upstream
+// legitimately holds the response back for longer (the API gateway proxying the
+// synchronous POST /v1/parse, which waits up to two minutes) must use
+// TransportWithResponseHeaderTimeout instead.
 func Transport(cfg *tls.Config) *http.Transport {
+	return TransportWithResponseHeaderTimeout(cfg, WorkerResponseHeaderTimeout)
+}
+
+// TransportWithResponseHeaderTimeout is Transport with an explicit response-header
+// timeout. Zero disables the header timeout (the request context is then the only
+// bound).
+func TransportWithResponseHeaderTimeout(cfg *tls.Config, responseHeaderTimeout time.Duration) *http.Transport {
 	base, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
 		base = &http.Transport{Proxy: http.ProxyFromEnvironment}
 	}
 	t := base.Clone()
-	t.ResponseHeaderTimeout = 30 * time.Second
+	t.ResponseHeaderTimeout = responseHeaderTimeout
 	t.MaxIdleConns = 128
 	t.MaxIdleConnsPerHost = 32
 	t.IdleConnTimeout = 90 * time.Second

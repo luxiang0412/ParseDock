@@ -26,20 +26,24 @@ type Format struct {
 	Magic    func([]byte) bool
 }
 
-func hasPrefix(p string) func([]byte) bool {
-	return func(b []byte) bool { return bytes.HasPrefix(b, []byte(p)) }
-}
+// pdfMagic is the content signature used to *identify* a PDF: the header at offset 0, as
+// the PDF specification requires. Matching "%PDF-" anywhere in the first 1 KiB made a
+// .txt/.md/.csv that merely mentions the string look like a PDF and get rejected as an
+// extension mismatch.
+var pdfMagic = func(b []byte) bool { return bytes.HasPrefix(b, []byte("%PDF-")) }
 
-// pdfMagic accepts the header within the first 1024 bytes: the PDF specification
-// requires it at offset 0, but real-world files (and Adobe Reader) tolerate a
-// short prefix. Verified on the test corpus: 2 files carry a wrapper preamble.
-var pdfMagic = func(b []byte) bool {
+// pdfHeaderNear accepts the header within the first 1024 bytes. Real-world files (and
+// Adobe Reader) tolerate a short preamble before it - some files in the evaluation corpus
+// carry a wrapper prefix - so this lenient check is used only for files that already
+// claim to be a PDF by their extension.
+func pdfHeaderNear(b []byte) bool {
 	window := b
 	if len(window) > 1024 {
 		window = window[:1024]
 	}
 	return bytes.Contains(window, []byte("%PDF-"))
 }
+
 var pngMagic = func(b []byte) bool {
 	return len(b) >= 8 && bytes.Equal(b[:8], []byte{0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A})
 }
@@ -173,6 +177,11 @@ func SniffFormat(fileName string, head []byte, lim Limits) (Format, error) {
 			Code: "unsupported_type",
 			Msg:  "zip archives are not accepted (only docx/xlsx/pptx by extension)",
 		}
+	}
+
+	// A .pdf with a short preamble before its header is still a PDF.
+	if hasExt && byExt.Name == "pdf" && pdfHeaderNear(head) {
+		return byExt, nil
 	}
 
 	// Walk the magic table for non-zip formats.
@@ -402,13 +411,6 @@ func countPageObjects(b []byte) int {
 		}
 		b = b[i+len(needle):]
 	}
-}
-
-func max64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 // looksLikeText rejects binary content that lies about its extension.

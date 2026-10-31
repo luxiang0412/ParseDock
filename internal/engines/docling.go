@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -116,22 +115,7 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 		err = nil
 	}
 	if err != nil {
-		if res != nil && res.TimedOut {
-			return nil, Errf(true, jobs.ErrTimeout, "docling-rs timed out after %s", timeout)
-		}
-		if errors.Is(err, ErrOOM) {
-			return nil, Errf(true, jobs.ErrEngineOOM,
-				"docling-rs exceeded its memory ceiling while parsing this document")
-		}
-		if errors.Is(err, ErrSandboxUnavailable) {
-			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
-		}
-		code, msg := jobs.ErrMalformed, "docling-rs failed"
-		if res != nil {
-			code, msg = ClassifyCLIError(string(res.Stderr))
-			msg = fmt.Sprintf("docling-rs exit %d: %s", res.ExitCode, msg)
-		}
-		return nil, &Error{Code: code, Message: msg}
+		return nil, cliFailure("docling-rs", timeout, res, err)
 	}
 	if req.Progress != nil {
 		req.Progress(80, "engine_done")
@@ -291,10 +275,13 @@ func (d *DoclingServe) Parse(ctx context.Context, req Request) (*documentir.Docu
 	httpReq.Header.Set("Accept", "application/json")
 	resp, err := d.client().Do(httpReq)
 	if err != nil {
-		return nil, Errf(true, jobs.ErrEngineUnavailable, "docling-serve request: %v", err)
+		return nil, httpRequestFailure(ctx, "docling-serve", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	if err != nil {
+		return nil, httpRequestFailure(ctx, "docling-serve", err)
+	}
 	if resp.StatusCode >= 300 {
 		return nil, Errf(resp.StatusCode >= 500, jobs.ErrInternal, "docling-serve %s: %s",
 			resp.Status, tail(string(raw), 300))

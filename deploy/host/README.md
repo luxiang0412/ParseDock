@@ -6,7 +6,12 @@ Docker host, with **two published ports**:
 | Port | Service | Notes |
 | --- | --- | --- |
 | `8080` (`API_PORT`) | public API | Bearer key required; `mode`, upload, poll, download, ACK |
-| `8090` (`PLAYGROUND_PORT`) | Playground UI | Static app + same-origin `/v1` proxy that injects the key |
+| `8090` (`PLAYGROUND_PORT`) | Playground UI | Static app + same-origin `/v1` proxy that injects the key; bound to `127.0.0.1` unless `PLAYGROUND_BIND` is set |
+
+The Playground's key is full-scope for owner `playground`, and nginx injects it into
+every proxied request: whoever reaches port 8090 acts as that owner. It therefore
+listens on loopback by default (reach it with `ssh -L 8090:127.0.0.1:8090 HOST`). Set
+`PLAYGROUND_BIND=0.0.0.0` (or a private address) only behind your own authentication.
 
 The coordinator (`:8081`) and the worker protocol are **not** published: they sit
 on the `backend` network, which is `internal: true`.
@@ -33,10 +38,12 @@ open (`docs/LICENSE-REVIEW.md`).
 
 ```bash
 cp .env.example .env && chmod 600 .env
-openssl rand -hex 24   # generate three of these
+openssl rand -hex 24   # generate four of these
 ```
 
-- `PARSEDOCK_INTERNAL_TOKEN` — coordinator ↔ api/worker
+- `PARSEDOCK_INTERNAL_TOKEN` — coordinator ↔ api (the only credential that may act for an owner)
+- `PARSEDOCK_WORKER_TOKEN` — coordinator ↔ worker, distinct from the internal token; the
+  worker container holds only this one, so it cannot read or ACK results through `/v1`
 - `PARSEDOCK_API_KEYS` — `<token>:<owner>` pairs, comma-separated; the same
   Playground token must appear here as `<token>:playground`
 - `PLAYGROUND_KEY` — a bare token, injected into proxied requests
@@ -57,8 +64,9 @@ docker compose ps                       # 4 services, all running
 ```bash
 curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8080/healthz            # 200
 curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8080/readyz             # 200
-curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8090/                   # 200
-curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8090/internal/metrics   # 404
+# Playground: on the host itself (loopback bind), or HOST if PLAYGROUND_BIND is set
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090/                   # 200
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8090/internal/metrics   # 404
 curl -s -o /dev/null -w '%{http_code}\n' http://HOST:8080/v1/jobs/x          # 401
 KEY=<token from PARSEDOCK_API_KEYS>
 curl -s -H "Authorization: Bearer $KEY" -F file=@sample.pdf \
