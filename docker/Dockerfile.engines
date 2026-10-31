@@ -53,7 +53,22 @@ RUN curl -fsSL -o /tmp/docling-rs \
     | bash -s -- --no-asr --no-chunk \
  && /usr/local/bin/docling-rs --version
 
-ENV PARSEDOCK_XBERG_BIN=/opt/xberg/xberg \
+# PaddleOCR models are not inside the xberg tarball: the engine downloads them into
+# the Hugging Face cache on first use. Workers run without egress, so the cache is
+# seeded here and pointed at by HF_HOME; without this, selecting --xberg-ocr-backend
+# paddle-ocr fails with "Failed to create model-cache lock directory ... Permission
+# denied" (HOME is /home/parsedock, which does not exist in the image).
+RUN mkdir -p /opt/xberg-models /home/parsedock/.cache \
+ && LD_LIBRARY_PATH=/opt/xberg HF_HOME=/opt/xberg-models \
+      /opt/xberg/xberg cache seed-classic-ocr --cache-dir /opt/xberg-models \
+ && chown -R 10001:10001 /opt/xberg-models /home/parsedock \
+ && du -sh /opt/xberg-models
+
+# seed-classic-ocr --cache-dir populates the *hub* cache root (models--<org>--<name>
+# directly under it), which is HF_HUB_CACHE, not HF_HOME/hub.
+ENV HF_HUB_CACHE=/opt/xberg-models \
+    HF_HOME=/opt/xberg-models \
+    PARSEDOCK_XBERG_BIN=/opt/xberg/xberg \
     PARSEDOCK_XBERG_LIB_DIR=/opt/xberg \
     PARSEDOCK_DOCLING_RS_BIN=/usr/local/bin/docling-rs \
     PARSEDOCK_DOCLING_RS_MODELS=/opt/docling-rs \

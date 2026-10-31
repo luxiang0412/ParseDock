@@ -83,6 +83,12 @@ services:
       - --device-type=cpu
       - --heartbeat=10s
       - --max-parse-minutes=30
+      # OCR settings. The language must match the corpus: tesseract needs the right
+      # tessdata language, and a wrong value silently degrades the text. Leaving the
+      # backend empty keeps tesseract; paddle-ocr (PP-OCRv6, in-process) reads both
+      # Chinese and English and is the better choice for a CJK corpus.
+      - --xberg-ocr-lang=${PARSEDOCK_XBERG_OCR_LANG:-eng}
+      - --xberg-ocr-backend=${PARSEDOCK_XBERG_OCR_BACKEND:-}
       # Optional defense in depth: run engines in a private network namespace.
       # Requires CAP_SYS_ADMIN (or unprivileged userns) in the container; the
       # worker fails closed if the sandbox cannot be created.
