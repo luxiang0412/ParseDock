@@ -229,6 +229,18 @@ func parseFlags() (*flags, error) {
 	if len(envErrs) > 0 {
 		return nil, fmt.Errorf("invalid environment: %w", errors.Join(envErrs...))
 	}
+	// A short --worker-lease (the lifecycle tests use 5 s) with the default heartbeat would
+	// let every lease expire between renewals. Only an explicitly configured heartbeat is
+	// held to the rule in validate(); the default follows the lease.
+	heartbeatSet := os.Getenv("PARSEDOCK_HEARTBEAT") != ""
+	fs.Visit(func(fl *flag.Flag) {
+		if fl.Name == "heartbeat" {
+			heartbeatSet = true
+		}
+	})
+	if !heartbeatSet && f.workerLease > 0 && f.heartbeat >= f.workerLease {
+		f.heartbeat = f.workerLease / 3
+	}
 	return f, nil
 }
 

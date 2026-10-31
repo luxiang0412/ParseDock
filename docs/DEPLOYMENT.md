@@ -165,7 +165,7 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--worker-lease` | `PARSEDOCK_WORKER_LEASE` | `60s` | worker lease |
 | `--work-max-age` | `PARSEDOCK_WORK_MAX_AGE` | `1h` | remove crashed attempt dirs older than this |
 | `--work-scrub-interval` | `PARSEDOCK_WORK_SCRUB_INTERVAL` | `10m` | periodic worker scratch sweep |
-| `--heartbeat` | `PARSEDOCK_HEARTBEAT` | `10s` | worker heartbeat; must be > 0, and on the coordinator shorter than `--worker-lease` (startup error otherwise) |
+| `--heartbeat` | `PARSEDOCK_HEARTBEAT` | `10s` | worker heartbeat; must be > 0. When left at the default and `--worker-lease` is not longer than it, the default becomes a third of the lease; an explicitly set value on the coordinator must be shorter than `--worker-lease` (startup error otherwise) |
 | `--tombstone-ttl` | `PARSEDOCK_TOMBSTONE_TTL` | `10m` | 410 window |
 | `--max-upload-mb` | `PARSEDOCK_MAX_UPLOAD_MB` | `64` | upload cap (> 0). Set the **same value on coordinator, API replicas and workers**: a worker refuses inputs above its own limit |
 | `--max-pages` | `PARSEDOCK_MAX_PAGES` | `2000` | PDF page cap; the pre-flight count is a heuristic (head/tail scan), so this bounds work rather than guaranteeing an exact cut. A 553-page audit annexe in the real corpus needed this. |
