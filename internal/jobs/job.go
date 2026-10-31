@@ -56,7 +56,9 @@ const (
 	DeviceGPURequired  = "gpu_required"
 )
 
-// Stable machine-readable error codes.
+// Stable machine-readable error codes. They are a public contract: every code here
+// must also be in the Error.code enum of api/openapi.yaml and in docs/ERROR-CODES.md
+// (tests/contract/openapi_contract.py fails when the three sets differ).
 const (
 	ErrInvalidRequest    = "invalid_request"
 	ErrUnsupportedType   = "unsupported_type"
@@ -79,7 +81,11 @@ const (
 	ErrGone              = "gone"
 	ErrConflict          = "conflict"
 	ErrUnauthorized      = "unauthorized"
+	ErrInsufficientScope = "insufficient_scope"
 	ErrRateLimited       = "rate_limited"
+	// ErrCoordinatorUnavailable is produced by an API replica that cannot reach the
+	// coordinator; the coordinator itself never returns it.
+	ErrCoordinatorUnavailable = "coordinator_unavailable"
 )
 
 // Job is the persisted aggregate.

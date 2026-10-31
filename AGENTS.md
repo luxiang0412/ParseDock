@@ -68,7 +68,9 @@ client → api replica (auth, scopes, rate limit, quota pre-check) → coordinat
 
 ```bash
 make build          # → runtime/bin/docparse (bin/ is a gitignored stray; use runtime/bin)
-make test           # go vet + go test ./... + scoring unit tests (the rest run in `ci-local.sh unit`)
+make test           # go vet + go test on ./cmd/... ./internal/... ./migrations/... + scoring unit tests (the rest run in `ci-local.sh unit`)
+make lint           # golangci-lint (.golangci.yml) + ruff (ruff.toml), pinned via images.lock.json
+make vulncheck      # govulncheck; needs the pinned go (images.lock.json) on PATH, refuses any other
 bash scripts/ci-local.sh all      # exactly what CI runs: static, unit, contract, lifecycle, image (~3.5 min)
 bash scripts/ci-local.sh lifecycle   # T03–T17 + PR-00/02/07/09/12 runtime contracts (fast feedback)
 bash scripts/ci-local.sh engines     # real engines + bench + quality gate (needs installed engines)
@@ -130,7 +132,9 @@ port clashes and confusing failures in the integration tests.
 * **Document IR schema is drift-checked.** Edit
   `internal/documentir/schema/document-ir-0.1.schema.json`, then `make schema` to publish it.
 * **Error codes are a public contract.** Add to `internal/jobs/job.go` + the OpenAPI enum +
-  `docs/DEPLOYMENT.md`; classifiers live in `internal/engines/exec.go` (`ClassifyCLIError`).
+  a row in `docs/ERROR-CODES.md` (`tests/contract/openapi_contract.py` fails unless the three
+  sets are equal), then `make sdk` and `npm run api:types`; classifiers live in
+  `internal/engines/exec.go` (`ClassifyCLIError`).
 * **The Go binary and both SDKs must share one version** (`scripts/check_versions.py`).
 * **The playground never holds the API key** — the dev/preview proxy and nginx inject it from the
   environment. Never rename it to `VITE_*` (Vite inlines those) and never ACK a result

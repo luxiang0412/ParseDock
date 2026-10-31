@@ -12,7 +12,7 @@
 | Worktree | clean (0 modified files) | `git status --porcelain` |
 | Merged PRs | #3 (real-corpus defects), #4–#7 (PR-02…PR-05), #8 (PR-06), #9 (PR-07), #10 (PR-08), #11 (PR-09), #12 (PR-10), #13 (PR-11), #14 (PR-12), #15 (AGENTS.md), #16 (doc sync), #18–#23 (audit batches A–F), #24 (html + page cap), #25 (table dedupe), #26 (export tool) | `gh pr list --state all` |
 | Open work | L1 licence (`libx265`) blocks worker-image **redistribution**; two-host cluster measurement; branch protection (free private repo); sheet-window extraction for 16 oversized XLSX (deferred by decision); zip-archive ingestion (declined) | `docs/PHASE1-SUMMARY.md`, `docs/AUDITS.md` |
-| Backend stack | Go 1.24.4, single binary with 4 roles, SQLite (WAL) + local filesystem, no Redis/Postgres/S3/MQ | `go.mod`, `docs/ARCHITECTURE.md` |
+| Backend stack | Go 1.27.3, single binary with 4 roles, SQLite (WAL) + local filesystem, no Redis/Postgres/S3/MQ | `go.mod`, `docs/ARCHITECTURE.md` |
 | Frontend code | **none** — no `web/`, `frontend/`, `ui/`, no `package.json` | `ls`, `find -maxdepth 2 -name package.json` |
 | Node toolchain available | Node 22.22.3, npm 10.9.8 | `node -v`, `npm -v` |
 | Tests | 133 Go test funcs; 46 Python unit tests (score 21, gate 11, ci_summary 10, fixtures 4); acceptance T01–T17; contract 36 checks; runtime contracts PR-00 10, PR-02 6, PR-07 8, PR-09 5, PR-12 7 (counts observed by running them) | `grep -c "^func Test"`, `tests/unit/*`, `tests/integration/*` |

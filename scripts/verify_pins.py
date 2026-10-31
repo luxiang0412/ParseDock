@@ -150,6 +150,19 @@ def verify(root: Path) -> list[str]:
             problems.append(f"install-actionlint.sh VERSION={m.group(1)} != lock {tools['actionlint']}")
         if not re.search(r'^SHA256="[0-9a-f]{64}"', installer, re.MULTILINE):
             problems.append("scripts/install-actionlint.sh: download is not checksum-pinned")
+    for key, script, checksum in (("golangci_lint", "install-golangci-lint.sh", r'^SHA256="[0-9a-f]{64}"'),
+                                  ("govulncheck", "install-govulncheck.sh", r'^H1="h1:[A-Za-z0-9+/=]{44}"')):
+        installer = read(root / "scripts" / script)
+        if not tools.get(key):
+            problems.append(f"images.lock.json: tools.{key} is missing")
+            continue
+        m = re.search(r'^VERSION="([^"]+)"', installer, re.MULTILINE)
+        if not m:
+            problems.append(f"scripts/{script}: no VERSION pin")
+        elif m.group(1) != tools[key]:
+            problems.append(f"{script} VERSION={m.group(1)} != lock {tools[key]}")
+        if not re.search(checksum, installer, re.MULTILINE):
+            problems.append(f"scripts/{script}: download is not checksum-pinned")
 
     # Python CI dependencies must be version-pinned.
     req = read(root / lock.get("python", {}).get("ci_requirements", "requirements-ci.txt"))
@@ -161,6 +174,12 @@ def verify(root: Path) -> list[str]:
             continue
         if "==" not in line:
             problems.append(f"requirements-ci.txt: unpinned requirement {line!r}")
+    if tools.get("ruff"):
+        m = re.search(r"^ruff==(\S+)", req, re.MULTILINE)
+        if not m:
+            problems.append("requirements-ci.txt: no ruff== pin")
+        elif m.group(1) != tools["ruff"]:
+            problems.append(f"requirements-ci.txt ruff=={m.group(1)} != lock {tools['ruff']}")
 
     # Actions must be pinned by commit SHA (no floating vX tags).
     for wf in sorted((root / ".github" / "workflows").glob("*.yml")):

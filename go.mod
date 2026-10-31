@@ -1,6 +1,10 @@
 module parsedock.dev/parsedock
 
-go 1.24.4
+go 1.27.3
+
+// npm installs a Go package under web/node_modules (flatted); without this, ./...
+// patterns, go mod tidy and linters would treat it as part of this module.
+ignore ./web/node_modules
 
 require (
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3

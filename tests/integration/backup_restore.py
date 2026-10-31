@@ -17,12 +17,11 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from acceptance import FIX, ROOT, Stack, http_request  # noqa: E402
+from acceptance import FIX, ROOT, Stack  # noqa: E402
 
 RAW = ROOT / "benchmark" / "results" / "raw"
 SCRATCH = ROOT / "runtime" / "pr00-backup"

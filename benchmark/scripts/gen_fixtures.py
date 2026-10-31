@@ -27,7 +27,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (Image, PageBreak, Paragraph, SimpleDocTemplate,
+from reportlab.platypus import (PageBreak, Paragraph, SimpleDocTemplate,
                                 Spacer, Table, TableStyle)
 
 FONT_CANDIDATES = [
@@ -410,7 +410,7 @@ def main():
                "Total amount: 18,420.50 EUR\nDue date: 2026-11-30\n"
                "Payment terms: net 30 days\nReference: dock-ops-q3")
     img_path = gen / "scan_source_en.png"
-    img = render_text_image(img_txt, img_path)
+    render_text_image(img_txt, img_path)
     note(img_path, "image_png", "png", img_txt, 1, "clean 200dpi-style render")
     sp = gen / "pdf_scanned_en.pdf"
     build_scanned_pdf(sp, img_path)
@@ -432,7 +432,6 @@ def main():
 
     # --- DOCX -------------------------------------------------------------
     import docx
-    from docx.shared import Inches, Pt
     d = docx.Document()
     d.add_heading("Dock Throughput Review", level=1)
     d.add_paragraph(EN_BODY)

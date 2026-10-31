@@ -269,7 +269,7 @@ export interface components {
                  * @description Stable machine-readable code.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_type" | "malformed_file" | "file_too_large" | "encrypted_file" | "page_limit_exceeded" | "suspicious_compression" | "expanded_too_large" | "quota_exceeded" | "insufficient_storage" | "engine_unavailable" | "gpu_unavailable" | "timeout" | "cancelled" | "internal_error" | "lease_lost" | "not_found" | "gone" | "conflict" | "unauthorized" | "insufficient_scope" | "rate_limited" | "coordinator_unavailable";
+                code: "invalid_request" | "unsupported_type" | "malformed_file" | "file_too_large" | "encrypted_file" | "page_limit_exceeded" | "suspicious_compression" | "expanded_too_large" | "engine_out_of_memory" | "quota_exceeded" | "insufficient_storage" | "engine_unavailable" | "gpu_unavailable" | "timeout" | "cancelled" | "internal_error" | "lease_lost" | "not_found" | "gone" | "conflict" | "unauthorized" | "insufficient_scope" | "rate_limited" | "coordinator_unavailable";
                 message: string;
             };
         };

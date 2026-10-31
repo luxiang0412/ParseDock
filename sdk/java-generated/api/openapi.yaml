@@ -1397,6 +1397,7 @@ components:
           - page_limit_exceeded
           - suspicious_compression
           - expanded_too_large
+          - engine_out_of_memory
           - quota_exceeded
           - insufficient_storage
           - engine_unavailable

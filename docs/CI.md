@@ -23,8 +23,8 @@ safe to include in branch protection.
 
 | Phase | Steps (the script is authoritative) | Why |
 | --- | --- | --- |
-| `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, workflows valid |
-| `unit` | `go test ./...`, `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
+| `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `golangci-lint` (pinned, `.golangci.yml`), `govulncheck` (pinned, with the pinned toolchain), `ruff` (pinned, `ruff.toml`), `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, no lint findings, no reachable known vulnerability, workflows valid |
+| `unit` | `go test ./cmd/... ./internal/... ./migrations/...` (never `./...`: it would pick up Go code under `web/node_modules`; `go.mod` also `ignore`s that directory), `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
 | `sdk` | `scripts/sdk-check.sh --fast` — Python lifecycle + error matrix, one version across artefacts | the SDK contract: ACK rule, error codes/retry policy, SSE resume; catches an OpenAPI/IR change that would break a client
 | `contract` | OpenAPI 3.1 validation (public + internal, pinned generator), `openapi_contract.py`, SDK regeneration drift (`sdk/python-generated`, `sdk/java-generated`), Document IR schema drift | specs, router, generated SDKs and the published schema cannot drift |
 | `lifecycle` | `make acceptance` (T03–T17), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
@@ -34,9 +34,19 @@ safe to include in branch protection.
 
 ## Reproducibility
 
-* `images.lock.json` is the single source of truth: Go 1.24.4, base images
+* `images.lock.json` is the single source of truth: Go 1.27.3, base images
   (`golang@sha256:…`, `debian@sha256:…`, CUDA base), `openapi-generator@sha256:…`,
-  Tika digest, xberg/docling-rs/model versions, actionlint version.
+  Tika digest, xberg/docling-rs/model versions, and the CI tools: actionlint,
+  golangci-lint (release tarball, SHA-256 pinned in `scripts/install-golangci-lint.sh`),
+  govulncheck (module version + `h1:` hash pinned in `scripts/install-govulncheck.sh`),
+  ruff (`requirements-ci.txt`).
+* `scripts/govulncheck.sh` runs the scan with `GOTOOLCHAIN=local` and refuses to start
+  unless `go env GOVERSION` equals the locked Go version. `go run …/govulncheck@latest`
+  under `GOTOOLCHAIN=auto` switches to a newer toolchain and reports on *its* standard
+  library: on go1.24.4 that showed a clean result while the pinned toolchain had 42
+  reachable stdlib vulnerabilities. Locally, put the pinned `go` first on `PATH`
+  (`go install golang.org/dl/go1.27.3@latest && go1.27.3 download`, or the toolchain
+  that `GOTOOLCHAIN=auto` already downloaded) before `ci-local.sh static`.
 * `scripts/verify_pins.py` fails on drift: floating `FROM`, action tag instead of
   commit SHA, unpinned pip requirement, workflow tool image tag, `go.mod` bump.
 * Docker build: pinned builder, `GOTOOLCHAIN=local`, `-trimpath -buildvcs=false
@@ -91,6 +101,8 @@ make ci              # static + unit + contract + lifecycle + image (≈3m30s on
 make ci-phase PHASE=contract
 make verify-pins
 make lint-workflows
+make lint            # golangci-lint + ruff (pinned)
+make vulncheck       # govulncheck with the pinned toolchain
 make container-smoke # needs parsedock:smoke + parsedock-worker-cpu:smoke
 make license-audit   # enforce mode (fails on GPL)
 ```

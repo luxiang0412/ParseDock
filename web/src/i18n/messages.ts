@@ -201,6 +201,7 @@ export const en = {
   'error.suspicious_compression':
     'The archive expands suspiciously far; it was rejected for safety.',
   'error.expanded_too_large': 'The document expands beyond the parser limits (large spreadsheets).',
+  'error.engine_out_of_memory': 'The parser ran out of its memory limit on this document.',
   'error.quota_exceeded':
     'This owner has reached a quota (concurrent jobs, daily jobs or storage).',
   'error.insufficient_storage': 'The server is low on disk space. Try again later.',

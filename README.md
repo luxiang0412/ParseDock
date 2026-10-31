@@ -272,6 +272,7 @@ protection on the free plan).
 | `docs/ARCHITECTURE.md` | topology, request flow, package map |
 | `docs/DOCUMENT-IR.md` | `doc-ir/0.1`, mapping per engine, gaps |
 | `docs/JOB-LIFECYCLE.md` | states, timers, ACK semantics, cleanup algorithm |
+| `docs/ERROR-CODES.md` | every stable error code: HTTP status, retryability, meaning, origin |
 | `docs/CLUSTER-LITE.md` | worker protocol, fencing, failure matrix, upgrade triggers |
 | `docs/GPU-REPORT.md` | GPU verification and what remains |
 | `docs/DEPLOYMENT.md` | images, compose, flags, probes, backups |

@@ -28,7 +28,7 @@ usable v0.1 service.
 * GitHub Actions (or Jenkins) jobs: `go vet`, `go test ./...`, `go build`,
   OpenAPI validation, `make sdk`, lifecycle acceptance (mock engine) on every PR,
   real-engine acceptance nightly.
-* Pin Go toolchain in `go.mod` (currently `go 1.24.4`) and add `make verify-pins`
+* Pin Go toolchain in `go.mod` (currently `go 1.27.3`; was 1.24.4 until 2026-11-01) and add `make verify-pins`
   that fails if `go.sum`/image digests change without a review label.
 
 **Tests.** CI must fail if: acceptance has a FAIL, spec validation reports issues,

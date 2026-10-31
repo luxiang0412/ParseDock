@@ -9,6 +9,7 @@ Checks (mapped to the review's acceptance IDs):
   PR00-08  every documented public route exists in the Go router (and vice versa)
   PR00-08  every documented internal route exists in the internal Go router
   PR00-06  the hand-written SDK acks with X-Result-Version, never with ETag
+           error codes: internal/jobs/job.go == OpenAPI Error.code enum == docs/ERROR-CODES.md
 
 Run: python tests/contract/openapi_contract.py
 """
@@ -28,9 +29,41 @@ HTTP_GO = ROOT / "internal" / "coordinator" / "http.go"
 SDK_PY = ROOT / "sdk" / "python-generated"
 SDK_JAVA = ROOT / "sdk" / "java-generated"
 SDK_WRAPPER = ROOT / "sdk" / "python" / "parsedock_sdk" / "client.py"
+JOB_GO = ROOT / "internal" / "jobs" / "job.go"
+ERROR_CODES_MD = ROOT / "docs" / "ERROR-CODES.md"
 
 failures: list[str] = []
 checks: list[dict] = []
+
+
+def error_codes_go() -> set[str]:
+    """Codes declared in the "Stable machine-readable error codes" const block."""
+    text = JOB_GO.read_text(encoding="utf-8")
+    m = re.search(r"// Stable machine-readable error codes\..*?\nconst \((.*?)\n\)", text, re.DOTALL)
+    if not m:
+        return set()
+    return set(re.findall(r'^\s*Err\w+\s*=\s*"([a-z0-9_]+)"', m.group(1), re.MULTILINE))
+
+
+def error_codes_doc() -> set[str]:
+    """Codes listed in the table under `## Codes` in docs/ERROR-CODES.md."""
+    if not ERROR_CODES_MD.exists():
+        return set()
+    section = ERROR_CODES_MD.read_text(encoding="utf-8").split("\n## Codes", 1)[-1]
+    section = section.split("\n## ", 1)[0]
+    return set(re.findall(r"^\| `([a-z0-9_]+)` \|", section, re.MULTILINE))
+
+
+def error_code_literals() -> dict[str, str]:
+    """Error codes written as string literals (`Code: "x"`, `"code": "x"`) in Go code."""
+    found: dict[str, str] = {}
+    pattern = re.compile(r'(?:\bCode:\s*|"code":\s*)"([a-z0-9_]+)"')
+    for path in sorted((ROOT / "internal").rglob("*.go")) + sorted((ROOT / "cmd").rglob("*.go")):
+        if path.name.endswith("_test.go"):
+            continue
+        for code in pattern.findall(path.read_text(encoding="utf-8")):
+            found.setdefault(code, str(path.relative_to(ROOT)))
+    return found
 
 
 def check(name: str, ok: bool, detail: str = "") -> None:
@@ -164,6 +197,22 @@ def main() -> int:
     check("error enum documents insufficient_scope", "insufficient_scope" in enum, str(enum))
     check("error enum documents quota codes",
           {"quota_exceeded", "rate_limited"} <= set(enum), str(enum))
+    # The error-code contract has three copies that must agree exactly: the Go
+    # constants, the OpenAPI enum (and through it the SDKs/playground types) and the
+    # table in docs/ERROR-CODES.md.
+    go_codes = error_codes_go()
+    doc_codes = error_codes_doc()
+    check("error enum has no duplicates", len(enum) == len(set(enum)), str(enum))
+    check("error codes: internal/jobs/job.go == OpenAPI enum",
+          go_codes == set(enum),
+          f"only in job.go: {sorted(go_codes - set(enum))}, only in OpenAPI: {sorted(set(enum) - go_codes)}")
+    check("error codes: internal/jobs/job.go == docs/ERROR-CODES.md",
+          go_codes == doc_codes,
+          f"only in job.go: {sorted(go_codes - doc_codes)}, only in ERROR-CODES.md: {sorted(doc_codes - go_codes)}")
+    literals = error_code_literals()
+    check("error code string literals in Go are all documented codes",
+          set(literals) <= go_codes,
+          ", ".join(f"{c} ({literals[c]})" for c in sorted(set(literals) - go_codes)))
     check("bearerAuth documents scopes", "jobs:ack" in pub["components"]["securitySchemes"]["bearerAuth"]["description"])
     ops_with_403 = [p for p, item in pub["paths"].items()
                     for m, op in item.items()
