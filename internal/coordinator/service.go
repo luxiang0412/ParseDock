@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"parsedock.dev/parsedock/internal/documentir"
 	"parsedock.dev/parsedock/internal/jobs"
@@ -159,9 +160,13 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		writer.Abort()
 		return nil, false, NewError(400, jobs.ErrInvalidRequest, "ttl_seconds must be at least 1")
 	}
-	if p.IdempotencyKey != "" {
-		key := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
-		if existing, err := s.findByIdemKey(ctx, p.OwnerID, key); err == nil && existing != nil {
+	idemKey, err := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
+	if err != nil {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, err.Error())
+	}
+	if idemKey != "" {
+		if existing, err := s.findByIdemKey(ctx, p.OwnerID, idemKey); err == nil && existing != nil {
 			writer.Abort() // the staged bytes are a duplicate
 			return existing, false, nil
 		}
@@ -256,7 +261,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		RequestedDevice:  device,
 		EngineHint:       engineHint,
 		RoutingReason:    reason,
-		IdempotencyKey:   jobs.NormalizeIdempotencyKey(p.IdempotencyKey),
+		IdempotencyKey:   idemKey,
 		CreatedAt:        now,
 		MaxLifetimeAt:    now.Add(s.Cfg.MaxJobLifetime),
 		MaxAttempts:      s.Cfg.MaxAttempts,
@@ -1624,6 +1629,9 @@ func placeholders(n int) string {
 	return strings.Join(parts, ",")
 }
 
+// maxInputNameBytes bounds the stored input name (bytes of UTF-8).
+const maxInputNameBytes = 180
+
 func sanitizeName(name string) string {
 	name = filepath.Base(strings.TrimSpace(name))
 	if name == "." || name == "/" || name == "" {
@@ -1637,8 +1645,14 @@ func sanitizeName(name string) string {
 		b.WriteRune(r)
 	}
 	out := b.String()
-	if len(out) > 180 {
-		out = out[:180]
+	if len(out) > maxInputNameBytes {
+		// Cut on a rune boundary: slicing mid-rune stored invalid UTF-8, which JSON encoding
+		// then turned into U+FFFD and which no longer matched what the client sent.
+		cut := maxInputNameBytes
+		for cut > 0 && !utf8.RuneStart(out[cut]) {
+			cut--
+		}
+		out = out[:cut]
 	}
 	return out
 }

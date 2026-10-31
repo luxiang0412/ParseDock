@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"parsedock.dev/parsedock/internal/jobs"
 )
@@ -429,6 +430,36 @@ func TestResultTTLDoesNotOverflow(t *testing.T) {
 	}
 	if got := s.resultTTL(0); got != s.Cfg.ResultTTL {
 		t.Fatalf("resultTTL(0) = %s, want the default %s", got, s.Cfg.ResultTTL)
+	}
+}
+
+// Review finding 10: sanitizeName cut at byte 180 and could split a multibyte rune.
+func TestSanitizeNameKeepsValidUTF8(t *testing.T) {
+	name := strings.Repeat("a", 179) + "文档.pdf" // the 180-byte boundary falls inside 文
+	got := sanitizeName(name)
+	if !utf8.ValidString(got) {
+		t.Fatalf("truncated name is not valid UTF-8: %q", got)
+	}
+	if len(got) > maxInputNameBytes || got != strings.Repeat("a", 179) {
+		t.Fatalf("got %q (%d bytes)", got, len(got))
+	}
+	if got := sanitizeName("报告.docx"); got != "报告.docx" {
+		t.Fatalf("short name altered: %q", got)
+	}
+}
+
+// Review finding 10: an over-long idempotency key is a 400, not a silent truncation.
+func TestCreateJobRejectsLongIdempotencyKey(t *testing.T) {
+	s := testService(t, nil)
+	long := strings.Repeat("k", jobs.MaxIdempotencyKeyLen)
+	if _, _, err := s.CreateJob(context.Background(), CreateParams{OwnerID: "owner-1", InputName: "a.txt",
+		IdempotencyKey: long + "1", Body: stringsReader("hello")}); AsError(err).Status != 400 ||
+		AsError(err).Code != jobs.ErrInvalidRequest {
+		t.Fatalf("201-character key: want 400 invalid_request, got %v", err)
+	}
+	first := create(t, s, "a.txt", []byte("hello"), CreateParams{IdempotencyKey: long})
+	if first.IdempotencyKey != long {
+		t.Fatalf("200-character key stored as %q", first.IdempotencyKey)
 	}
 }
 

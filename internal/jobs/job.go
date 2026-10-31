@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ProcessingStatus is the first lifecycle dimension.
@@ -161,13 +162,19 @@ const (
 	AttemptCancelled = "cancelled"
 )
 
-// IdempotencyKey returns the normalized key.
-func NormalizeIdempotencyKey(k string) string {
+// MaxIdempotencyKeyLen is the longest accepted Idempotency-Key, in characters
+// (api/openapi.yaml: maxLength 200).
+const MaxIdempotencyKeyLen = 200
+
+// NormalizeIdempotencyKey trims surrounding whitespace and rejects keys longer than
+// MaxIdempotencyKeyLen characters. Truncating instead would make distinct long keys that
+// share a 200-character prefix collide, replaying one client operation as another.
+func NormalizeIdempotencyKey(k string) (string, error) {
 	k = strings.TrimSpace(k)
-	if len(k) > 200 {
-		k = k[:200]
+	if utf8.RuneCountInString(k) > MaxIdempotencyKeyLen {
+		return "", fmt.Errorf("idempotency key must be at most %d characters", MaxIdempotencyKeyLen)
 	}
-	return k
+	return k, nil
 }
 
 var b32 = base32.NewEncoding("0123456789ABCDEFGHJKMNPQRSTVWXYZ").WithPadding(base32.NoPadding)
