@@ -416,7 +416,7 @@ func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 			// Serialise with publication for this job: Complete holds the same lock from the
 			// first staged byte to the committed row, so nothing here can see a half-written
 			// generation as abandoned.
-			unlock := lockJob(e.Name())
+			unlock := s.lockJob(e.Name())
 			removed += s.sweepOne(ctx, rep, sub, e.Name(), cutoff)
 			unlock()
 		}

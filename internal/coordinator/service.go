@@ -43,6 +43,8 @@ type Service struct {
 
 	// admit serialises quota admission per owner (see quota.go).
 	admit ownerLocks
+	// jobLocks serialises publication and reclamation per job (see lockJob).
+	jobLocks jobLockTable
 
 	cleanupRuns atomic.Int64
 	lastCleanup atomic.Value // time.Time
@@ -552,17 +554,61 @@ type WorkerCaps struct {
 	CanGPU   bool     `json:"-"`
 }
 
-// jobLocks serialises publication and reclamation per job. Two completions for the same job
-// must not interleave their writes, and the cleaner must not delete a generation while a
+// jobLockTable serialises publication and reclamation per job. Two completions for the same
+// job must not interleave their writes, and the cleaner must not delete a generation while a
 // completion is publishing one.
-var jobLocks sync.Map
-
-func lockJob(jobID string) func() {
-	v, _ := jobLocks.LoadOrStore(jobID, &sync.Mutex{})
-	mu := v.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
+//
+// Entries are reference counted and removed when the last holder or waiter leaves: the
+// cleaner locks every job directory on every pass, so a table that only grew would leak one
+// mutex per job ever seen for the life of the process.
+type jobLockTable struct {
+	mu sync.Mutex
+	m  map[string]*jobLock
 }
+
+type jobLock struct {
+	mu   sync.Mutex
+	refs int // holders + waiters; guarded by jobLockTable.mu
+}
+
+// lock blocks until jobID's lock is held and returns its release function.
+func (t *jobLockTable) lock(jobID string) func() {
+	t.mu.Lock()
+	if t.m == nil {
+		t.m = map[string]*jobLock{}
+	}
+	l, ok := t.m[jobID]
+	if !ok {
+		l = &jobLock{}
+		t.m[jobID] = l
+	}
+	l.refs++
+	t.mu.Unlock()
+
+	l.mu.Lock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.mu.Unlock()
+			t.mu.Lock()
+			l.refs--
+			if l.refs == 0 {
+				delete(t.m, jobID)
+			}
+			t.mu.Unlock()
+		})
+	}
+}
+
+// size reports how many jobs currently have a lock entry (tests).
+func (t *jobLockTable) size() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.m)
+}
+
+// lockJob takes the per-job publication/reclamation lock.
+func (s *Service) lockJob(jobID string) func() { return s.jobLocks.lock(jobID) }
 
 // instr returns the service instruments, falling back to the process-wide registry so
 // instrumentation is always available (and never nil) in tests and single-binary runs.
@@ -784,7 +830,7 @@ func fenceLiveArgs(jobID, token string, now time.Time) []any {
 func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, error) {
 	// One publisher per job at a time: the fence decides the winner, but the losing attempt
 	// must not be writing files that the winner (or the cleaner) is touching.
-	unlock := lockJob(p.JobID)
+	unlock := s.lockJob(p.JobID)
 	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, NewError(499, jobs.ErrCancelled, "cancelled before publishing the result")
