@@ -186,14 +186,9 @@ func (m *MinerU) liftPages(doc *documentir.Document, md, format string) {
 		fmt.Sscanf(md[loc[2]:loc[3]], "%d", &pageNo)
 		scratch := documentir.New()
 		LiftMarkdown(scratch, md[start:end])
-		renames := remapTables(scratch, len(doc.Tables))
+		remapTables(scratch, len(doc.Tables), len(doc.Elements))
 		for _, el := range scratch.Elements {
 			el.Loc = &documentir.SourceLocation{Kind: kind, Page: pageNo}
-			if el.TableID != "" {
-				if nid, ok := renames[el.TableID]; ok {
-					el.TableID = nid
-				}
-			}
 			doc.Elements = append(doc.Elements, el)
 		}
 		for _, t := range scratch.Tables {

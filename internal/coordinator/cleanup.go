@@ -346,6 +346,37 @@ func staleStageDirs(jobDir string) []string {
 	return out
 }
 
+// pruneGenerations removes result directories the database does not reference: a losing
+// completion leaves one behind by design (deleting it synchronously could remove a
+// byte-identical generation another attempt just committed), and a crash can leave a staging
+// directory. Only entries older than the orphan cutoff are removed, so an in-flight
+// publication is never touched. Returns how many were removed.
+func (s *Service) pruneGenerations(jobDir, sub, keepVersion string) int {
+	if sub != "results" {
+		return 0
+	}
+	entries, err := os.ReadDir(jobDir)
+	if err != nil {
+		return 0
+	}
+	keep := strings.TrimPrefix(keepVersion, "sha256:")
+	cutoff := nowUTC().Add(-10 * time.Minute)
+	removed := 0
+	for _, e := range entries {
+		if !e.IsDir() || e.Name() == keep {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(jobDir, e.Name())); err == nil {
+			removed++
+		}
+	}
+	return removed
+}
+
 func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 	removed := 0
 	cutoff := nowUTC().Add(-10 * time.Minute)
@@ -368,9 +399,10 @@ func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 				_ = os.RemoveAll(stale)
 				rep.StaleParts++
 			}
-			var status, retention string
-			err = s.DB.QueryRowContext(ctx, `SELECT processing_status, retention_status FROM jobs WHERE id = ?`, e.Name()).
-				Scan(&status, &retention)
+			var status, retention, version string
+			err = s.DB.QueryRowContext(ctx, `SELECT processing_status, retention_status, COALESCE(result_version,'')
+				FROM jobs WHERE id = ?`, e.Name()).
+				Scan(&status, &retention, &version)
 			switch {
 			case errors.Is(err, sql.ErrNoRows):
 				// The row is gone (tombstone purge), so the directory is definitively orphaned.
@@ -380,6 +412,10 @@ func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 				rep.Errors = append(rep.Errors, "orphan scan: "+err.Error())
 				continue
 			case !jobs.RetentionStatus(retention).Terminal():
+				// A live job may be publishing, but generations the database does not
+				// reference (a losing completion, an abandoned attempt) are dead weight and
+				// are not charged to storage. Only remove them once they are clearly old.
+				rep.Released += s.pruneGenerations(filepath.Join(s.Store.Root, sub, e.Name()), sub, version)
 				continue
 			}
 			if ctx.Err() != nil {

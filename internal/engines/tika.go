@@ -165,14 +165,9 @@ func (t *Tika) Parse(ctx context.Context, req Request) (*documentir.Document, er
 			} else {
 				liftPlainTextWithKind(scratch, page, doc.PageKind)
 			}
-			renames := remapTables(scratch, len(doc.Tables))
+			remapTables(scratch, len(doc.Tables), len(doc.Elements))
 			for _, el := range scratch.Elements {
 				el.Loc = &documentir.SourceLocation{Kind: doc.PageKind, Page: i + 1}
-				if el.TableID != "" {
-					if nid, ok := renames[el.TableID]; ok {
-						el.TableID = nid
-					}
-				}
 				doc.Elements = append(doc.Elements, el)
 			}
 			for _, tbl := range scratch.Tables {

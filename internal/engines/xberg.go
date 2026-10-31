@@ -154,7 +154,12 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		req.Progress(5, "engine_start")
 	}
 	res, err := RunCLI(ctx, x.spec(), req.WorkDir, args...)
-	if err != nil && res != nil && !res.OOM && !res.Truncated && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
+	if res != nil && res.Truncated {
+		// The parser's output exceeded the ceiling; a JSON prefix may even still parse, so
+		// this must be an explicit rejection rather than a "malformed file".
+		return nil, fmt.Errorf("%w: %d MiB ceiling", ErrOutputTooLarge, 512)
+	}
+	if err != nil && res != nil && !res.OOM && res.ExitCode == 0 && len(res.Stdout) > 0 && json.Valid(res.Stdout) {
 		// exec.Cmd can report context.Canceled after a successful run when the
 		// context is cancelled while Wait() settles; if the engine produced valid
 		// output, trust the output instead of failing the job.
@@ -270,15 +275,10 @@ func (x *Xberg) mapPages(doc *documentir.Document, out *xbergOutput, req Request
 		if looksLikeMarkdown(content) {
 			scratch := documentir.New()
 			LiftMarkdown(scratch, content)
-			renames := remapTables(scratch, len(doc.Tables))
+			remapTables(scratch, len(doc.Tables), len(doc.Elements))
 			for i := range scratch.Elements {
 				el := scratch.Elements[i]
 				el.Loc = &documentir.SourceLocation{Kind: pageKind(req.Format), Page: page.PageNumber}
-				if el.TableID != "" {
-					if nid, ok := renames[el.TableID]; ok {
-						el.TableID = nid
-					}
-				}
 				doc.Elements = append(doc.Elements, el)
 			}
 			for _, t := range scratch.Tables {

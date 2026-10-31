@@ -325,14 +325,18 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 		fmt.Sprintf("attachment; filename=%q", job.ID+"."+extFor(format)))
 	w.Header().Set("Cache-Control", "private, no-store")
 
-	rw := &leaseRenewer{srv: s, leaseID: leaseID, next: time.Now().Add(s.Svc.Cfg.DownloadLeaseTTL / 3)}
+	// Renew on a timer for the whole response lifetime, not after each write: a client that
+	// stops reading blocks in Write, and a lease renewed only between writes would expire
+	// while the response is still streaming.
+	rw := startLeaseRenewer(s, leaseID)
+	defer rw.stop()
 	var dst io.Writer = w
 	var gz *gzip.Writer
 	if useGzip {
 		gz = gzip.NewWriter(w)
 		dst = gz
 	}
-	if _, err := rw.copyTo(dst, f); err != nil {
+	if _, err := io.CopyBuffer(dst, f, make([]byte, 64<<10)); err != nil {
 		s.Log.Warn("result stream interrupted", "job", job.ID, "err", err)
 	}
 	if gz != nil {
@@ -340,40 +344,45 @@ func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// leaseRenewer keeps a download lease alive while a body is streaming.
+// leaseRenewer keeps a download lease alive on a timer, independently of write progress.
 type leaseRenewer struct {
-	srv     *Server
-	leaseID string
-	next    time.Time
+	srv   *Server
+	lease string
+	stopC chan struct{}
+	done  chan struct{}
 }
 
-func (l *leaseRenewer) copyTo(w io.Writer, r io.Reader) (int64, error) {
-	buf := make([]byte, 64<<10)
-	var total int64
-	for {
-		n, err := r.Read(buf)
-		if n > 0 {
-			if _, werr := w.Write(buf[:n]); werr != nil {
-				return total, werr
-			}
-			total += int64(n)
-			if f, ok := w.(http.Flusher); ok {
-				f.Flush()
-			}
-		}
-		if time.Now().After(l.next) {
-			if _, rerr := l.srv.Svc.RenewDownload(context.Background(), l.leaseID); rerr != nil {
-				l.srv.Log.Warn("download lease renew failed", "lease", l.leaseID, "err", rerr)
-			}
-			l.next = time.Now().Add(l.srv.Svc.Cfg.DownloadLeaseTTL / 3)
-		}
-		if errors.Is(err, io.EOF) {
-			return total, nil
-		}
-		if err != nil {
-			return total, err
-		}
+func startLeaseRenewer(s *Server, leaseID string) *leaseRenewer {
+	l := &leaseRenewer{srv: s, lease: leaseID, stopC: make(chan struct{}), done: make(chan struct{})}
+	interval := s.Svc.Cfg.DownloadLeaseTTL / 3
+	if interval < 100*time.Millisecond {
+		interval = 100 * time.Millisecond
 	}
+	go func() {
+		defer close(l.done)
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-l.stopC:
+				return
+			case <-t.C:
+				if _, err := s.Svc.RenewDownload(context.Background(), leaseID); err != nil {
+					// The lease expired or the job was released: the bytes are already
+					// open, but there is no point holding the write any longer than the
+					// client needs. Log and stop renewing.
+					s.Log.Warn("download lease renew failed", "lease", leaseID, "err", err)
+					return
+				}
+			}
+		}
+	}()
+	return l
+}
+
+func (l *leaseRenewer) stop() {
+	close(l.stopC)
+	<-l.done
 }
 
 // handleEvents streams job events as SSE with Last-Event-ID resumption.
