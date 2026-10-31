@@ -30,12 +30,17 @@
 
 ## 3. Proposal, ordered by (value ÷ risk)
 
-### P1 — expose the OCR backend and its options (config only)
+### P1 — expose the OCR backend (config only) — **implemented in PR-A**
 
 ```
---xberg-ocr-backend        tesseract|paddle-ocr|…       (default: "" → tesseract, today's behaviour)
---xberg-ocr-backend-options '{"layout_mode":"whole_page"}'   (default: unset)
+--xberg-ocr-backend  tesseract|paddle-ocr|…   (default: "" → tesseract, today's behaviour)
 ```
+
+`--ocr-backend-options` is **not** exposed: xberg 1.3.10 accepts any JSON there
+and silently ignores unknown keys (measured), so an operator could "configure" a
+tier or layout mode and get no effect. A flag that cannot be verified is worse
+than no flag. The verified backend list is pinned in `engines.OCRBackends` and
+checked at startup, so a typo fails before the first scan instead of per job.
 
 * No default change → byte-identical output unless an operator opts in.
 * Deployment recipe: `PARSEDOCK_XBERG_OCR_BACKEND=paddle-ocr` for a CJK corpus.

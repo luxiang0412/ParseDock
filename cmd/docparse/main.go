@@ -90,6 +90,7 @@ type flags struct {
 	xbergLibDir      string
 	xbergOCR         bool
 	xbergOCRLang     string
+	xbergOCRBackend  string
 	xbergTimeout     time.Duration
 	doclingRSTimeout time.Duration
 	mineruTimeout    time.Duration
@@ -177,7 +178,8 @@ func parseFlags() *flags {
 	fs.StringVar(&f.xbergBin, "xberg-bin", env("PARSEDOCK_XBERG_BIN", ""), "path to xberg CLI")
 	fs.StringVar(&f.xbergLibDir, "xberg-lib-dir", env("PARSEDOCK_XBERG_LIB_DIR", ""), "dir with xberg shared libs")
 	fs.BoolVar(&f.xbergOCR, "xberg-ocr", env("PARSEDOCK_XBERG_OCR", "1") == "1", "enable OCR for xberg")
-	fs.StringVar(&f.xbergOCRLang, "xberg-ocr-lang", env("PARSEDOCK_XBERG_OCR_LANG", "eng"), "tesseract language")
+	fs.StringVar(&f.xbergOCRLang, "xberg-ocr-lang", env("PARSEDOCK_XBERG_OCR_LANG", "eng"), "OCR language (ISO 639-3 for tesseract, e.g. eng/chi_sim; xberg also accepts en/ch)")
+	fs.StringVar(&f.xbergOCRBackend, "xberg-ocr-backend", env("PARSEDOCK_XBERG_OCR_BACKEND", ""), "OCR backend for xberg: unset/tesseract (default) or paddle-ocr (PP-OCRv6, better for Chinese)")
 	fs.DurationVar(&f.xbergTimeout, "xberg-timeout", durEnv("PARSEDOCK_XBERG_TIMEOUT", 10*time.Minute), "per-document xberg ceiling (capped by --max-parse-minutes)")
 	fs.DurationVar(&f.doclingRSTimeout, "docling-rs-timeout", durEnv("PARSEDOCK_DOCLING_RS_TIMEOUT", 15*time.Minute), "per-document docling-rs ceiling (capped by --max-parse-minutes)")
 	fs.DurationVar(&f.mineruTimeout, "mineru-timeout", durEnv("PARSEDOCK_MINERU_TIMEOUT", 30*time.Minute), "per-document MinerU ceiling (capped by --max-parse-minutes)")
@@ -255,6 +257,12 @@ func run(f *flags) error {
 		// document and both SDKs without parsing log text.
 		fmt.Printf("{\"version\":\"%s\",\"api\":\"%s\"}\n", serviceVersion, apiVersion)
 		return nil
+	}
+
+	// Fail at startup rather than on the first scanned document: an unknown OCR
+	// backend is a deployment typo, and xberg would only report it per request.
+	if err := engines.ValidateOCRBackend(f.xbergOCRBackend); err != nil {
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -536,7 +544,8 @@ func buildRegistry(f *flags, device string) *engines.Registry {
 			}
 			reg.Add(&engines.Xberg{
 				Bin: f.xbergBin, LibDir: f.xbergLibDir, VersionS: probeVersion(f.xbergBin, f.xbergLibDir),
-				OCR: f.xbergOCR, OCRLang: f.xbergOCRLang, Sandbox: sandboxArg(f.sandbox),
+				OCR: f.xbergOCR, OCRLang: f.xbergOCRLang, OCRBackend: f.xbergOCRBackend,
+				Sandbox:  sandboxArg(f.sandbox),
 				MaxRSSMB: f.engineMaxRSSMB, Timeout: f.xbergTimeout,
 			})
 		case "docling-rs":

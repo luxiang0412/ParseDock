@@ -70,6 +70,52 @@ func (x *Xberg) spec() CLISpec {
 	return CLISpec{Bin: x.Bin, Env: env, Sandbox: x.Sandbox, MaxOutput: 256 << 20, MaxRSSMB: x.MaxRSSMB}
 }
 
+// OCRBackends is the set of OCR backends xberg 1.3.10 registers. The CLI
+// rejects anything else ("Invalid OCR backend '<x>'. Valid backends: …"), so
+// this list exists to fail at startup instead of on the first scanned document.
+var OCRBackends = []string{
+	"tesseract", "paddle-ocr", "sceptre", "vlm",
+	"candle-trocr", "candle-paddleocr-vl", "candle-glm-ocr", "candle-deepseek-ocr",
+}
+
+// ValidateOCRBackend rejects a backend name this xberg build cannot run.
+func ValidateOCRBackend(name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return nil // unset: xberg's own default (tesseract) applies
+	}
+	for _, b := range OCRBackends {
+		if b == name {
+			return nil
+		}
+	}
+	return fmt.Errorf("unknown xberg OCR backend %q (valid: %s)", name, strings.Join(OCRBackends, ", "))
+}
+
+// extractArgs is the argv the worker passes to `xberg extract`, without the
+// input path. Split out from Parse so the OCR flag plumbing is testable without
+// running the engine.
+func (x *Xberg) extractArgs() []string {
+	args := []string{"extract", "--no-config-discovery", "--format", "json"}
+	if !x.Cache {
+		args = append(args, "--no-cache", "true")
+	}
+	if x.OCR {
+		args = append(args, "--ocr", "true")
+		if b := strings.TrimSpace(x.OCRBackend); b != "" {
+			args = append(args, "--ocr-backend", b)
+		}
+		// xberg normalises both spellings: ISO 639-3 ("eng", "chi_sim") and the
+		// PaddleOCR short codes ("en", "ch") select the same recognition family.
+		if l := strings.TrimSpace(x.OCRLang); l != "" {
+			args = append(args, "--ocr-language", l)
+		}
+	} else {
+		args = append(args, "--ocr", "false")
+	}
+	return args
+}
+
 type xbergOutput struct {
 	ExtractionTimeMs float64 `json:"extraction_time_ms"`
 	PeakMemoryBytes  float64 `json:"peak_memory_bytes"`
@@ -128,21 +174,7 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	args := []string{"extract", "--no-config-discovery", "--format", "json"}
-	if !x.Cache {
-		args = append(args, "--no-cache", "true")
-	}
-	if x.OCR {
-		args = append(args, "--ocr", "true")
-		if strings.TrimSpace(x.OCRBackend) != "" {
-			args = append(args, "--ocr-backend", x.OCRBackend)
-		}
-		if strings.TrimSpace(x.OCRLang) != "" {
-			args = append(args, "--ocr-language", x.OCRLang)
-		}
-	} else {
-		args = append(args, "--ocr", "false")
-	}
+	args := x.extractArgs()
 	// Copy the input into the worker's scratch dir and let the engine write
 	// only there; the original published input stays read-only.
 	local := workFile(req.WorkDir, "engine-input."+req.Format)
@@ -204,6 +236,12 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	doc.Source.MimeType = req.MimeType
 	doc.Source.SizeBytes = fileSize(req.Path)
 	doc.Routing.Reason = "xberg native/ocr pipeline"
+	if x.OCR && strings.TrimSpace(x.OCRBackend) != "" {
+		// Which OCR backend produced this text is part of the result's audit
+		// trail: the same document parsed by tesseract and by paddle-ocr is not
+		// the same result, and only the reason field records that today.
+		doc.Routing.Reason = fmt.Sprintf("xberg native/ocr pipeline (ocr_backend=%s)", strings.TrimSpace(x.OCRBackend))
+	}
 	doc.Routing.Engine = x.Name()
 	doc.Routing.ActualDevice = x.Device()
 	doc.Routing.RequestedMode = req.Mode
