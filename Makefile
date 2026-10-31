@@ -1,10 +1,16 @@
-# ParseDock — Phase 0 developer entry points.
+# ParseDock — developer entry points (`make help` lists them).
 GO ?= go
+# Explicit package patterns: `./...` would also pick up Go packages that npm drops
+# into web/node_modules (e.g. flatted ships one) once the playground deps are installed.
+GO_PKGS := ./cmd/... ./internal/... ./migrations/...
 BIN := runtime/bin/docparse
 PY_FIX := runtime/engines/venv-fixtures/bin/python
 COMPOSE := docker compose -f deploy/compose.cpu.yaml
 
-.PHONY: help build test vet fmt run-smoke fixtures acceptance acceptance-real bench sdk java-sdk sdk-test images up down logs clean
+.PHONY: help build fmt fmt-check schema verify-pins lint-workflows vet test contract ci ci-phase \
+	container-smoke pr00 load gpu-check score license-audit fixtures acceptance acceptance-real \
+	bench gpu-bench sdk sdk-test images up down logs metrics sdk-check drill gate gate-baseline \
+	web-install web-dev web-test web-e2e web-e2e-compose playground-up playground-down clean
 
 help: ## list targets
 	@awk -F':.*## ' '/^[a-z-]+:.*## /{printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -30,10 +36,10 @@ lint-workflows: ## actionlint on .github/workflows (pinned binary)
 	runtime/bin/actionlint -no-color -shellcheck= .github/workflows/*.yml
 
 vet: ## go vet
-	$(GO) vet ./...
+	$(GO) vet $(GO_PKGS)
 
 test: vet ## unit + integration tests (Go)
-	$(GO) test ./... -count=1
+	$(GO) test $(GO_PKGS) -count=1
 	python3 tests/unit/test_score.py
 
 contract: ## PR-00: OpenAPI/SDK/router contract checks
