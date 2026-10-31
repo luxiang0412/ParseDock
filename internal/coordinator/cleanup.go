@@ -89,11 +89,15 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 	}
 
 	// 4b. Usage rows leave the 24 h window after 25 h; independent of job cleanup.
-	_, _ = s.DB.ExecContext(ctx, `DELETE FROM owner_usage WHERE created_at <= ?`,
-		ts(nowUTC().Add(-25*time.Hour)))
+	if _, err := s.DB.ExecContext(ctx, `DELETE FROM owner_usage WHERE created_at <= ?`,
+		ts(nowUTC().Add(-25*time.Hour))); err != nil {
+		rep.Errors = append(rep.Errors, "purge usage: "+err.Error())
+	}
 
 	// 5. Expired download leases.
-	_, _ = s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE expires_at <= ?`, ts(nowUTC()))
+	if _, err := s.DB.ExecContext(ctx, `DELETE FROM download_leases WHERE expires_at <= ?`, ts(nowUTC())); err != nil {
+		rep.Errors = append(rep.Errors, "purge download leases: "+err.Error())
+	}
 
 	// 6. Jobs past max lifetime never run forever.
 	if res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', error_code = ?,
@@ -104,9 +108,14 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 		if n, _ := res.RowsAffected(); n > 0 {
 			rep.ExpiredQueued = int(n)
 		}
+	} else {
+		// Without this the pass looked healthy while jobs past their lifetime kept running.
+		rep.Errors = append(rep.Errors, "max lifetime: "+err.Error())
 	}
-	_, _ = s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'expired' WHERE state = 'running'
-		AND job_id IN (SELECT id FROM jobs WHERE processing_status IN ('failed','cancelled'))`)
+	if _, err := s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'expired' WHERE state = 'running'
+		AND job_id IN (SELECT id FROM jobs WHERE processing_status IN ('failed','cancelled'))`); err != nil {
+		rep.Errors = append(rep.Errors, "expire attempts: "+err.Error())
+	}
 
 	// 7. Stale *.part staging files.
 	if n, err := s.Store.SweepParts(time.Hour); err == nil {
@@ -301,9 +310,14 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 	var list []lost
 	for rows.Next() {
 		var l lost
-		if err := rows.Scan(&l.jobID, &l.attempt, &l.worker); err == nil {
-			list = append(list, l)
+		if err := rows.Scan(&l.jobID, &l.attempt, &l.worker); err != nil {
+			rep.Errors = append(rep.Errors, "reap scan: "+err.Error())
+			continue
 		}
+		list = append(list, l)
+	}
+	if err := rows.Err(); err != nil {
+		rep.Errors = append(rep.Errors, "reap query: "+err.Error())
 	}
 	_ = rows.Close()
 

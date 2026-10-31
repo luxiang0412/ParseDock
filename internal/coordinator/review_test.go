@@ -301,6 +301,51 @@ func TestFailDeletesThroughDeletingState(t *testing.T) {
 	}
 }
 
+// Review finding 9: the storage-quota read at admission discarded its error, so an unreadable
+// balance counted as 0 bytes and the upload was admitted (fail-open).
+func TestStorageQuotaFailsClosedOnLookupError(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxStorageBytes: 1 << 20} })
+	ctx := context.Background()
+	if _, err := s.DB.ExecContext(ctx, `DROP TABLE owner_storage`); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "a.txt", Body: stringsReader("hello")})
+	if AsError(err).Status != 500 || AsError(err).Code != jobs.ErrInternal {
+		t.Fatalf("admission with an unreadable storage balance: want 500 internal_error, got %v", err)
+	}
+	var n int
+	_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM jobs`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d job rows created although the quota could not be checked", n)
+	}
+}
+
+// Review finding 9: the max-lifetime UPDATE (cleanup step 6) dropped its error, so the pass
+// reported itself healthy while overdue jobs kept running.
+func TestCleanupReportsMaxLifetimeFailure(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET max_lifetime_at = ? WHERE id = ?`,
+		ts(nowUTC().Add(-time.Minute)), job.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `CREATE TRIGGER no_timeout BEFORE UPDATE OF processing_status ON jobs
+		WHEN NEW.error_code = 'timeout' BEGIN SELECT RAISE(ABORT, 'disk I/O error'); END`); err != nil {
+		t.Fatal(err)
+	}
+	rep := s.RunCleanup(ctx)
+	found := false
+	for _, e := range rep.Errors {
+		if strings.HasPrefix(e, "max lifetime:") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("step 6 failure not reported: %v", rep.Errors)
+	}
+}
+
 // Review finding 1: the terminal event is written in the completion's transaction, so a
 // failure to record it leaves the job untouched instead of completed-without-event.
 func TestCompletionEventIsAtomicWithStatus(t *testing.T) {

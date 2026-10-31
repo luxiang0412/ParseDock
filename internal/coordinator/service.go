@@ -908,8 +908,12 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	// A result can be much larger than its input, so admission alone cannot bound
 	// tenant storage: enforce the limit transactionally on the committed bytes.
 	if s.Cfg.Quota.MaxStorageBytes > 0 {
-		var stored int64
-		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
+		stored, serr := ownerStoredBytes(ctx, tx, ownerID)
+		if serr != nil {
+			// Fail closed: treating an unreadable balance as 0 would let the result through.
+			// The generation is left for the cleaner, as on every other error path here.
+			return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+serr.Error())
+		}
 		if stored+resultBytes > s.Cfg.Quota.MaxStorageBytes {
 			// The job was admitted but its result cannot be stored. Fail it
 			// terminally in this transaction: leaving it 'running' would let the
