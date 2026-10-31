@@ -275,10 +275,13 @@ func (d *DoclingServe) Parse(ctx context.Context, req Request) (*documentir.Docu
 	httpReq.Header.Set("Accept", "application/json")
 	resp, err := d.client().Do(httpReq)
 	if err != nil {
-		return nil, Errf(true, jobs.ErrEngineUnavailable, "docling-serve request: %v", err)
+		return nil, httpRequestFailure(ctx, "docling-serve", err)
 	}
 	defer resp.Body.Close()
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	if err != nil {
+		return nil, httpRequestFailure(ctx, "docling-serve", err)
+	}
 	if resp.StatusCode >= 300 {
 		return nil, Errf(resp.StatusCode >= 500, jobs.ErrInternal, "docling-serve %s: %s",
 			resp.Status, tail(string(raw), 300))
