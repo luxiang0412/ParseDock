@@ -65,6 +65,16 @@ make load              # cluster-lite throughput
 Sensitive corporate material (`test_data/`) is local-only and never committed; the batch
 harness redacts file identities by default.
 
+## Post-Phase-1 audits
+
+Three whole-repository audits (static, by a reviewing model, then verified against the code)
+found 33 issues; all were fixed except two documented non-code items. The P0 and the
+high-severity P1s were real: cleanup deleting live files after a failed lookup, an ACK that
+authorised deleting an in-flight job's input, two completions destroying each other's results,
+and a render path that could allocate ~20 billion strings from a 500 KB CSV. See
+`docs/AUDITS.md` for the list, the reasoning, and what was deliberately left alone
+(page-parallel OCR, legacy result migration, the L1 licence).
+
 ## Before you change anything
 
 `AGENTS.md` is the working contract: hard rules (sensitive data, no infrastructure drift, no
