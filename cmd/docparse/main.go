@@ -161,7 +161,8 @@ func parseFlags() *flags {
 	fs.DurationVar(&f.tombstone, "tombstone-ttl", durEnv("PARSEDOCK_TOMBSTONE_TTL", 10*time.Minute), "tombstone retention")
 	fs.IntVar(&f.maxAttempts, "max-attempts", intEnv("PARSEDOCK_MAX_ATTEMPTS", 3), "per-job attempt limit")
 	fs.Int64Var(&f.maxUploadMB, "max-upload-mb", int64Env("PARSEDOCK_MAX_UPLOAD_MB", 64), "upload size limit (MiB)")
-	fs.IntVar(&f.maxPages, "max-pages", intEnv("PARSEDOCK_MAX_PAGES", 500), "PDF page limit")
+	fs.IntVar(&f.maxPages, "max-pages", intEnv("PARSEDOCK_MAX_PAGES", 2000),
+		"PDF page limit; the pre-flight count is a heuristic, so this bounds work rather than guaranteeing a precise cut")
 	fs.Int64Var(&f.minFreeGB, "min-free-gb", int64Env("PARSEDOCK_MIN_FREE_GB", 2), "disk safety watermark (GiB)")
 	fs.Float64Var(&f.rateLimit, "rate-limit", floatEnv("PARSEDOCK_RATE_LIMIT", 20), "per-owner requests/second")
 	fs.IntVar(&f.rateBurst, "rate-burst", intEnv("PARSEDOCK_RATE_BURST", 40), "per-owner burst")

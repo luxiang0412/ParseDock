@@ -113,7 +113,7 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--heartbeat` | `PARSEDOCK_HEARTBEAT` | `10s` | worker heartbeat |
 | `--tombstone-ttl` | `PARSEDOCK_TOMBSTONE_TTL` | `10m` | 410 window |
 | `--max-upload-mb` | `PARSEDOCK_MAX_UPLOAD_MB` | `64` | upload cap |
-| `--max-pages` | `PARSEDOCK_MAX_PAGES` | `500` | PDF page cap |
+| `--max-pages` | `PARSEDOCK_MAX_PAGES` | `2000` | PDF page cap; the pre-flight count is a heuristic (head/tail scan), so this bounds work rather than guaranteeing an exact cut. A 553-page audit annexe in the real corpus needed this. |
 | (limits) | – | 512 MiB expanded, 200:1 ratio | OOXML expansion cap; the parsers themselves cap lower (xberg 500 MiB, docling-rs 10M cells per sheet) |
 | `--min-free-gb` | `PARSEDOCK_MIN_FREE_GB` | `2` | disk watermark |
 | `--max-attempts` | `PARSEDOCK_MAX_ATTEMPTS` | `3` | retries |
@@ -230,7 +230,7 @@ limits, not bugs, and they are reported with stable codes:
 | --- | --- | --- | --- |
 | expanded OOXML > parser limit (xberg 500 MiB, docling-rs 10M cells) | `expanded_too_large` (413) | 14 (58–74 MiB SAP ledgers) | raise/prune at the source, or add per-sheet window extraction (PR-06) |
 | encrypted PDF | `encrypted_file` | 8 | out of scope (no password support) |
-| > 500 pages | `page_limit_exceeded` | 1 | raise `--max-pages` if the tenant needs it |
+| > `--max-pages` | `page_limit_exceeded` | 0 (after raising the default to 2000) | raise `--max-pages` if the tenant needs it |
 | corrupt/zero-padded PDF, empty XLSX | `unsupported_type` / `malformed_file` | 5 | rejected before an engine runs |
 
 `tests/integration/batch_parse.py` reproduces the run (redacted by default:

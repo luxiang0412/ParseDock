@@ -419,3 +419,23 @@ func TestCheckPDFDoesNotDoubleCountOverlappingSamples(t *testing.T) {
 		t.Fatalf("pages=%d encrypted=%v, want 3/false", pages, encrypted)
 	}
 }
+
+// A ".doc" produced by an "export to Word" pipeline is often HTML; the content decides.
+func TestSniffDocContainingHTML(t *testing.T) {
+	head := append([]byte{0xEF, 0xBB, 0xBF}, []byte("<!DOCTYPE html><html><body><table><tr><td>1</td></tr></table></body></html>")...)
+	f, err := SniffFormat("report.doc", head, lim())
+	if err != nil {
+		t.Fatalf("legacy extension with HTML content rejected: %v", err)
+	}
+	if f.Name != "html" {
+		t.Fatalf("format = %q, want html", f.Name)
+	}
+	// An explicit .html upload is accepted too.
+	if f, err := SniffFormat("page.html", head, lim()); err != nil || f.Name != "html" {
+		t.Fatalf(".html: %q %v", f.Name, err)
+	}
+	// A mismatching *non-legacy* extension is still rejected: only Office exports lie routinely.
+	if _, err := SniffFormat("image.png", head, lim()); err == nil {
+		t.Fatal("png containing HTML was accepted")
+	}
+}

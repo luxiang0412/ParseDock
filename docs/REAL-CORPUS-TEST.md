@@ -65,23 +65,25 @@ accepted since PR-04 but the harness silently skipped — that alone is why the 
 | .xlsx | 294 | 276 | 93.9 % | 381 ms | 1 025 ms | 41 K | 934 |
 | .xlsm | 71 | 71 | 100 % | 80 ms | 407 ms | 19 K | 453 |
 | .docx | 13 | 13 | 100 % | 26 ms | 64 ms | 313 K | 91 |
-| .doc | 12 | **8** | 66.7 % | 13 ms | 30 ms | 96 K | 0 |
+| .doc | 12 | **12** | 100 % | 13 ms | 4 s | 102 K | 2 |
 | .csv | 14 | 14 | 100 % | < 1 ms | – | 252 | 14 |
 | .png | 5 | 5 | 100 % | 258 ms | 489 ms | 3 K | 2 |
 | .md / .txt | 3 / 2 | 5 | 100 % | < 1 ms | – | 15 K | 8 |
 | .ppt / .pptx | 0 / 2 | 2 | 100 % | 25 ms | 23 ms | 7 K | 0 |
 | .xls | 2 | **2** | 100 % | 12 ms | 8 ms | 122 | 4 |
-| **total** | **972** | **938** | **96.5 %** | – | – | **23.34 M** | **6 612** |
+| **total** | **972** | **943** | **97.0 %** | – | – | **23.34 M** | **6 612** |
 
-The 34 failures are all pre-parse limits or genuine file problems, not crashes:
+After two follow-ups — HTML content behind a `.doc` extension is served by the content, and the
+page cap went from 500 to 2000 — the run is **943/972 (97.0 %)**: `.doc` is 12/12 (8 real OLE2
+via xberg, 4 HTML via docling-rs) and PDF is 98.0 %. The 29 remaining failures are all
+pre-parse limits or genuine file problems, not crashes:
 
 | code | n | what it means |
 | --- | --- | --- |
-| `expanded_too_large` | 14 | the SAP ledgers: 58–74 MiB zipped, 550–770 MiB expanded (RC-2) |
+| `expanded_too_large` | 16 | the SAP ledgers: 52–74 MiB zipped, 503–609 MiB expanded (14 hit the upload cap, 2 the 256 MiB result ceiling); needs sheet-window extraction |
 | `encrypted_file` | 8 | password-protected PDFs |
-| `unsupported_type` | 8 | 4 `.doc` whose content is **not** an OLE2 compound file despite the extension, 2 PDFs and 2 XLSX whose magic does not match |
-| `malformed_file` | 3 | truncated/damaged containers |
-| `page_limit_exceeded` | 1 | above `--max-pages` |
+| `unsupported_type` | 4 | 2 `.xlsx` that are DRM/zero-filled containers and 2 zero-filled PDFs |
+| `malformed_file` | 1 | truncated PDF |
 
 **Speed.** Engine time is unchanged (PDF p50 265 ms, p95 1.36 s). Wall time depends on who is
 the bottleneck:
@@ -124,11 +126,9 @@ files the harness skips are not documents at all, and the 34 failures are all li
 
 | Group | Files | Bytes | What it is | What it would take |
 | --- | --- | --- | --- | --- |
-| Oversized XLSX | **16** | 1 011 MiB | 58–74 MiB SAP ledgers (expand to 550–770 MiB); 14 hit the upload cap, 2 the 256 MiB result ceiling | sheet-window extraction (RC-2) |
+| Oversized XLSX | **16** | 1 011 MiB | 52–74 MiB SAP ledgers (expand to 503–609 MiB); 14 hit the upload cap, 2 the 256 MiB result ceiling | sheet-window extraction (deferred by decision) |
 | Encrypted PDFs | 8 | 22 MiB | password-protected | a password field on the API (not planned) |
-| Not a document | 8 | 10 MiB | 4 `.doc` are HTML with a UTF-8 BOM (export artefact), 8 `.xlsx`/`.pdf` carry a DRM/zero-filled header | 4 recoverable by content sniffing → needs `html` in the public format enum |
-| Corrupt | 1 | 0.8 MiB | truncated PDF | nothing |
-| Too many pages | 1 | 3.4 MiB | above `--max-pages 500` | raise the flag |
+| Not a document | 4 | 4 MiB | 2 `.xlsx` DRM containers, 2 zero-filled PDFs | nothing |
 | Skipped by the harness | 45 | 1 643 MiB | 9 **ZIP archives** (1.6 GiB — archives, not documents), 24 no-extension cache blobs (`00 00 00 01`, 0.2 MiB), 10 Office lock files (`~$`), 1 KML, 1 SVG | a zip-bundle feature would be needed for the archives |
 
 So of the 4.4 GiB corpus, the **1.6 GiB share is nine zip archives**, and the next largest
