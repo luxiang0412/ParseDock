@@ -3,6 +3,9 @@
 Self-hosted document parsing service: upload a document, get structured text with
 provenance, released on your terms.
 
+**Current release: `v0.1.0`** — see [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for what
+is in it and what is deliberately not.
+
 ```
 POST /v1/jobs  ──▶  queued ──▶ running ──▶ completed
                                               │

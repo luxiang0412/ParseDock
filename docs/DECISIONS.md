@@ -270,3 +270,23 @@ are in **raster pixels** (0..3507) while the page is reported in PDF points
 **Consequence.** No fabricated confidence, no fake precision. Two prerequisites
 before revisiting: per-element output in the engine contract, and a scanned-*table*
 fixture that pins the coordinate space.
+
+---
+
+## ADR-019 — One release path, and no implicit release from a synchronous response
+
+**Decision (2026-10-31, v0.1.0 hardening).**
+
+* `POST /v1/jobs/{id}/ack` is the only operation that releases a result.
+  `POST /v1/jobs/{id}/cancel` stops queued/running work and returns `409` for a
+  completed job; it never releases, and it takes no `result_version`.
+* `POST /v1/parse` returns the IR and leaves the result to its TTL. The response
+  carries `X-Job-Id` and `X-Result-Version` so the caller can ACK explicitly.
+* `create_job` always sends an `Idempotency-Key` (generated when the caller omits
+  one) so the client's own retries cannot produce a second job.
+
+**Why.** ACK means "I have these bytes". Cancel is a scheduling request and a
+written HTTP response is not proof of receipt, so neither may destroy the only
+recoverable copy. Two release paths also made the final state depend on a race
+between cancel and ACK. Both were found in the pre-release review
+(`docs/CHANGELOG.md` → Changed) and are covered by PR00-03/04 and the SDK tests.
