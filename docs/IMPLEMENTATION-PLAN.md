@@ -113,6 +113,9 @@ in that run were fixed in PR #3).
 | RC-3 | Scan-aware routing | 332/958 files (36 %) are scans; CJK scans need the PP-OCR path, Latin scans are fine with xberg | **PR-04** |
 | RC-4 | Upload cap vs real documents | 9 files are 58–74 MiB; the default 64 MiB cap rejects them | **PR-06** |
 | RC-5 | Rate limits must account for status polling | a batch client polling at 5 rps/thread exhausted the default 20 rps (429 on 36 files) | **PR-09** |
+| RC-7 | Chinese scans on the fast path use Tesseract (CER 0.075) while PP-OCRv6 is already inside xberg (CER 0.000) | spike 2026-10-31; PR-A/B in `docs/OCR-ROUTING-PROPOSAL.md` |
+| RC-8 | `device=gpu_required` is only enforced by the scheduler; docling-rs warns on stderr and falls back to CPU with exit 0 | spike 2026-10-31; PR-D in `docs/OCR-ROUTING-PROPOSAL.md` |
+| RC-9 | MinerU Flash GPU usage unverified (0 % util through the worker image) | spike 2026-10-31; `docs/OCR-GPU-DECISIONS.md` §2.6 |
 | RC-6 | Encrypted PDFs are 8/554 of real documents | explicit `encrypted_file` today; product decision on password support | PR-06 decision |
 
 ---

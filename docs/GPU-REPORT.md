@@ -8,6 +8,14 @@
 > The GPU also drives the desktop session (~395 MiB idle, 1 866 MiB used at
 > baseline), so VRAM deltas — not absolute values — are reported.
 
+> **2026-10-31 correction (OCR/GPU spike).** The MinerU rows below are **not
+> reproducible today**: running `parsedock-worker-gpu:0.1.0` through its own
+> entrypoint on a scanned fixture showed 0 % GPU utilisation, no VRAM delta, and
+> identical latency with `MINERU_LMDEPLOY_DEVICE=cpu` and `=cuda`; the image has
+> no `torch`. Treat "MinerU Flash runs on the GPU" as unverified until the worker
+> path is re-measured. The Docling (Python) rows still stand. See
+> `docs/OCR-GPU-BENCHMARK.md` §3 and `docs/OCR-GPU-DECISIONS.md` §2.6.
+
 ## 1. Verdict
 
 | Question | Answer | Evidence |

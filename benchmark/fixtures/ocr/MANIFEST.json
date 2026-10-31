@@ -1,0 +1,42 @@
+[
+ {
+  "fixture": "en_dense",
+  "pages": 2,
+  "lines": 60,
+  "chars": 1774,
+  "dpi": 300,
+  "png_bytes": 341322,
+  "pdf_bytes": 745407,
+  "sha256": "4d77412f4c4457aea5695f4616549e42438e908555e851c2e0540394de523a96"
+ },
+ {
+  "fixture": "en_line",
+  "pages": 1,
+  "lines": 2,
+  "chars": 55,
+  "dpi": 300,
+  "png_bytes": 54317,
+  "pdf_bytes": 153520,
+  "sha256": "2408c87332bd9b61731943cd0126e176c3b7acd487f2c5a6eebcc48f510ade92"
+ },
+ {
+  "fixture": "zh_dense",
+  "pages": 2,
+  "lines": 60,
+  "chars": 1122,
+  "dpi": 300,
+  "png_bytes": 367302,
+  "pdf_bytes": 724974,
+  "sha256": "f81dcfeaac47efadce5edb61b4d4ca32b1bd3a045e83b202dc7cf3925c0e9315"
+ },
+ {
+  "fixture": "zh_line",
+  "pages": 1,
+  "lines": 2,
+  "chars": 29,
+  "dpi": 300,
+  "png_bytes": 58598,
+  "pdf_bytes": 154204,
+  "sha256": "88483e378d1d8f6b261ee3c5243709f39480156397bbb7740219773d372d1782"
+ }
+]
