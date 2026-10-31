@@ -510,6 +510,44 @@ func TestEngineMetricLabelIsBounded(t *testing.T) {
 	}
 }
 
+// Review finding 7: 500/507 responses carried err.Error(): SQLite messages and filesystem
+// paths of the data volume went to API clients.
+func TestInternalErrorsDoNotLeakDetails(t *testing.T) {
+	s := testService(t, nil)
+	srv := NewServer(s, "", slog.Default())
+	// Staging fails: the tmp directory is not writable.
+	tmp := filepath.Join(s.Store.Root, "tmp")
+	if err := os.Chmod(tmp, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	resp, body := postJob(t, srv, "/v1/jobs", "", []byte("hello"))
+	_ = os.Chmod(tmp, 0o750)
+	msg, _ := body["error"].(map[string]any)["message"].(string)
+	if resp.StatusCode != 507 || errCode(body) != jobs.ErrInsufficientSpace {
+		t.Fatalf("staging failure: %d %v", resp.StatusCode, body)
+	}
+	if strings.Contains(msg, s.Store.Root) || strings.Contains(msg, "permission") {
+		t.Fatalf("507 message leaks the cause: %q", msg)
+	}
+
+	// The database is gone: every query fails with a driver error.
+	_ = s.DB.Close()
+	ctx := WithRequestID(context.Background(), "req-123")
+	_, err := s.GetJob(ctx, "job_x", "owner-1")
+	ce := AsError(err)
+	if ce.Status != 500 || ce.Code != jobs.ErrInternal {
+		t.Fatalf("want 500 internal_error, got %v", err)
+	}
+	if strings.Contains(strings.ToLower(ce.Message), "sql") || !strings.Contains(ce.Message, "req-123") {
+		t.Fatalf("message should be generic and carry the request id: %q", ce.Message)
+	}
+	rec := httptest.NewRecorder()
+	srv.handleReadyz(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+	if rec.Code != 503 || strings.Contains(strings.ToLower(rec.Body.String()), "sql: ") {
+		t.Fatalf("readyz leaks driver errors: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
 // Review finding 1: the terminal event is written in the completion's transaction, so a
 // failure to record it leaves the job untouched instead of completed-without-event.
 func TestCompletionEventIsAtomicWithStatus(t *testing.T) {

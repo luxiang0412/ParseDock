@@ -118,7 +118,7 @@ func (s *Server) stageUpload(r *http.Request, maxBodyLimit int64) (*jobs.Job, bo
 	ownerID := owner(r)
 
 	jobID := jobs.NewJobID()
-	writer, err := s.Svc.StageInput(jobID)
+	writer, err := s.Svc.StageInput(r.Context(), jobID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -674,13 +674,15 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	checks := map[string]any{}
 	ready := true
 	if err := s.Svc.DB.PingContext(r.Context()); err != nil {
-		checks["sqlite"] = "down: " + err.Error()
+		s.Log.Error("readiness: sqlite ping failed", "err", err)
+		checks["sqlite"] = "down"
 		ready = false
 	} else {
 		checks["sqlite"] = "ok"
 	}
 	if free, err := s.Svc.Store.FreeBytes(); err != nil {
-		checks["storage"] = "error: " + err.Error()
+		s.Log.Error("readiness: free-space probe failed", "err", err)
+		checks["storage"] = "error"
 		ready = false
 	} else {
 		checks["free_bytes"] = free
@@ -1019,6 +1021,11 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 }
 
 func writeErr(w http.ResponseWriter, err error) {
+	var known *Error
+	if !errors.As(err, &known) {
+		// Unclassified errors reach the client as a generic 500; keep the cause for operators.
+		slog.Error("unclassified coordinator error", "err", err)
+	}
 	ce := AsError(err)
 	if ce.Status == 0 {
 		ce.Status = 500

@@ -100,7 +100,7 @@ func (s *Service) enforceQuota(ctx context.Context, owner string, size int64) er
 	}
 	u, err := s.ownerUsage(ctx, owner, nowUTC().Add(-24*time.Hour))
 	if err != nil {
-		return NewError(500, jobs.ErrInternal, "quota lookup: "+err.Error())
+		return internalError(ctx, "quota lookup", err)
 	}
 	q := s.Cfg.Quota
 	if q.MaxConcurrent > 0 && u.concurrent >= q.MaxConcurrent {
@@ -116,7 +116,7 @@ func (s *Service) enforceQuota(ctx context.Context, owner string, size int64) er
 		if err != nil {
 			// Unknown usage is not zero usage: admitting here would let a tenant exceed the
 			// quota whenever the lookup fails.
-			return NewError(500, jobs.ErrInternal, "quota lookup: "+err.Error())
+			return internalError(ctx, "quota lookup", err)
 		}
 		if stored+size > q.MaxStorageBytes {
 			return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: 60,

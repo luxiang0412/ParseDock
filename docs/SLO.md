@@ -76,6 +76,10 @@ audit for the licence gate, and the useful correlation already exists.
   decision, never document text or tokens.
 * `job_events` records `created → claimed → completed/failed/cancelled` with timestamps, so a
   single job's timeline is queryable without a trace backend.
+* A `500 internal_error` (and a staging `507`) never carries the cause to the client: the body
+  says "internal error" plus the `request_id`, and the coordinator logs
+  `coordinator internal error` with `op`, `request_id` and the underlying error (SQLite
+  message, path) at ERROR level. Search the coordinator log by that `request_id`.
 
 Wiring an OTLP exporter later is additive: the propagation point is the request context in
 `internal/api` and `internal/coordinator`.
