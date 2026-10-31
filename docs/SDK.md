@@ -82,6 +82,22 @@ has **no retry policy**: back off on `429 rate_limited` and 5xx, never on the
 other 4xx codes. `sdk/java-client-test` is a worked example (JUnit, runs against a
 live server); `.agents/skills/parsedock-java-sdk/SKILL.md` is the condensed version.
 
+## Runnable examples
+
+Two minimal projects that parse one document, write the result and only then ACK:
+
+```bash
+export PARSEDOCK_TOKEN=...          # key from deploy/.env (PARSEDOCK_API_KEYS)
+
+cd examples/python && make run      # pip installs the SDK into examples/python/.venv
+cd examples/java   && make run      # mvn installs the generated client, then exec:java
+```
+
+`FILE=… MODE=accurate` selects other inputs and modes; output lands in
+`examples/*/out/`. `scripts/sdk-check.sh` runs both against a live stack on every
+nightly, so they cannot rot. Neither sets an idempotency key: re-running must not
+replay an already-released job.
+
 ## Lifecycle rules the wrapper enforces
 
 1. **ACK only after your sink succeeded.** `download_and_ack(job_id, sink=...)` writes the

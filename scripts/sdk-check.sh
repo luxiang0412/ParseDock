@@ -117,6 +117,14 @@ if [[ $WITH_JAVA -eq 1 ]]; then
     -Dparsedock.base="http://127.0.0.1:$PORT" \
     -Dparsedock.token=java-it-token \
     -Dparsedock.fixture="$JAVA_FIXTURE"
+
+  echo "== examples =="
+  # The examples are user-facing documentation; run them so they cannot rot.
+  ( cd examples/python && PARSEDOCK_API="http://127.0.0.1:$PORT" PARSEDOCK_TOKEN=java-it-token \
+      make -s run )
+  ( cd examples/java && PARSEDOCK_API="http://127.0.0.1:$PORT" PARSEDOCK_TOKEN=java-it-token \
+      make -s run )
+
   cleanup
   trap - EXIT
 else
