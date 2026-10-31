@@ -47,8 +47,8 @@ appears.
 | `parsedock_queue_depth` | gauge | – | queued jobs |
 | `parsedock_oldest_queued_seconds` | gauge | – | age of the oldest queued job |
 | `parsedock_claim_wait_seconds` | histogram | – | creation → first claim (retries excluded) |
-| `parsedock_parse_seconds` | histogram | `engine` | claim → committed result |
-| `parsedock_result_bytes_total` | counter | `engine` | committed artifact bytes |
+| `parsedock_parse_seconds` | histogram | `engine` | claim → committed result; an engine name the coordinator is not configured with is reported as `engine="other"` |
+| `parsedock_result_bytes_total` | counter | `engine` | committed artifact bytes (same `other` folding) |
 | `parsedock_workers_online` | gauge | `device` | workers with a heartbeat in 3 min |
 | `parsedock_leases_expired_total` | counter | – | attempts lost to lease expiry |
 | `parsedock_cleanup_passes_total` | counter | `outcome`=`ok|error` | cleanup passes |
@@ -76,6 +76,10 @@ audit for the licence gate, and the useful correlation already exists.
   decision, never document text or tokens.
 * `job_events` records `created → claimed → completed/failed/cancelled` with timestamps, so a
   single job's timeline is queryable without a trace backend.
+* A `500 internal_error` (and a staging `507`) never carries the cause to the client: the body
+  says "internal error" plus the `request_id`, and the coordinator logs
+  `coordinator internal error` with `op`, `request_id` and the underlying error (SQLite
+  message, path) at ERROR level. Search the coordinator log by that `request_id`.
 
 Wiring an OTLP exporter later is additive: the propagation point is the request context in
 `internal/api` and `internal/coordinator`.

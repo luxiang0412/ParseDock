@@ -1,8 +1,10 @@
 package coordinator
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -28,13 +30,89 @@ func NewError(status int, code, msg string) *Error {
 	return &Error{Code: code, Message: msg, Status: status}
 }
 
-// AsError unwraps a coordinator error, defaulting to internal.
+// AsError unwraps a coordinator error, defaulting to internal. The default carries a generic
+// message: an unclassified error's text is a server detail (SQL, paths), not client output.
 func AsError(err error) *Error {
 	var ce *Error
 	if errors.As(err, &ce) {
 		return ce
 	}
-	return &Error{Code: jobs.ErrInternal, Message: err.Error(), Status: 500}
+	return &Error{Code: jobs.ErrInternal, Message: internalMessage, Status: 500}
+}
+
+// statusForCode is the HTTP status a stable error code is answered with when the code is not
+// produced together with its own status: upload validation and a job's terminal failure as
+// reported by the synchronous endpoint. Document and engine failures (malformed, encrypted,
+// page limit, engine errors, timeouts) are 422; codes with a dedicated meaning keep it.
+func statusForCode(code string) int {
+	switch code {
+	case jobs.ErrInvalidRequest:
+		return 400
+	case jobs.ErrUnauthorized:
+		return 401
+	case jobs.ErrNotFound:
+		return 404
+	case jobs.ErrConflict, jobs.ErrCancelled, jobs.ErrGPUUnavailable, jobs.ErrLeaseLost:
+		return 409
+	case jobs.ErrGone:
+		return 410
+	case jobs.ErrTooLarge, jobs.ErrExpandedTooLarge:
+		return 413
+	case jobs.ErrUnsupportedType:
+		return 415
+	case jobs.ErrQuotaExceeded, jobs.ErrRateLimited:
+		return 429
+	case jobs.ErrInsufficientSpace:
+		return 507
+	}
+	return 422
+}
+
+// quotaRetryAfter is the Retry-After (seconds) for storage-quota refusals, at admission and
+// when a result is rejected at completion.
+const quotaRetryAfter = 60
+
+// terminalFailure is the error a client receives for a job that ended without a result.
+func terminalFailure(j *jobs.Job) *Error {
+	if j.ProcessingStatus == jobs.StatusCancelled {
+		// Cancel records no error_code; the stable code for this outcome is 'cancelled'.
+		return NewError(409, jobs.ErrCancelled, "job was cancelled before it finished")
+	}
+	code, msg := j.ErrorCode, j.ErrorMessage
+	if !jobs.IsKnownErrorCode(code) {
+		code = jobs.ErrInternal
+	}
+	if msg == "" {
+		msg = "parse failed"
+	}
+	e := NewError(statusForCode(code), code, msg)
+	if code == jobs.ErrQuotaExceeded {
+		e.RetryAfter = quotaRetryAfter
+	}
+	return e
+}
+
+// internalMessage is what a client sees for an internal failure.
+const internalMessage = "internal error; the coordinator logged the details"
+
+// internalError logs err (with the operation and the request id, so an operator can find it)
+// and returns a 500 whose message reveals nothing about the cause. SQLite errors and
+// filesystem paths are server details; the stable code stays internal_error.
+func internalError(ctx context.Context, op string, err error) *Error {
+	rid := requestID(ctx)
+	slog.ErrorContext(ctx, "coordinator internal error", "op", op, "request_id", rid, "err", err)
+	msg := internalMessage
+	if rid != "" {
+		msg += " (request_id " + rid + ")"
+	}
+	return &Error{Code: jobs.ErrInternal, Message: msg, Status: 500}
+}
+
+// stagingError is internalError for a failure to create the upload staging file: the code
+// and status stay 507 insufficient_storage, the path and errno stay in the log.
+func stagingError(ctx context.Context, err error) *Error {
+	slog.ErrorContext(ctx, "cannot stage upload", "request_id", requestID(ctx), "err", err)
+	return NewError(507, jobs.ErrInsufficientSpace, "cannot stage the upload; retry later")
 }
 
 // EngineSpec is a coordinator-side declaration of an engine's capabilities.

@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"parsedock.dev/parsedock/internal/documentir"
 	"parsedock.dev/parsedock/internal/jobs"
@@ -43,6 +44,8 @@ type Service struct {
 
 	// admit serialises quota admission per owner (see quota.go).
 	admit ownerLocks
+	// jobLocks serialises publication and reclamation per job (see lockJob).
+	jobLocks jobLockTable
 
 	cleanupRuns atomic.Int64
 	lastCleanup atomic.Value // time.Time
@@ -70,6 +73,12 @@ func requestID(ctx context.Context) string {
 	return v
 }
 
+// Priority bounds (api/openapi.yaml: priority minimum 0, maximum 100).
+const (
+	MinPriority = 0
+	MaxPriority = 100
+)
+
 // CreateParams is one submission.
 type CreateParams struct {
 	OwnerID        string
@@ -94,7 +103,7 @@ func (s *Service) CreateJob(ctx context.Context, p CreateParams) (*jobs.Job, boo
 	}
 	writer, err := s.Store.NewInputWriter(jobID, s.Cfg.MaxUploadBytes)
 	if err != nil {
-		return nil, false, NewError(507, jobs.ErrInsufficientSpace, err.Error())
+		return nil, false, stagingError(ctx, err)
 	}
 	if _, err := io.Copy(writer, p.Body); err != nil {
 		writer.Abort()
@@ -110,7 +119,7 @@ func (s *Service) CreateJob(ctx context.Context, p CreateParams) (*jobs.Job, boo
 // StageInput prepares a streaming writer for an upload whose metadata is not
 // known yet. The HTTP layer uses it to accept multipart parts in any order
 // without buffering the document in memory (F06).
-func (s *Service) StageInput(jobID string) (*storage.InputWriter, error) {
+func (s *Service) StageInput(ctx context.Context, jobID string) (*storage.InputWriter, error) {
 	if s.Cfg.MaxUploadBytes > 0 {
 		if err := s.Store.CheckSpace(s.Cfg.MaxUploadBytes); err != nil {
 			return nil, NewError(507, jobs.ErrInsufficientSpace, "storage below safety watermark")
@@ -118,7 +127,7 @@ func (s *Service) StageInput(jobID string) (*storage.InputWriter, error) {
 	}
 	w, err := s.Store.NewInputWriter(jobID, s.Cfg.MaxUploadBytes)
 	if err != nil {
-		return nil, NewError(507, jobs.ErrInsufficientSpace, err.Error())
+		return nil, stagingError(ctx, err)
 	}
 	return w, nil
 }
@@ -140,9 +149,24 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		writer.Abort()
 		return nil, false, NewError(401, jobs.ErrUnauthorized, "missing owner")
 	}
-	if p.IdempotencyKey != "" {
-		key := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
-		if existing, err := s.findByIdemKey(ctx, p.OwnerID, key); err == nil && existing != nil {
+	// priority orders the shared queue; an unbounded value lets one tenant jump every other
+	// tenant's jobs (the spec bounds it to 0..100).
+	if p.Priority < MinPriority || p.Priority > MaxPriority {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest,
+			fmt.Sprintf("priority must be an integer in %d..%d", MinPriority, MaxPriority))
+	}
+	if p.TTLSeconds < 0 {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, "ttl_seconds must be at least 1")
+	}
+	idemKey, err := jobs.NormalizeIdempotencyKey(p.IdempotencyKey)
+	if err != nil {
+		writer.Abort()
+		return nil, false, NewError(400, jobs.ErrInvalidRequest, err.Error())
+	}
+	if idemKey != "" {
+		if existing, err := s.findByIdemKey(ctx, p.OwnerID, idemKey); err == nil && existing != nil {
 			writer.Abort() // the staged bytes are a duplicate
 			return existing, false, nil
 		}
@@ -153,7 +177,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	}
 	lim := s.limits()
 	// Validate before publishing so a rejected upload never has a job row.
-	if err := s.validateStaged(jobID, writer, p.InputName, lim); err != nil {
+	if err := validateFile(writer.Path(), p.InputName, lim); err != nil {
 		writer.Abort()
 		return nil, false, err
 	}
@@ -173,7 +197,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		"owner_id":   p.OwnerID,
 	})
 	if err != nil {
-		return nil, false, NewError(500, jobs.ErrInternal, "commit input: "+err.Error())
+		return nil, false, internalError(ctx, "commit input", err)
 	}
 
 	format, verr := sniffCommitted(s.Store.InputPath(jobID), p.InputName, lim)
@@ -214,9 +238,12 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	}
 
 	now := nowUTC()
-	ttl := p.TTLSeconds
-	if ttl < 0 {
-		ttl = 0
+	// 0 means "server default". A request above the ceiling is stored as the ceiling (the
+	// documented semantics are "capped", not "rejected"), so the column never holds a value
+	// that cannot be converted to a duration.
+	ttl := int64(p.TTLSeconds)
+	if maxS := int64(s.Cfg.MaxResultTTL / time.Second); ttl > maxS {
+		ttl = maxS
 	}
 	job := &jobs.Job{
 		ID:               jobID,
@@ -234,7 +261,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		RequestedDevice:  device,
 		EngineHint:       engineHint,
 		RoutingReason:    reason,
-		IdempotencyKey:   jobs.NormalizeIdempotencyKey(p.IdempotencyKey),
+		IdempotencyKey:   idemKey,
 		CreatedAt:        now,
 		MaxLifetimeAt:    now.Add(s.Cfg.MaxJobLifetime),
 		MaxAttempts:      s.Cfg.MaxAttempts,
@@ -244,7 +271,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		_ = s.Store.DeleteJob(jobID)
-		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+		return nil, false, internalError(ctx, "insert job", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 	_, err = tx.ExecContext(ctx, `INSERT INTO jobs (`+jobCols+`) VALUES (`+placeholders(37)+`)`,
@@ -260,19 +287,22 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 				return existing, false, nil
 			}
 		}
-		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+		return nil, false, internalError(ctx, "insert job", err)
 	}
 	if err := recordUsage(ctx, tx, jobID, p.OwnerID, size); err != nil {
 		_ = s.Store.DeleteJob(jobID)
-		return nil, false, NewError(500, jobs.ErrInternal, "record usage: "+err.Error())
+		return nil, false, internalError(ctx, "record usage", err)
+	}
+	if err := appendEvent(ctx, tx, jobID, "created", map[string]any{
+		"status": job.ProcessingStatus, "format": job.Format, "engine_hint": job.EngineHint,
+	}); err != nil {
+		_ = s.Store.DeleteJob(jobID)
+		return nil, false, internalError(ctx, "insert job", err)
 	}
 	if err := tx.Commit(); err != nil {
 		_ = s.Store.DeleteJob(jobID)
-		return nil, false, NewError(500, jobs.ErrInternal, "insert job: "+err.Error())
+		return nil, false, internalError(ctx, "insert job", err)
 	}
-	s.appendEvent(ctx, jobID, "created", map[string]any{
-		"status": job.ProcessingStatus, "format": job.Format, "engine_hint": job.EngineHint,
-	})
 	s.audit(ctx, "job_created", job, map[string]any{
 		"engine_hint": job.EngineHint, "mode": job.RequestedMode, "device": job.RequestedDevice,
 	})
@@ -280,15 +310,10 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	return job, true, nil
 }
 
-func (s *Service) validateStaged(jobID string, w *storage.InputWriter, name string, lim storage.Limits) error {
-	tmp := filepath.Join(s.Store.Root, "tmp", jobID+".input.part")
-	return validateFile(tmp, name, lim)
-}
-
 func sniffCommitted(path, name string, lim storage.Limits) (storage.Format, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return storage.Format{}, NewError(500, jobs.ErrInternal, err.Error())
+		return storage.Format{}, internalError(context.Background(), "sniffCommitted", err)
 	}
 	defer f.Close()
 	head := make([]byte, 64<<10)
@@ -303,7 +328,7 @@ func sniffCommitted(path, name string, lim storage.Limits) (storage.Format, erro
 func validateFile(path, name string, lim storage.Limits) error {
 	f, err := os.Open(path)
 	if err != nil {
-		return NewError(500, jobs.ErrInternal, err.Error())
+		return internalError(context.Background(), "validateFile", err)
 	}
 	defer f.Close()
 	head := make([]byte, 64<<10)
@@ -317,16 +342,7 @@ func validateFile(path, name string, lim storage.Limits) error {
 func validationErr(err error) error {
 	var ve *storage.ValidationError
 	if errors.As(err, &ve) {
-		status := 422
-		switch ve.Code {
-		case jobs.ErrTooLarge, jobs.ErrExpandedTooLarge:
-			status = 413
-		case jobs.ErrUnsupportedType:
-			status = 415
-		case jobs.ErrMalformed:
-			status = 422
-		}
-		return NewError(status, ve.Code, ve.Msg)
+		return NewError(statusForCode(ve.Code), ve.Code, ve.Msg)
 	}
 	return NewError(422, jobs.ErrMalformed, err.Error())
 }
@@ -482,7 +498,7 @@ func (s *Service) GetJob(ctx context.Context, jobID, ownerID string) (*jobs.Job,
 		return nil, NewError(404, jobs.ErrNotFound, "job not found")
 	}
 	if err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "GetJob", err)
 	}
 	if ownerID != "" && job.OwnerID != ownerID {
 		return nil, NewError(404, jobs.ErrNotFound, "job not found")
@@ -511,7 +527,7 @@ func (s *Service) OpenResult(jobID, version, format string) (*os.File, os.FileIn
 	st, err := f.Stat()
 	if err != nil {
 		_ = f.Close()
-		return nil, nil, nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, nil, nil, internalError(context.Background(), "OpenResult", err)
 	}
 	return f, st, m, nil
 }
@@ -557,17 +573,61 @@ type WorkerCaps struct {
 	CanGPU   bool     `json:"-"`
 }
 
-// jobLocks serialises publication and reclamation per job. Two completions for the same job
-// must not interleave their writes, and the cleaner must not delete a generation while a
+// jobLockTable serialises publication and reclamation per job. Two completions for the same
+// job must not interleave their writes, and the cleaner must not delete a generation while a
 // completion is publishing one.
-var jobLocks sync.Map
-
-func lockJob(jobID string) func() {
-	v, _ := jobLocks.LoadOrStore(jobID, &sync.Mutex{})
-	mu := v.(*sync.Mutex)
-	mu.Lock()
-	return mu.Unlock
+//
+// Entries are reference counted and removed when the last holder or waiter leaves: the
+// cleaner locks every job directory on every pass, so a table that only grew would leak one
+// mutex per job ever seen for the life of the process.
+type jobLockTable struct {
+	mu sync.Mutex
+	m  map[string]*jobLock
 }
+
+type jobLock struct {
+	mu   sync.Mutex
+	refs int // holders + waiters; guarded by jobLockTable.mu
+}
+
+// lock blocks until jobID's lock is held and returns its release function.
+func (t *jobLockTable) lock(jobID string) func() {
+	t.mu.Lock()
+	if t.m == nil {
+		t.m = map[string]*jobLock{}
+	}
+	l, ok := t.m[jobID]
+	if !ok {
+		l = &jobLock{}
+		t.m[jobID] = l
+	}
+	l.refs++
+	t.mu.Unlock()
+
+	l.mu.Lock()
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			l.mu.Unlock()
+			t.mu.Lock()
+			l.refs--
+			if l.refs == 0 {
+				delete(t.m, jobID)
+			}
+			t.mu.Unlock()
+		})
+	}
+}
+
+// size reports how many jobs currently have a lock entry (tests).
+func (t *jobLockTable) size() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return len(t.m)
+}
+
+// lockJob takes the per-job publication/reclamation lock.
+func (s *Service) lockJob(jobID string) func() { return s.jobLocks.lock(jobID) }
 
 // instr returns the service instruments, falling back to the process-wide registry so
 // instrumentation is always available (and never nil) in tests and single-binary runs.
@@ -632,7 +692,7 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Claim", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -647,7 +707,7 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
-		return nil, NewError(500, jobs.ErrInternal, "claim: "+err.Error())
+		return nil, internalError(ctx, "claim", err)
 	}
 	if t.MaxLifetimeAt, err = parseTS(maxLife); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, "claim: bad max_lifetime_at")
@@ -666,14 +726,16 @@ func (s *Service) Claim(ctx context.Context, caps WorkerCaps) (*ClaimedTask, err
 		(job_id, attempt_no, worker_id, lease_token, lease_until, started_at, state, device_type)
 		VALUES (?,?,?,?,?,?,?,?)`,
 		t.JobID, t.AttemptNo, caps.WorkerID, t.LeaseToken, ts(t.LeaseUntil), ts(now), jobs.AttemptRunning, caps.Device); err != nil {
-		return nil, NewError(500, jobs.ErrInternal, "claim: insert attempt: "+err.Error())
+		return nil, internalError(ctx, "claim: insert attempt", err)
+	}
+	if err := appendEvent(ctx, tx, t.JobID, "running", map[string]any{
+		"attempt": t.AttemptNo, "worker_id": caps.WorkerID, "lease_until": t.LeaseUntil,
+	}); err != nil {
+		return nil, internalError(ctx, "claim: event", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, NewError(500, jobs.ErrInternal, "claim: commit: "+err.Error())
+		return nil, internalError(ctx, "claim: commit", err)
 	}
-	s.appendEvent(ctx, t.JobID, "running", map[string]any{
-		"attempt": t.AttemptNo, "worker_id": caps.WorkerID, "lease_until": t.LeaseUntil,
-	})
 	return &t, nil
 }
 
@@ -692,7 +754,7 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "unknown lease token")
 	}
 	if err != nil {
-		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+		return time.Time{}, internalError(ctx, "Heartbeat", err)
 	}
 	if state == jobs.AttemptCancelled {
 		return time.Time{}, NewError(409, jobs.ErrCancelled, "job was cancelled")
@@ -712,7 +774,7 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 		WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?)`,
 		ts(now), ts(until), ts(until), jobID, token, ts(now))
 	if err != nil {
-		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+		return time.Time{}, internalError(ctx, "Heartbeat", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return time.Time{}, NewError(409, jobs.ErrLeaseLost, "lease is not valid (expired or superseded)")
@@ -726,16 +788,15 @@ func (s *Service) Heartbeat(ctx context.Context, jobID, token string, progress i
 		// Fenced by the attempt: a heartbeat accepted for an old attempt must not write
 		// progress onto a job a newer attempt now owns.
 		_, err = s.DB.ExecContext(ctx, `UPDATE jobs SET progress = ?, progress_stage = ?, updated_at = ?
-			WHERE id = ? AND processing_status = 'running' AND progress <= ?
-			  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
-			progress, stage, ts(now), jobID, progress, jobID, token)
+			WHERE id = ? AND processing_status = 'running' AND progress <= ?`+fenceCurrentAttempt,
+			append([]any{progress, stage, ts(now), jobID, progress}, fenceCurrentAttemptArgs(jobID, token)...)...)
 		if err != nil {
-			return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+			return time.Time{}, internalError(ctx, "Heartbeat", err)
 		}
 	}
 	var st string
 	if err := s.DB.QueryRowContext(ctx, `SELECT processing_status FROM jobs WHERE id = ?`, jobID).Scan(&st); err != nil {
-		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+		return time.Time{}, internalError(ctx, "Heartbeat", err)
 	}
 	if jobs.ProcessingStatus(st) == jobs.StatusCancelled {
 		return time.Time{}, NewError(409, jobs.ErrCancelled, "job was cancelled")
@@ -758,6 +819,59 @@ type CompleteParams struct {
 	Warnings  int
 }
 
+// engineLabel bounds the {engine} metric label to the engines the coordinator is configured
+// with. The name comes from the worker's result payload; used verbatim, every distinct string
+// would create a new series (Instruments forbids unbounded labels).
+func (s *Service) engineLabel(name string) string {
+	for _, e := range s.Cfg.Engines {
+		if e.Name == name {
+			return name
+		}
+	}
+	return "other"
+}
+
+// resultTTL resolves how long a result committed now is retained: the client's request when
+// there is one, never above MaxResultTTL.
+func (s *Service) resultTTL(reqSeconds int64) time.Duration {
+	if reqSeconds > 0 {
+		// Compare in seconds before converting: multiplying a large request into a Duration
+		// overflowed int64, wrapped negative and expired the result immediately.
+		if reqSeconds >= int64(s.Cfg.MaxResultTTL/time.Second) {
+			return s.Cfg.MaxResultTTL
+		}
+		return time.Duration(reqSeconds) * time.Second
+	}
+	if s.Cfg.ResultTTL > s.Cfg.MaxResultTTL {
+		return s.Cfg.MaxResultTTL
+	}
+	return s.Cfg.ResultTTL
+}
+
+// Fencing predicates for a worker-reported transition on the jobs row. They are appended to
+// `UPDATE jobs ... WHERE id = ? AND processing_status = 'running'` so a report from a stale
+// attempt cannot move a job that a newer attempt now owns:
+//
+//   - fenceCurrentAttempt: the token belongs to the job's current, still-running attempt;
+//   - fenceLeaseLive: additionally, that attempt's lease has not expired. Publishing a result
+//     requires it; a failure report deliberately does not (checkLease already ran, and the
+//     reaper is the one that expires a lease).
+const (
+	fenceCurrentAttempt = `
+	  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`
+	fenceLeaseLive = `
+	  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running'
+	              AND julianday(lease_until) > julianday(?))`
+)
+
+// fenceCurrentAttemptArgs are the arguments of fenceCurrentAttempt.
+func fenceCurrentAttemptArgs(jobID, token string) []any { return []any{jobID, token} }
+
+// fenceLiveArgs are the arguments of fenceCurrentAttempt followed by fenceLeaseLive.
+func fenceLiveArgs(jobID, token string, now time.Time) []any {
+	return []any{jobID, token, jobID, token, ts(now)}
+}
+
 // Complete publishes artifacts then commits the job with a fencing check.
 //
 // File I/O happens before the transaction on purpose: the DB must not be held
@@ -766,7 +880,7 @@ type CompleteParams struct {
 func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, error) {
 	// One publisher per job at a time: the fence decides the winner, but the losing attempt
 	// must not be writing files that the winner (or the cleaner) is touching.
-	unlock := lockJob(p.JobID)
+	unlock := s.lockJob(p.JobID)
 	defer unlock()
 	if err := ctx.Err(); err != nil {
 		return nil, NewError(499, jobs.ErrCancelled, "cancelled before publishing the result")
@@ -780,26 +894,15 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 		"result.json": bytesReader(p.JSON),
 	})
 	if err != nil {
-		return nil, NewError(500, jobs.ErrInternal, "commit result: "+err.Error())
+		return nil, internalError(ctx, "commit result", err)
 	}
 
 	now := nowUTC()
-	ttl := s.Cfg.ResultTTL
-	var reqTTL int
-	_ = s.DB.QueryRowContext(ctx, `SELECT requested_ttl_seconds FROM jobs WHERE id = ?`, p.JobID).Scan(&reqTTL)
-	if reqTTL > 0 {
-		ttl = time.Duration(reqTTL) * time.Second
-	}
-	if ttl > s.Cfg.MaxResultTTL {
-		ttl = s.Cfg.MaxResultTTL
-	}
-	expires := now.Add(ttl)
-
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Complete", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -817,12 +920,16 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	// this attempt's start: jobs.started_at keeps the first claim (COALESCE) and would
 	// include retries and escalations in the final engine's histogram.
 	var startedRaw sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at FROM jobs WHERE id = ?`, p.JobID).
-		Scan(&ownerID, &startedRaw); err != nil {
+	var reqTTL sql.NullInt64
+	if err := tx.QueryRowContext(ctx, `SELECT owner_id, started_at, requested_ttl_seconds FROM jobs WHERE id = ?`, p.JobID).
+		Scan(&ownerID, &startedRaw, &reqTTL); err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
-		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
+		return nil, internalError(ctx, "storage accounting", err)
 	}
+	// TTL counts from this commit; a failed read above aborts instead of silently applying
+	// the default retention.
+	expires := now.Add(s.resultTTL(reqTTL.Int64))
 	var attemptStart sql.NullString
 	_ = tx.QueryRowContext(ctx, `SELECT started_at FROM attempts WHERE job_id = ? AND lease_token = ?`,
 		p.JobID, p.Token).Scan(&attemptStart)
@@ -839,8 +946,12 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	// A result can be much larger than its input, so admission alone cannot bound
 	// tenant storage: enforce the limit transactionally on the committed bytes.
 	if s.Cfg.Quota.MaxStorageBytes > 0 {
-		var stored int64
-		_ = tx.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, ownerID).Scan(&stored)
+		stored, serr := ownerStoredBytes(ctx, tx, ownerID)
+		if serr != nil {
+			// Fail closed: treating an unreadable balance as 0 would let the result through.
+			// The generation is left for the cleaner, as on every other error path here.
+			return nil, internalError(ctx, "storage accounting", serr)
+		}
 		if stored+resultBytes > s.Cfg.Quota.MaxStorageBytes {
 			// The job was admitted but its result cannot be stored. Fail it
 			// terminally in this transaction: leaving it 'running' would let the
@@ -851,13 +962,12 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			ures, uerr := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
 				error_code = ?, error_message = ?, retention_status = 'release_pending',
 				progress_stage = 'quota_rejected', updated_at = ?
-				WHERE id = ? AND processing_status = 'running'
-				  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
-				  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?))`,
-				ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
+				WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt+fenceLeaseLive,
+				append([]any{ts(now), jobs.ErrQuotaExceeded, msg, ts(now), p.JobID},
+					fenceLiveArgs(p.JobID, p.Token, now)...)...)
 			if uerr != nil {
 				_ = tx.Rollback()
-				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+uerr.Error())
+				return nil, internalError(ctx, "quota rejection", uerr)
 			}
 			if n, _ := ures.RowsAffected(); n == 0 {
 				// Left for the cleaner for the same reason as the main fence: this generation
@@ -868,17 +978,19 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			if _, aerr := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ?
 				WHERE job_id = ? AND lease_token = ?`, msg, p.JobID, p.Token); aerr != nil {
 				_ = tx.Rollback()
-				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+aerr.Error())
+				return nil, internalError(ctx, "quota rejection", aerr)
+			}
+			if eerr := appendEvent(ctx, tx, p.JobID, "failed", map[string]any{
+				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false}); eerr != nil {
+				return nil, internalError(ctx, "quota rejection", eerr)
 			}
 			if cerr := tx.Commit(); cerr != nil {
-				return nil, NewError(500, jobs.ErrInternal, "quota rejection: "+cerr.Error())
+				return nil, internalError(ctx, "quota rejection", cerr)
 			}
 			// The job is terminal now; its input and the rejected result go away unless a
 			// download lease (client or online backup) still protects them.
 			s.deleteJobUnlessLeased(ctx, p.JobID)
-			s.appendEvent(ctx, p.JobID, "failed", map[string]any{
-				"code": jobs.ErrQuotaExceeded, "message": msg, "retryable": false})
-			return nil, NewError(429, jobs.ErrQuotaExceeded, msg)
+			return nil, &Error{Status: 429, Code: jobs.ErrQuotaExceeded, Message: msg, RetryAfter: quotaRetryAfter}
 		}
 	}
 
@@ -887,33 +999,29 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			result_version = ?, result_manifest_path = ?, page_count = CASE WHEN ? > 0 THEN ? ELSE page_count END,
 			actual_engine = ?, warning_count = ?, progress = 100, progress_stage = 'completed',
 			error_code = NULL, error_message = NULL, updated_at = ?
-		WHERE id = ? AND processing_status = 'running'
-		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')
-		  AND EXISTS (SELECT 1 FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running' AND julianday(lease_until) > julianday(?))`,
-		ts(now), ts(expires), manifest.Version,
-		filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
-		p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID, p.JobID, p.Token, p.JobID, p.Token, ts(now))
+		WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt+fenceLeaseLive,
+		append([]any{ts(now), ts(expires), manifest.Version,
+			filepath.Join(s.Store.ResultDirAt(p.JobID, manifest.Version), "manifest.json"),
+			p.PageCount, p.PageCount, p.Engine, p.Warnings, ts(now), p.JobID},
+			fenceLiveArgs(p.JobID, p.Token, now)...)...)
 	if err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
-		return nil, NewError(500, jobs.ErrInternal, "complete: "+err.Error())
+		return nil, internalError(ctx, "complete", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		// Lost the fence: this generation was never referenced. Drop it, but only if the
-		// winning attempt did not produce byte-identical output (content addressing makes
-		// those the same directory).
-		var committed sql.NullString
-		_ = tx.QueryRowContext(ctx, `SELECT result_version FROM jobs WHERE id = ?`, p.JobID).Scan(&committed)
+		// Lost the fence: this generation is not referenced by the job. It is not removed
+		// here, because content addressing makes a byte-identical result from the winning
+		// attempt the very same directory. pruneGenerations (cleaner) removes unreferenced
+		// generations once they are older than the orphan cutoff.
 		_ = tx.Rollback()
-		if !committed.Valid || committed.String != manifest.Version {
-		}
 		return nil, NewError(409, jobs.ErrLeaseLost, "lease expired or was superseded; result rejected")
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'succeeded', engine = ?, device_type = ?
 		WHERE job_id = ? AND lease_token = ?`, p.Engine, p.Device, p.JobID, p.Token); err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
-		return nil, NewError(500, jobs.ErrInternal, "complete: attempt: "+err.Error())
+		return nil, internalError(ctx, "complete: attempt", err)
 	}
 	for _, a := range manifest.Files {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO artifacts(job_id, kind, path, size, sha256, generation, ready_at)
@@ -923,18 +1031,24 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 			a.Size, a.SHA256, ts(now)); err != nil {
 			// Leave the generation for the cleaner: deleting here could remove a byte-identical
 			// generation that another attempt committed in the meantime.
-			return nil, NewError(500, jobs.ErrInternal, "complete: artifact: "+err.Error())
+			return nil, internalError(ctx, "complete: artifact", err)
 		}
 	}
 	if err := adjustStorage(ctx, tx, ownerID, resultBytes); err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
-		return nil, NewError(500, jobs.ErrInternal, "storage accounting: "+err.Error())
+		return nil, internalError(ctx, "storage accounting", err)
+	}
+	if err := appendEvent(ctx, tx, p.JobID, "completed", map[string]any{
+		"result_version": manifest.Version, "engine": p.Engine, "engine_version": p.Version,
+		"result_expires_at": expires, "pages": p.PageCount, "warnings": p.Warnings,
+	}); err != nil {
+		return nil, internalError(ctx, "complete: event", err)
 	}
 	if err := tx.Commit(); err != nil {
 		// Leave the generation for the cleaner: deleting here could remove a byte-identical
 		// generation that another attempt committed in the meantime.
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Complete", err)
 	}
 	// Older generations of this job are unreachable now; removing them keeps the bytes on
 	// disk equal to what storage accounting charges for. Skip it while a client or an online
@@ -942,12 +1056,9 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	if leased, lerr := s.hasActiveDownloadLease(ctx, p.JobID); lerr == nil && !leased {
 		_ = s.Store.PruneResults(p.JobID, manifest.Version)
 	}
-	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
-	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
-	s.appendEvent(ctx, p.JobID, "completed", map[string]any{
-		"result_version": manifest.Version, "engine": p.Engine, "engine_version": p.Version,
-		"result_expires_at": expires, "pages": p.PageCount, "warnings": p.Warnings,
-	})
+	label := s.engineLabel(p.Engine)
+	s.instr().parseTime.With(label).Observe(durSeconds(now.Sub(startedAt)))
+	s.instr().resultBytes.With(label).Add(uint64(resultBytes))
 	return s.GetJob(ctx, p.JobID, "")
 }
 
@@ -963,13 +1074,18 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		return nil, NewError(409, jobs.ErrLeaseLost, "unknown lease token")
 	}
 	if err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Fail", err)
 	}
 	if state == jobs.AttemptCancelled {
 		return s.GetJob(ctx, jobID, "")
 	}
 	if err := s.checkLease(ctx, jobID, token); err != nil {
 		return nil, err
+	}
+	// The code is stored as error_code and returned to clients, and the code set is a public
+	// contract: a worker (buggy, newer, or compromised) must not be able to mint new ones.
+	if !jobs.IsKnownErrorCode(code) {
+		code = jobs.ErrInternal
 	}
 	now := nowUTC()
 	var attempt, maxAttempts int
@@ -979,7 +1095,7 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	}
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Fail", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -993,11 +1109,11 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		// these predicates an old report would reset a newer attempt's job to 'queued'.
 		res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'queued', progress = 0,
 			progress_stage = 'retry_wait', error_code = ?, error_message = ?, available_at = ?, updated_at = ?
-			WHERE id = ? AND processing_status = 'running'
-			  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
-			code, truncate(msg, 500), ts(now.Add(backoff)), ts(now), jobID, jobID, token)
+			WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt,
+			append([]any{code, truncate(msg, 500), ts(now.Add(backoff)), ts(now), jobID},
+				fenceCurrentAttemptArgs(jobID, token)...)...)
 		if err != nil {
-			return nil, NewError(500, jobs.ErrInternal, err.Error())
+			return nil, internalError(ctx, "Fail", err)
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			_ = tx.Rollback()
@@ -1005,13 +1121,15 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ? WHERE job_id = ? AND lease_token = ?`,
 			truncate(msg, 500), jobID, token); err != nil {
-			return nil, NewError(500, jobs.ErrInternal, err.Error())
+			return nil, internalError(ctx, "Fail", err)
 		}
-		evt := "retry_scheduled"
+		if err := appendEvent(ctx, tx, jobID, "retry_scheduled",
+			map[string]any{"code": code, "attempt": attempt, "backoff_s": backoff.Seconds()}); err != nil {
+			return nil, internalError(ctx, "Fail", err)
+		}
 		if err := tx.Commit(); err != nil {
-			return nil, NewError(500, jobs.ErrInternal, err.Error())
+			return nil, internalError(ctx, "Fail", err)
 		}
-		s.appendEvent(ctx, jobID, evt, map[string]any{"code": code, "attempt": attempt, "backoff_s": backoff.Seconds()})
 		return s.GetJob(ctx, jobID, "")
 	}
 
@@ -1022,11 +1140,11 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	// (and the backup retries with a fresh snapshot).
 	res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', completed_at = ?,
 		error_code = ?, error_message = ?, retention_status = 'release_pending', updated_at = ?
-		WHERE id = ? AND processing_status = 'running'
-		  AND current_attempt = (SELECT attempt_no FROM attempts WHERE job_id = ? AND lease_token = ? AND state = 'running')`,
-		ts(now), code, truncate(msg, 500), ts(now), jobID, jobID, token)
+		WHERE id = ? AND processing_status = 'running'`+fenceCurrentAttempt,
+		append([]any{ts(now), code, truncate(msg, 500), ts(now), jobID},
+			fenceCurrentAttemptArgs(jobID, token)...)...)
 	if err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Fail", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		// The attempt was superseded: reporting its failure now would fail a job another
@@ -1036,27 +1154,33 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'failed', error = ? WHERE job_id = ? AND lease_token = ?`,
 		truncate(msg, 500), jobID, token); err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Fail", err)
+	}
+	if err := appendEvent(ctx, tx, jobID, "failed",
+		map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable}); err != nil {
+		return nil, internalError(ctx, "Fail", err)
 	}
 	if err := tx.Commit(); err != nil {
-		return nil, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, internalError(ctx, "Fail", err)
 	}
-	s.appendEvent(ctx, jobID, "failed", map[string]any{"code": code, "message": truncate(msg, 500), "retryable": retryable})
-	// A client (or an online backup) may hold a live download lease on the input; deleting
-	// under it would pull the bytes out from under a reader. In that case the cleaner removes
-	// the files once the lease expires (it already honours download_leases).
-	if le, lerr := s.hasActiveDownloadLease(ctx, jobID); lerr != nil || le {
-		// Unknown is treated as leased: the cleaner will remove the files later.
-		return s.GetJob(ctx, jobID, "")
-	}
-	_ = s.Store.DeleteJob(jobID)
+	// A client (or an online backup) may hold a live download lease on the input; the shared
+	// deletion path defers to the cleaner in that case. The job lock keeps a superseded
+	// attempt's publication and this deletion from interleaving.
+	unlock := s.lockJob(jobID)
+	s.deleteJobUnlessLeased(ctx, jobID)
+	unlock()
 	return s.GetJob(ctx, jobID, "")
 }
 
-// deleteJobUnlessLeased removes a job's files unless a live download lease protects them.
-// Every terminal path that discards files goes through here: an online backup pins jobs with
-// exactly these leases, and deleting under one would break a copy that already snapshotted
-// the job. The cleaner removes the files once the lease expires.
+// deleteJobUnlessLeased removes a terminal job's files unless a live download lease protects
+// them. Every terminal path that discards files goes through here: an online backup pins jobs
+// with exactly these leases, and deleting under one would break a copy that already
+// snapshotted the job. The cleaner removes the files once the lease expires. The caller holds
+// the job's lock (lockJob).
+//
+// Files are only deleted after the row has entered 'deleting', the same state the cleaner
+// uses: downloads and lease renewals refuse it, and a crash after the deletion leaves a row
+// the cleaner re-scans and finalizes (released + tombstone + storage release + event).
 func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
 	// Move the job out of 'active' before deciding. Pinning only accepts active rows, so the
 	// database arbitrates the race: either the pin commits first (we then see the lease) or
@@ -1065,12 +1189,21 @@ func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
 		WHERE id = ? AND retention_status = 'active'`, ts(nowUTC()), jobID); err != nil {
 		return // cannot authorise deletion; leave the files to the cleaner
 	}
-	le, err := s.hasActiveDownloadLease(ctx, jobID)
-	if err != nil || le {
-		// A failed lookup is not permission to delete: the lease may exist.
+	// The lease check is part of the transition, exactly as in the cleaner: a failed statement
+	// or a live lease leaves the row in release_pending and the files in place.
+	res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting',
+		retention_target = ?, updated_at = ?
+		WHERE id = ? AND retention_status = 'release_pending'
+		  AND NOT EXISTS (SELECT 1 FROM download_leases
+		                  WHERE job_id = ? AND julianday(expires_at) > julianday(?))`,
+		string(jobs.RetentionReleased), ts(nowUTC()), jobID, jobID, ts(nowUTC()))
+	if err != nil {
 		return
 	}
-	_ = s.Store.DeleteJob(jobID)
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return
+	}
+	_ = s.Store.DeleteJob(jobID) // on failure the cleaner retries from 'deleting'
 }
 
 // hasActiveDownloadLease reports whether a live download lease exists for the job.
@@ -1090,7 +1223,7 @@ func (s *Service) checkLease(ctx context.Context, jobID, token string) error {
 		return NewError(409, jobs.ErrLeaseLost, "unknown lease token")
 	}
 	if err != nil {
-		return NewError(500, jobs.ErrInternal, err.Error())
+		return internalError(ctx, "checkLease", err)
 	}
 	u, perr := parseTS(until)
 	if perr != nil || state != jobs.AttemptRunning || u.Before(nowUTC()) {
@@ -1131,17 +1264,27 @@ func (s *Service) Ack(ctx context.Context, jobID, ownerID, resultVersion, action
 		}
 		// The predicate repeats the checks inside the update: a completion that lands
 		// between the read above and this statement must not be released by a stale token.
-		res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
+		tx, err := s.DB.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, internalError(ctx, "Ack", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+		res, err := tx.ExecContext(ctx, `UPDATE jobs SET retention_status = 'release_pending', updated_at = ?
 			WHERE id = ? AND owner_id = ? AND retention_status = 'active'
 			  AND processing_status = 'completed' AND result_version = ?`,
 			ts(now), jobID, job.OwnerID, resultVersion)
 		if err != nil {
-			return nil, NewError(500, jobs.ErrInternal, err.Error())
+			return nil, internalError(ctx, "Ack", err)
 		}
 		if n, _ := res.RowsAffected(); n == 0 {
 			return nil, NewError(409, jobs.ErrConflict, "result_version is no longer current")
 		}
-		s.appendEvent(ctx, jobID, "release_pending", map[string]any{"reason": "ack"})
+		if err := appendEvent(ctx, tx, jobID, "release_pending", map[string]any{"reason": "ack"}); err != nil {
+			return nil, internalError(ctx, "Ack", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return nil, internalError(ctx, "Ack", err)
+		}
 		s.audit(ctx, "job_acked", job, map[string]any{"result_version": resultVersion})
 		return s.GetJob(ctx, jobID, ownerID)
 	}
@@ -1159,37 +1302,69 @@ func (s *Service) Cancel(ctx context.Context, jobID, ownerID string) (*jobs.Job,
 	if err != nil {
 		return nil, err
 	}
-	now := nowUTC()
 	switch job.ProcessingStatus {
 	case jobs.StatusQueued, jobs.StatusRunning:
-		res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'cancelled',
-			cancel_requested_at = COALESCE(cancel_requested_at, ?), completed_at = ?,
-			retention_status = 'release_pending', progress_stage = 'cancelled', updated_at = ?
-			WHERE id = ? AND processing_status IN ('queued','running')`, ts(now), ts(now), ts(now), jobID)
-		if err != nil {
-			return nil, NewError(500, jobs.ErrInternal, err.Error())
-		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			// Lost a race with completion: re-read and fall through to the
-			// completed branch so the caller gets the real state.
-			if latest, gerr := s.GetJob(ctx, jobID, ownerID); gerr == nil {
-				return latest, nil
-			}
-		}
-		_, _ = s.DB.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`, jobID)
-		s.appendEvent(ctx, jobID, "cancelled", map[string]any{"reason": "client_request"})
-		s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
-	case jobs.StatusCompleted:
-		// A finished job cannot be cancelled, and cancel must never release its
-		// result: releasing is ACK's job and only ACK carries the "I stored these
-		// bytes" claim. Two release paths made the outcome depend on a race
-		// between cancel and ACK.
-		if job.RetentionStatus == jobs.RetentionActive {
-			return nil, NewError(409, jobs.ErrConflict,
-				"job already completed: cancel has no effect; release the result with POST /v1/jobs/{id}/ack and its result_version")
-		}
+		return s.cancelActive(ctx, job)
 	}
-	return s.GetJob(ctx, jobID, ownerID)
+	return cancelSettled(job)
+}
+
+// cancelSettled answers a cancel for a job that is no longer queued/running.
+func cancelSettled(job *jobs.Job) (*jobs.Job, error) {
+	// A finished job cannot be cancelled, and cancel must never release its result:
+	// releasing is ACK's job and only ACK carries the "I stored these bytes" claim. Two
+	// release paths made the outcome depend on a race between cancel and ACK.
+	if job.ProcessingStatus == jobs.StatusCompleted && job.RetentionStatus == jobs.RetentionActive {
+		return nil, NewError(409, jobs.ErrConflict,
+			"job already completed: cancel has no effect; release the result with POST /v1/jobs/{id}/ack and its result_version")
+	}
+	// Already cancelled or failed, or a completed result already being released: idempotent.
+	return job, nil
+}
+
+// cancelActive cancels a job that an earlier (possibly stale) read saw as queued/running.
+func (s *Service) cancelActive(ctx context.Context, job *jobs.Job) (*jobs.Job, error) {
+	now := nowUTC()
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, internalError(ctx, "cancelActive", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	res, err := tx.ExecContext(ctx, `UPDATE jobs SET processing_status = 'cancelled',
+		cancel_requested_at = COALESCE(cancel_requested_at, ?), completed_at = ?,
+		retention_status = 'release_pending', progress_stage = 'cancelled', updated_at = ?
+		WHERE id = ? AND processing_status IN ('queued','running')`, ts(now), ts(now), ts(now), job.ID)
+	if err != nil {
+		return nil, internalError(ctx, "cancelActive", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return nil, internalError(ctx, "cancelActive", err)
+	}
+	if n == 0 {
+		// The job left queued/running after it was read (a completion or failure won the
+		// race). Answer from its real state: a completed job gets the same 409 as a cancel
+		// that arrived a moment later, and nothing is recorded as cancelled.
+		_ = tx.Rollback()
+		latest, gerr := s.GetJob(ctx, job.ID, job.OwnerID)
+		if gerr != nil {
+			return nil, gerr
+		}
+		return cancelSettled(latest)
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'cancelled' WHERE job_id = ? AND state = 'running'`,
+		job.ID); err != nil {
+		// Committing without it would leave the running attempt able to heartbeat and publish.
+		return nil, internalError(ctx, "cancelActive", err)
+	}
+	if err := appendEvent(ctx, tx, job.ID, "cancelled", map[string]any{"reason": "client_request"}); err != nil {
+		return nil, internalError(ctx, "cancelActive", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, internalError(ctx, "cancelActive", err)
+	}
+	s.audit(ctx, "job_cancelled", job, map[string]any{"was": "queued_or_running"})
+	return s.GetJob(ctx, job.ID, job.OwnerID)
 }
 
 // ---------------------------------------------------------------- download leases
@@ -1222,7 +1397,7 @@ func (s *Service) BeginDownload(ctx context.Context, jobID, ownerID string) (*jo
 		              AND retention_status = 'active' AND result_version IS NOT NULL)`,
 		leaseID, jobID, ts(now), ts(exp), ts(now), jobID)
 	if err != nil {
-		return nil, "", time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+		return nil, "", time.Time{}, internalError(ctx, "BeginDownload", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return nil, "", time.Time{}, NewError(410, jobs.ErrGone, "result released or expired")
@@ -1244,7 +1419,7 @@ func (s *Service) RenewDownload(ctx context.Context, leaseID string) (time.Time,
 		  AND job_id IN (SELECT id FROM jobs WHERE retention_status = 'active')`,
 		ts(exp), ts(exp), ts(now), leaseID, ts(now))
 	if err != nil {
-		return time.Time{}, NewError(500, jobs.ErrInternal, err.Error())
+		return time.Time{}, internalError(ctx, "RenewDownload", err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return time.Time{}, NewError(404, jobs.ErrNotFound, "download lease expired, was released, or no longer exists")
@@ -1286,7 +1461,7 @@ func (s *Service) RegisterWorker(ctx context.Context, w WorkerRegistration) erro
 		w.WorkerID, w.Host, string(eng), w.DeviceType, w.GPUModel, w.GPUMemoryBytes, free,
 		w.CPUCores, w.MemoryBytes, w.MaxConcurrency, ts(now), ts(now))
 	if err != nil {
-		return NewError(500, jobs.ErrInternal, err.Error())
+		return internalError(ctx, "RegisterWorker", err)
 	}
 	return nil
 }
@@ -1345,13 +1520,22 @@ type Event struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-func (s *Service) appendEvent(ctx context.Context, jobID, typ string, payload map[string]any) {
+// execer is satisfied by *sql.DB and *sql.Tx.
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// appendEvent records one lifecycle event. State transitions pass their transaction, so
+// the event becomes visible atomically with the status it describes: an SSE reader that
+// observes a terminal status is then guaranteed to find the terminal event as well.
+func appendEvent(ctx context.Context, q execer, jobID, typ string, payload map[string]any) error {
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return
+		return err
 	}
-	_, _ = s.DB.ExecContext(ctx, `INSERT INTO job_events(job_id, type, payload, created_at) VALUES(?,?,?,?)`,
+	_, err = q.ExecContext(ctx, `INSERT INTO job_events(job_id, type, payload, created_at) VALUES(?,?,?,?)`,
 		jobID, typ, string(b), ts(nowUTC()))
+	return err
 }
 
 // OldestEventID reports the oldest retained event for a job, so a client cursor
@@ -1454,6 +1638,9 @@ func placeholders(n int) string {
 	return strings.Join(parts, ",")
 }
 
+// maxInputNameBytes bounds the stored input name (bytes of UTF-8).
+const maxInputNameBytes = 180
+
 func sanitizeName(name string) string {
 	name = filepath.Base(strings.TrimSpace(name))
 	if name == "." || name == "/" || name == "" {
@@ -1467,8 +1654,14 @@ func sanitizeName(name string) string {
 		b.WriteRune(r)
 	}
 	out := b.String()
-	if len(out) > 180 {
-		out = out[:180]
+	if len(out) > maxInputNameBytes {
+		// Cut on a rune boundary: slicing mid-rune stored invalid UTF-8, which JSON encoding
+		// then turned into U+FFFD and which no longer matched what the client sent.
+		cut := maxInputNameBytes
+		for cut > 0 && !utf8.RuneStart(out[cut]) {
+			cut--
+		}
+		out = out[:cut]
 	}
 	return out
 }

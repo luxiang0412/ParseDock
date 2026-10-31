@@ -16,7 +16,12 @@ Same validation and pipeline as `POST /v1/jobs`, but waits up to
 `timeout_ms` (default 30 s, max 2 min) for completion.
 * finished → `200` with the Document IR;
 * deadline reached → `202` with the job resource; it keeps running asynchronously;
-* failure → `422` with the stable error code.
+* failure → the job's stable error code, with the same status the code has
+  everywhere else: `422` for document and engine failures (`malformed_file`,
+  `encrypted_file`, `page_limit_exceeded`, `engine_*`, `timeout`,
+  `internal_error`), `413`/`415` for size and type, `429 quota_exceeded` with
+  `Retry-After` when the result does not fit the storage quota, and
+  `409 cancelled` when the job was cancelled while the call waited.
 
 The result is **not released** by this call: a written response does not
 prove the caller received it, so the normal TTL applies. The response
@@ -103,9 +108,12 @@ Name | Type | Description  | Notes
 **400** | Invalid parameters. |  -  |
 **401** | Missing/invalid token. |  -  |
 **403** | The API key is valid but does not grant the scope this operation needs. |  -  |
+**409** | &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used (use &#x60;/v1/jobs&#x60; for async access); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  |  -  |
 **413** | Upload exceeds the configured limit. |  -  |
-**422** | Parse failed or the document is unsupported. |  -  |
+**415** | Format not in the allow-list, or content does not match the extension. |  -  |
+**422** | Parse failed, or the document is malformed, encrypted or over a limit. |  -  |
 **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
+**507** | Storage below the safety watermark; retry later. |  -  |
 
 [[Back to top]](#) [[Back to API list]](../README.md#documentation-for-api-endpoints) [[Back to Model list]](../README.md#documentation-for-models) [[Back to README]](../README.md)
 

@@ -41,7 +41,7 @@ public class Example {
     JobsApi apiInstance = new JobsApi(defaultClient);
     String id = "job_06GRQJT5HC1DDZMPWRSKSCKM24"; // String | 
     AckJobRequest ackJobRequest = new AckJobRequest(); // AckJobRequest | 
-    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one.
+    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
     try {
       AckJob202Response result = apiInstance.ackJob(id, ackJobRequest, idempotencyKey);
       System.out.println(result);
@@ -62,7 +62,7 @@ public class Example {
 |------------- | ------------- | ------------- | -------------|
 | **id** | **String**|  | |
 | **ackJobRequest** | [**AckJobRequest**](AckJobRequest.md)|  | |
-| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] |
+| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
 
 ### Return type
 
@@ -117,7 +117,7 @@ public class Example {
 
     JobsApi apiInstance = new JobsApi(defaultClient);
     String id = "job_06GRQJT5HC1DDZMPWRSKSCKM24"; // String | 
-    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one.
+    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
     try {
       CancelJob202Response result = apiInstance.cancelJob(id, idempotencyKey);
       System.out.println(result);
@@ -137,7 +137,7 @@ public class Example {
 | Name | Type | Description  | Notes |
 |------------- | ------------- | ------------- | -------------|
 | **id** | **String**|  | |
-| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] |
+| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
 
 ### Return type
 
@@ -193,13 +193,13 @@ public class Example {
     File _file = new File("/path/to/file"); // File | The document. Required.
     String mode = "auto"; // String | A **policy preference, not a per-document accuracy guarantee**:  * `fast` — fastest engine that can read the format (xberg for PDF/Office). * `accurate` — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * `auto` — router picks by priority and records why.  Text formats (`txt`, `md`, `csv`, `tsv`) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where `accurate` is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in `docs/ENGINE-BENCHMARK.md`; the engine, version and reason are always recorded in the job and the IR. 
     String device = "auto"; // String | `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
-    Integer ttlSeconds = 56; // Integer | Requested result TTL, capped by the server's maximum.
-    Integer priority = 0; // Integer | Higher runs first within the same queue.
-    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one.
+    Integer ttlSeconds = 56; // Integer | Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
+    Integer priority = 0; // Integer | Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. 
+    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
     String mode2 = "auto"; // String | 
     String device2 = "auto"; // String | 
-    Integer ttlSeconds2 = 56; // Integer | Requested result TTL; capped by the server maximum.
-    String idempotencyKey2 = "idempotencyKey_example"; // String | Alternative to the Idempotency-Key header.
+    Integer ttlSeconds2 = 56; // Integer | Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
+    String idempotencyKey2 = "idempotencyKey_example"; // String | Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with `400 invalid_request` (keys are never truncated). 
     try {
       Job result = apiInstance.createJob(_file, mode, device, ttlSeconds, priority, idempotencyKey, mode2, device2, ttlSeconds2, idempotencyKey2);
       System.out.println(result);
@@ -221,13 +221,13 @@ public class Example {
 | **_file** | **File**| The document. Required. | |
 | **mode** | **String**| A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  | [optional] [default to auto] [enum: auto, fast, accurate] |
 | **device** | **String**| &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  | [optional] [default to auto] [enum: auto, cpu, gpu_preferred, gpu_required] |
-| **ttlSeconds** | **Integer**| Requested result TTL, capped by the server&#39;s maximum. | [optional] |
-| **priority** | **Integer**| Higher runs first within the same queue. | [optional] [default to 0] |
-| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. | [optional] |
+| **ttlSeconds** | **Integer**| Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] |
+| **priority** | **Integer**| Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] [default to 0] |
+| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
 | **mode2** | **String**|  | [optional] [default to auto] [enum: auto, fast, accurate] |
 | **device2** | **String**|  | [optional] [default to auto] [enum: auto, cpu, gpu_preferred, gpu_required] |
-| **ttlSeconds2** | **Integer**| Requested result TTL; capped by the server maximum. | [optional] |
-| **idempotencyKey2** | **String**| Alternative to the Idempotency-Key header. | [optional] |
+| **ttlSeconds2** | **Integer**| Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] |
+| **idempotencyKey2** | **String**| Alternative to the Idempotency-Key header. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60; (keys are never truncated).  | [optional] |
 
 ### Return type
 

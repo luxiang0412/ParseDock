@@ -3,6 +3,7 @@ package coordinator
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -99,7 +100,7 @@ func (s *Service) enforceQuota(ctx context.Context, owner string, size int64) er
 	}
 	u, err := s.ownerUsage(ctx, owner, nowUTC().Add(-24*time.Hour))
 	if err != nil {
-		return NewError(500, jobs.ErrInternal, "quota lookup: "+err.Error())
+		return internalError(ctx, "quota lookup", err)
 	}
 	q := s.Cfg.Quota
 	if q.MaxConcurrent > 0 && u.concurrent >= q.MaxConcurrent {
@@ -111,10 +112,14 @@ func (s *Service) enforceQuota(ctx context.Context, owner string, size int64) er
 			Message: fmt.Sprintf("daily job limit reached (%d per 24h)", q.MaxJobsPerDay)}
 	}
 	if q.MaxStorageBytes > 0 {
-		var stored int64
-		_ = s.DB.QueryRowContext(ctx, `SELECT bytes FROM owner_storage WHERE owner_id = ?`, owner).Scan(&stored)
+		stored, err := ownerStoredBytes(ctx, s.DB, owner)
+		if err != nil {
+			// Unknown usage is not zero usage: admitting here would let a tenant exceed the
+			// quota whenever the lookup fails.
+			return internalError(ctx, "quota lookup", err)
+		}
 		if stored+size > q.MaxStorageBytes {
-			return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: 60,
+			return &Error{Status: 429, Code: jobs.ErrQuotaExceeded, RetryAfter: quotaRetryAfter,
 				Message: fmt.Sprintf("storage quota reached (%d MiB of live results)", q.MaxStorageBytes>>20)}
 		}
 	}
@@ -144,6 +149,22 @@ func (s *Service) audit(ctx context.Context, event string, job *jobs.Job, extra 
 		args = append(args, k, v)
 	}
 	s.Audit.Info("audit", args...)
+}
+
+// queryRower is satisfied by *sql.DB and *sql.Tx.
+type queryRower interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// ownerStoredBytes returns the owner's live-result bytes. An owner without a row has stored
+// nothing; any other error is returned so callers can fail closed.
+func ownerStoredBytes(ctx context.Context, q queryRower, owner string) (int64, error) {
+	var stored int64
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(bytes,0) FROM owner_storage WHERE owner_id = ?`, owner).Scan(&stored)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, nil
+	}
+	return stored, err
 }
 
 // adjustStorage changes an owner's live-result accounting inside tx. Deltas are
