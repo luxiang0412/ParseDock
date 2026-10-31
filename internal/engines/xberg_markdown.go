@@ -143,10 +143,12 @@ func joinSplitParagraphs(d *documentir.Document) int {
 	for _, el := range d.Elements[1:] {
 		prev := &out[len(out)-1]
 		if canJoinParagraphs(prev, &el) {
+			sep := joinSeparator(prev.Text, el.Text)
 			if prev.RichText != "" || el.RichText != "" {
-				prev.RichText = firstNonEmptyStr(prev.RichText, prev.Text) + " " + firstNonEmptyStr(el.RichText, el.Text)
+				// The side without rich text is plain: escape it before it becomes markup.
+				prev.RichText = richOrEscaped(prev) + sep + richOrEscaped(&el)
 			}
-			prev.Text = prev.Text + " " + el.Text
+			prev.Text = prev.Text + sep + el.Text
 			joined++
 			continue
 		}
@@ -154,6 +156,30 @@ func joinSplitParagraphs(d *documentir.Document) int {
 	}
 	d.Elements = out
 	return joined
+}
+
+// joinSeparator is the text placed where a split paragraph is rejoined: nothing between
+// Chinese/Japanese characters (those scripts do not separate words with spaces, so a
+// space would be an artefact of the PDF line break), a single space otherwise.
+func joinSeparator(prev, next string) string {
+	a, _ := utf8.DecodeLastRuneInString(strings.TrimRight(prev, " "))
+	b, _ := utf8.DecodeRuneInString(strings.TrimLeft(next, " "))
+	if isCJKRune(a) || isCJKRune(b) {
+		return ""
+	}
+	return " "
+}
+
+func isCJKRune(r rune) bool {
+	return unicode.Is(unicode.Han, r) || unicode.Is(unicode.Hiragana, r) || unicode.Is(unicode.Katakana, r) ||
+		(r >= 0x3000 && r <= 0x303F) || (r >= 0xFF00 && r <= 0xFFEF)
+}
+
+func richOrEscaped(el *documentir.Element) string {
+	if el.RichText != "" {
+		return el.RichText
+	}
+	return documentir.EscapeMarkdownInline(el.Text)
 }
 
 func canJoinParagraphs(prev, next *documentir.Element) bool {

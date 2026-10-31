@@ -198,3 +198,32 @@ func TestJoinSplitParagraphsIsConservative(t *testing.T) {
 		}
 	}
 }
+
+func TestJoinSplitParagraphsSeparatorAndEscaping(t *testing.T) {
+	zh := "本季度三个区域枢纽共处理托盘十二万八千四百个，同比增长百分之十二点五。调整排程后平均时间下降，并且"
+	d := documentir.New()
+	d.Elements = []documentir.Element{
+		{ID: "el_1", Type: documentir.ElParagraph, Text: zh},
+		{ID: "el_2", Type: documentir.ElParagraph, Text: "2026年第三季度的计划已经提交并通过评审，后续每周跟踪进度。"},
+	}
+	if n := joinSplitParagraphs(d); n != 1 {
+		t.Fatalf("joined %d, want 1", n)
+	}
+	if want := zh + "2026年第三季度的计划已经提交并通过评审，后续每周跟踪进度。"; d.Elements[0].Text != want {
+		t.Fatalf("CJK join inserted a separator: %q", d.Elements[0].Text)
+	}
+
+	en := "The cold-chain corridor depends on a single carrier and *any* interruption would delay roughly"
+	d = documentir.New()
+	d.Elements = []documentir.Element{
+		{ID: "el_1", Type: documentir.ElParagraph, Text: en},
+		{ID: "el_2", Type: documentir.ElParagraph, Text: "900 shipments per week across the network.", RichText: "900 shipments per **week** across the network."},
+	}
+	if n := joinSplitParagraphs(d); n != 1 {
+		t.Fatalf("joined %d, want 1", n)
+	}
+	got := d.Elements[0].RichText
+	if !strings.Contains(got, `\*any\*`) || !strings.Contains(got, "roughly 900") || !strings.Contains(got, "**week**") {
+		t.Fatalf("rich text join wrong: %q", got)
+	}
+}
