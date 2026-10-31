@@ -381,7 +381,8 @@ func containsFormulaTag(ctx context.Context, r io.Reader) (bool, error) {
 					return true, nil
 				}
 			}
-			prevF = chunk[len(chunk)-1] == '<'
+			last := chunk[len(chunk)-1]
+			prevF = last == '<' || last == ':'
 		}
 		if rerr == io.EOF {
 			return false, nil

@@ -1248,7 +1248,7 @@ func (s *Service) RenewDownload(ctx context.Context, leaseID string) (time.Time,
 	// Without both conditions a blocked writer could revive a lease after cleanup had
 	// already authorised deletion, and then hold storage the cleaner had accounted as gone.
 	res, err := s.DB.ExecContext(ctx, `UPDATE download_leases SET
-			expires_at = CASE WHEN expires_at < ? THEN ? ELSE expires_at END,
+			expires_at = CASE WHEN julianday(expires_at) < julianday(?) THEN ? ELSE expires_at END,
 			last_renewed_at = ?
 		WHERE lease_id = ? AND julianday(expires_at) > julianday(?)
 		  AND job_id IN (SELECT id FROM jobs WHERE retention_status = 'active')`,
