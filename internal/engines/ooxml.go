@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"strings"
 
 	"parsedock.dev/parsedock/internal/documentir"
+	"parsedock.dev/parsedock/internal/jobs"
 )
 
 // OOXML formula enrichment.
@@ -133,11 +135,17 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		if cerr := ctx.Err(); cerr != nil {
 			return 0, nil, cerr // deadline/cancel must reach the worker
 		}
+		if isExpandedTooLarge(err) {
+			return 0, nil, err
+		}
 		return 0, nil, nil // not an xlsx workbook: nothing to add
 	}
 	rels, rerr := readZipXML[xlsxRels](ctx, zr, "xl/_rels/workbook.xml.rels")
 	if rerr != nil && ctx.Err() != nil {
 		return 0, nil, ctx.Err()
+	}
+	if isExpandedTooLarge(rerr) {
+		return 0, nil, rerr
 	}
 	targets := map[string]string{}
 	for _, r := range rels.Relationships {
@@ -162,6 +170,10 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 	sst, sstErr := readZipXML[xlsxSharedStrings](ctx, zr, "xl/sharedStrings.xml")
 	if sstErr != nil && ctx.Err() != nil {
 		return 0, nil, ctx.Err()
+	}
+	if isExpandedTooLarge(sstErr) {
+		// Enriching without the full string table would attach wrong cached values.
+		return 0, nil, sstErr
 	}
 	if sstErr == nil {
 		for _, si := range sst.Items {
@@ -673,6 +685,16 @@ func (c *ctxReader) Read(p []byte) (int, error) {
 	return c.r.Read(p)
 }
 
+// zipXMLMax bounds one decompressed workbook part read into memory (a variable so tests
+// can shrink it).
+var zipXMLMax int64 = 128 << 20
+
+// isExpandedTooLarge reports whether err is readZipXML's size refusal.
+func isExpandedTooLarge(err error) bool {
+	var ee *Error
+	return errors.As(err, &ee) && ee.Code == jobs.ErrExpandedTooLarge
+}
+
 func readZipXML[T any](ctx context.Context, zr *zip.ReadCloser, name string) (T, error) {
 	var out T
 	if err := ctx.Err(); err != nil {
@@ -683,9 +705,15 @@ func readZipXML[T any](ctx context.Context, zr *zip.ReadCloser, name string) (T,
 		return out, err
 	}
 	defer f.Close()
-	b, err := io.ReadAll(io.LimitReader(&ctxReader{ctx: ctx, r: f}, 128<<20))
+	b, err := io.ReadAll(io.LimitReader(&ctxReader{ctx: ctx, r: f}, zipXMLMax+1))
 	if err != nil {
 		return out, err
+	}
+	if int64(len(b)) > zipXMLMax {
+		// Decoding a cut-off part would either fail obscurely or, for the shared-string
+		// table, silently lose every string past the cut. Say what happened instead.
+		return out, Errf(false, jobs.ErrExpandedTooLarge,
+			"%s expands beyond %d MiB; formula enrichment needs windowed extraction for this workbook", name, zipXMLMax>>20)
 	}
 	if err := ctx.Err(); err != nil {
 		return out, err

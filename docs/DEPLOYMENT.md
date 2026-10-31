@@ -110,6 +110,10 @@ docker run -d --name worker-gpu --device nvidia.com/gpu=all --network host \
 * Telemetry is disabled at build time and again at start-up. Only the `flash` tier is
   reachable; block egress to `mineru.net` by policy and run parsers with
   `--sandbox=unshare-net` where namespaces are available.
+* Give every GPU worker its own MinerU daemon (its own `MINERU_HOME`). The per-task GPU
+  evidence is read from the daemon log written during the task, and those lines carry no
+  task id: a daemon shared between workers would let one task's session lines count as
+  another's.
 * The worker reports the free VRAM of the card it will use (first entry of
   `CUDA_VISIBLE_DEVICES`, else device 0) on every heartbeat — pin `CUDA_VISIBLE_DEVICES`
   if the host has several cards. A GPU worker runs one task at a time

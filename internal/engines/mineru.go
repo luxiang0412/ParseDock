@@ -144,6 +144,13 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 	// Evidence: snapshot the daemon log before the task so start-up lines (which
 	// may legitimately mention CUDAExecutionProvider) can never be mistaken for
 	// this task's execution.
+	//
+	// Known limit: the window is scoped by time, not by task. MinerU's session lines
+	// ("ONNX session ready: kind=..., providers=[...]") carry no task or document id, so
+	// if several workers share one daemon (one MINERU_HOME), lines written for another
+	// task during this window are attributed to this one. A GPU worker runs one task at
+	// a time, so this is exact only when each daemon serves a single worker; deployments
+	// must not share a MinerU daemon between workers if gpu_required evidence matters.
 	logWindow := openDaemonWindow(m.daemonLogPath())
 	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, Sandbox: m.Sandbox, MaxOutput: 8 << 20, MaxRSSMB: m.MaxRSSMB},
 		req.WorkDir, args...)

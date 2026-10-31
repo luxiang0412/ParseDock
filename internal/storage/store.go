@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 )
@@ -42,8 +41,51 @@ type Store struct {
 	Root       string
 	MinFree    int64 // refuse writes below this many free bytes
 	TotalQuota int64 // 0 = unlimited
+}
 
-	mu sync.Mutex
+// invalidPathComponent replaces a job id or result version that is not a single safe path
+// component. It contains a NUL byte, which every file system call rejects with EINVAL, so a
+// path helper handed "..", "" or "a/b" yields a path that cannot be opened, written or
+// removed - instead of one that escapes inputs/ or results/.
+const invalidPathComponent = "\x00invalid"
+
+// ValidJobID reports whether id is safe to use as a directory name under the data root:
+// non-empty, at most 128 bytes, ASCII letters, digits, '_' and '-' only, so it can never be
+// "." or "..", contain a separator, or be read as an option. Job ids are "job_" plus
+// Crockford base32 (jobs.NewJobID), well inside this set.
+func ValidJobID(id string) bool {
+	if id == "" || len(id) > 128 {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '_':
+		case c == '-' && i > 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// safeJobID returns id when it is valid, otherwise a component no syscall accepts.
+func safeJobID(id string) string {
+	if ValidJobID(id) {
+		return id
+	}
+	return invalidPathComponent
+}
+
+// safeVersion returns the directory name of a result version ("sha256:<hex>" or bare
+// hex), or a component no syscall accepts when it could leave the job's directory. An
+// empty version keeps its old meaning (the job's result directory itself).
+func safeVersion(version string) string {
+	v := strings.TrimPrefix(version, "sha256:")
+	if v != "" && !ValidJobID(v) {
+		return invalidPathComponent
+	}
+	return v
 }
 
 // Init creates the directory tree.
@@ -57,11 +99,15 @@ func (s *Store) Init() error {
 	return nil
 }
 
-// Path helpers.
-func (s *Store) InputDir(jobID string) string  { return filepath.Join(s.Root, "inputs", jobID) }
+// Path helpers. An invalid job id never yields a usable path (see safeJobID).
+func (s *Store) InputDir(jobID string) string {
+	return filepath.Join(s.Root, "inputs", safeJobID(jobID))
+}
 func (s *Store) InputPath(jobID string) string { return filepath.Join(s.InputDir(jobID), "input.bin") }
 func (s *Store) MetaPath(jobID string) string  { return filepath.Join(s.InputDir(jobID), "meta.json") }
-func (s *Store) ResultDir(jobID string) string { return filepath.Join(s.Root, "results", jobID) }
+func (s *Store) ResultDir(jobID string) string {
+	return filepath.Join(s.Root, "results", safeJobID(jobID))
+}
 
 // ResultDirAt is the directory of one published result generation. Results are
 // content-addressed by their manifest version, so two workers that race to finish the same
@@ -69,7 +115,7 @@ func (s *Store) ResultDir(jobID string) string { return filepath.Join(s.Root, "r
 // winner's files. A retried attempt that produces identical bytes shares the directory,
 // which is harmless (same content).
 func (s *Store) ResultDirAt(jobID, version string) string {
-	return filepath.Join(s.ResultDir(jobID), strings.TrimPrefix(version, "sha256:"))
+	return filepath.Join(s.ResultDir(jobID), safeVersion(version))
 }
 
 // ResultDirFor returns the directory holding the job's committed generation. Installations
@@ -152,6 +198,9 @@ type InputWriter struct {
 
 // NewInputWriter starts a staged upload for jobID.
 func (s *Store) NewInputWriter(jobID string, maxBytes int64) (*InputWriter, error) {
+	if !ValidJobID(jobID) {
+		return nil, fmt.Errorf("invalid job id %q", jobID)
+	}
 	if err := s.CheckSpace(0); err != nil {
 		return nil, err
 	}
@@ -319,7 +368,6 @@ func (s *Store) CommitResult(jobID, engine, engineVer string, files map[string]i
 	return manifest, nil
 }
 
-// ReadManifest loads a committed manifest.
 // PruneResults removes result directories of a job other than keep (including leftovers from
 // an interrupted publication). Called after a generation is committed: the others are
 // unreachable, and leaving them would make disk usage exceed the storage accounting.
@@ -368,7 +416,7 @@ func manifestVersion(m *Manifest) string {
 // DeleteJob removes all input and result files for a job. Idempotent: a
 // missing directory is not an error, and a partial removal can be retried.
 func (s *Store) DeleteJob(jobID string) error {
-	if jobID == "" || strings.ContainsAny(jobID, "/\\") {
+	if !ValidJobID(jobID) {
 		return fmt.Errorf("invalid job id %q", jobID)
 	}
 	var firstErr error
@@ -384,7 +432,7 @@ func (s *Store) DeleteJob(jobID string) error {
 // DropResult removes one unpublished result generation. It is a no-op when the directory
 // does not exist, so a losing attempt can always call it.
 func (s *Store) DropResult(jobID, version string) error {
-	if jobID == "" || version == "" || strings.ContainsAny(jobID, "/\\") {
+	if !ValidJobID(jobID) || version == "" || safeVersion(version) == invalidPathComponent {
 		return fmt.Errorf("invalid job id or version")
 	}
 	if err := os.RemoveAll(s.ResultDirAt(jobID, version)); err != nil && !os.IsNotExist(err) {
