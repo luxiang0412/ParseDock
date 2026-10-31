@@ -6,28 +6,28 @@
     <packaging>jar</packaging>
     <name>parsedock-client</name>
     <version>0.1.0</version>
-    <url>https://github.com/openapitools/openapi-generator</url>
-    <description>OpenAPI Java</description>
+    <url>https://github.com/luxiang0412/ParseDock</url>
+    <description>ParseDock API client for Java: upload documents, poll jobs, download Markdown or the Document IR, and release storage explicitly (ACK).</description>
     <scm>
-        <connection>scm:git:git@github.com:openapitools/openapi-generator.git</connection>
-        <developerConnection>scm:git:git@github.com:openapitools/openapi-generator.git</developerConnection>
-        <url>https://github.com/openapitools/openapi-generator</url>
+        <connection>scm:git:https://github.com/luxiang0412/ParseDock.git</connection>
+        <developerConnection>scm:git:git@github.com:luxiang0412/ParseDock.git</developerConnection>
+        <url>https://github.com/luxiang0412/ParseDock</url>
+        <tag>v0.1.0</tag>
     </scm>
 
     <licenses>
         <license>
-            <name>Unlicense</name>
-            <url>https://www.apache.org/licenses/LICENSE-2.0</url>
+            <name>Apache License 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
             <distribution>repo</distribution>
         </license>
     </licenses>
 
     <developers>
         <developer>
-            <name>OpenAPI-Generator Contributors</name>
-            <email>team@openapitools.org</email>
-            <organization>OpenAPITools.org</organization>
-            <organizationUrl>http://openapitools.org</organizationUrl>
+            <id>luxiang0412</id>
+            <name>ParseDock maintainers</name>
+            <url>https://github.com/luxiang0412/ParseDock</url>
         </developer>
     </developers>
 
@@ -233,24 +233,64 @@
         </plugins>
     </build>
 
+
     <profiles>
         <profile>
-            <id>sign-artifacts</id>
+            <!-- Publishing only: `mvn -Prelease deploy`. Kept out of the default
+                 build so tests need no signing key. -->
+            <id>release</id>
             <build>
                 <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>3.3.1</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>3.10.1</version>
+                        <configuration>
+                            <doclint>none</doclint>
+                            <quiet>true</quiet>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>3.2.1</version>
+                        <version>3.2.7</version>
+                        <configuration>
+                            <passphraseEnvName>MAVEN_GPG_PASSPHRASE</passphraseEnvName>
+                        </configuration>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
                                 <phase>verify</phase>
-                                <goals>
-                                    <goal>sign</goal>
-                                </goals>
+                                <goals><goal>sign</goal></goals>
                             </execution>
                         </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.8.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <publishingServerId>central</publishingServerId>
+                            <autoPublish>false</autoPublish>
+                        </configuration>
                     </plugin>
                 </plugins>
             </build>

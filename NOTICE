@@ -1,0 +1,18 @@
+ParseDock
+Copyright 2026 ParseDock maintainers
+
+This product includes software developed by third parties. The components below
+are pinned in images.lock.json and distributed with the worker image; the
+control-plane image contains none of them.
+
+  xberg 1.3.10            MIT            https://github.com/xberg-io/xberg
+  docling-rs 2.53.3       MIT            https://github.com/docling-project/docling.rs
+  docling-rs models-v1    Apache-2.0 / CDLA-Permissive-1.0 (per model, see docs/LICENSE-REVIEW.md)
+  PP-OCR models           Apache-2.0     (used by the OCR backends)
+  Tesseract OCR 5.5.3     Apache-2.0     https://github.com/tesseract-ocr/tesseract
+  Apache Tika             Apache-2.0     https://tika.apache.org/
+  MinerU 4.1.2            Apache-2.0 + additional terms (flash tier only)
+
+The worker image also contains libx265 (GPL-2.0-or-later) inside the xberg
+distribution; that is licence item L1 and is why the worker image may not be
+redistributed externally. See docs/LICENSE-REVIEW.md.

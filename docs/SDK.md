@@ -175,14 +175,19 @@ no async client, and the Java client is generated (its integration test lives in
 
 Both clients are installable from this repository and are **not yet published**.
 
+Publishing is automated by `.github/workflows/release-python.yml` (PyPI, OIDC)
+and `release-maven.yml` (Central). The step-by-step, including the required
+secrets and the namespace decision, is in [`docs/RELEASING.md`](RELEASING.md).
+
 | Registry | Name | State | What publishing needs |
 | --- | --- | --- | --- |
 | PyPI | `parsedock` | name is **free** | an account/API token, `python -m build` + `twine upload` (or Trusted Publishing via OIDC), and a decision on whether the generated `parsedock_client` is published too or stays repo-only |
 | Maven Central | `dev.parsedock:parsedock-client` | not published | **namespace ownership**: `dev.parsedock` requires a DNS TXT record for `parsedock.dev`; the friction-free alternative is `io.github.luxiang0412` (verified through the GitHub account). Then: sources jar, javadoc jar, GPG-signed artifacts, and the full POM metadata (name, description, url, licences, developers, scm) |
 
-The Java client's POM currently carries only groupId/artifactId/version; adding the
-Central-required metadata and the two extra jars is a small change that should be
-made when publishing is actually approved.
+`scripts/patch_java_pom.py` runs after every `make sdk` and supplies the
+Central-required metadata plus a `release` profile (sources, javadoc, GPG,
+`central-publishing-maven-plugin` with `autoPublish=false`); the default build
+stays key-free.
 
 ## Not delivered (honest gap)
 
