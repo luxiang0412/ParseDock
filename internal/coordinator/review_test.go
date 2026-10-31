@@ -614,6 +614,61 @@ func TestSyncParseFailureStatuses(t *testing.T) {
 	})
 }
 
+// Review finding 12: the worker input download rehashed the whole file on every request
+// although the upload digest is stored on the job.
+func TestTaskInputServesStoredDigest(t *testing.T) {
+	s := testService(t, nil)
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task := claimNative(t, s)
+	// Change the bytes on disk: a rehash would now report a different digest, the stored one
+	// is what the worker must verify against.
+	if err := os.WriteFile(s.Store.InputPath(job.ID), []byte("HELLO"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	srv := NewServer(s, "", slog.Default())
+	req := httptest.NewRequest(http.MethodGet, "/internal/tasks/"+job.ID+"/input", nil)
+	req.Header.Set("X-Lease-Token", task.LeaseToken)
+	rec := httptest.NewRecorder()
+	srv.InternalMux().ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("input download: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("X-Content-SHA256"); got != job.InputSHA256 || got != task.InputSHA256 {
+		t.Fatalf("X-Content-SHA256 = %q, want the stored %q", got, job.InputSHA256)
+	}
+}
+
+// Review finding 12: refusals were counted on the process-wide default registry even when the
+// service has its own instruments, so they never appeared in that service's exposition.
+func TestThrottleCountersUseServiceInstruments(t *testing.T) {
+	s := testService(t, func(c *Config) { c.Quota = Quota{MaxConcurrent: 1} })
+	s.Instruments = NewInstruments(metrics.New())
+	srv := NewServer(s, "", slog.Default())
+	create(t, s, "a.txt", []byte("hello"), CreateParams{}) // fills the concurrency quota
+	if resp, body := postJob(t, srv, "/v1/jobs", "", []byte("hello")); resp.StatusCode != 429 {
+		t.Fatalf("want 429 quota_exceeded, got %d %v", resp.StatusCode, body)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/internal/throttle",
+		strings.NewReader(`{"counts":{"rate_limited":3,"bogus":5}}`))
+	rec := httptest.NewRecorder()
+	srv.InternalMux().ServeHTTP(rec, req)
+	if rec.Code != 202 {
+		t.Fatalf("throttle report: %d", rec.Code)
+	}
+	var buf bytes.Buffer
+	_ = s.Instruments.Reg.WriteText(&buf)
+	out := buf.String()
+	for _, want := range []string{`parsedock_throttled_total{reason="quota_exceeded"} 1`,
+		`parsedock_throttled_total{reason="rate_limited"} 3`} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("missing %s in the service registry:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "bogus") {
+		t.Fatal("unknown throttle reason became a label")
+	}
+}
+
 // Review finding 1: the terminal event is written in the completion's transaction, so a
 // failure to record it leaves the job untouched instead of completed-without-event.
 func TestCompletionEventIsAtomicWithStatus(t *testing.T) {

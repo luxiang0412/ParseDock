@@ -94,7 +94,7 @@ func owner(r *http.Request) string {
 func (s *Server) handleCreateJob(w http.ResponseWriter, r *http.Request) {
 	job, isNew, err := s.stageUpload(r, 0)
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	code := http.StatusAccepted
@@ -227,7 +227,7 @@ func (s *Server) stageUpload(r *http.Request, maxBodyLimit int64) (*jobs.Job, bo
 func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	job, err := s.Svc.GetJob(r.Context(), r.PathValue("id"), owner(r))
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, jobView(job, true))
@@ -240,7 +240,7 @@ func (s *Server) handleAck(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.ContentLength != 0 {
 		if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-			writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid JSON body"))
+			s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid JSON body"))
 			return
 		}
 	}
@@ -249,7 +249,7 @@ func (s *Server) handleAck(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := s.Svc.Ack(r.Context(), r.PathValue("id"), owner(r), body.ResultVersion, body.Action)
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 202, map[string]any{
@@ -267,13 +267,13 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 	if r.ContentLength != 0 {
 		var body json.RawMessage
 		if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
-			writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid JSON body"))
+			s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid JSON body"))
 			return
 		}
 	}
 	job, err := s.Svc.Cancel(r.Context(), r.PathValue("id"), owner(r))
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 202, map[string]any{
@@ -289,19 +289,19 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
 	format, ok := documentir.ParseFormat(r.URL.Query().Get("format"))
 	if !ok {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "format must be one of markdown|text|json"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "format must be one of markdown|text|json"))
 		return
 	}
 	job, leaseID, _, err := s.Svc.BeginDownload(r.Context(), r.PathValue("id"), owner(r))
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	defer s.Svc.EndDownload(context.WithoutCancel(r.Context()), leaseID)
 
 	f, st, manifest, err := s.Svc.OpenResult(job.ID, job.ResultVersion, string(format))
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	defer f.Close()
@@ -439,17 +439,17 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		scope = "processing"
 	}
 	if scope != "processing" && scope != "retention" {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "scope must be processing|retention"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "scope must be processing|retention"))
 		return
 	}
 	job, err := s.Svc.GetJob(r.Context(), jobID, owner(r))
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		writeErr(w, NewError(500, jobs.ErrInternal, "streaming unsupported"))
+		s.writeErr(w, NewError(500, jobs.ErrInternal, "streaming unsupported"))
 		return
 	}
 	lastID, _ := strconv.ParseInt(r.Header.Get("Last-Event-ID"), 10, 64)
@@ -604,11 +604,11 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 	}
 	job, newJob, err := s.stageUpload(r, s.Svc.Cfg.MaxUploadBytes+(8<<20))
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	if !newJob {
-		writeErr(w, NewError(409, jobs.ErrConflict, "idempotency key already used; use /v1/jobs for async access"))
+		s.writeErr(w, NewError(409, jobs.ErrConflict, "idempotency key already used; use /v1/jobs for async access"))
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), timeout)
@@ -620,7 +620,7 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 		// this query must end in the 202 below, not in a 500 for a healthy job.
 		cur, err := s.Svc.GetJob(r.Context(), job.ID, owner(r))
 		if err != nil {
-			writeErr(w, err)
+			s.writeErr(w, err)
 			return
 		}
 		if cur.ProcessingStatus.Terminal() {
@@ -628,12 +628,12 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 				// Same code→status mapping as upload validation, so a failure has one status
 				// whether it is detected at admission or by the engine (quota_exceeded is 429
 				// with Retry-After, a cancelled job is 409 cancelled).
-				writeErr(w, terminalFailure(cur))
+				s.writeErr(w, terminalFailure(cur))
 				return
 			}
 			f, _, manifest, err := s.Svc.OpenResult(cur.ID, cur.ResultVersion, "json")
 			if err != nil {
-				writeErr(w, err)
+				s.writeErr(w, err)
 				return
 			}
 			defer f.Close()
@@ -663,7 +663,7 @@ func (s *Server) handleSyncParse(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWorkers(w http.ResponseWriter, r *http.Request) {
 	ws, err := s.Svc.Workers(r.Context())
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"workers": ws})
@@ -770,14 +770,14 @@ func (s *Server) handleThrottle(w http.ResponseWriter, r *http.Request) {
 		Counts map[string]int64 `json:"counts"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 64<<10)).Decode(&body); err != nil {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid throttle payload"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid throttle payload"))
 		return
 	}
 	for reason, n := range body.Counts {
 		if n <= 0 || throttleReason(reason) == "" || throttleReason(reason) != reason {
 			continue
 		}
-		defaultInstruments.throttled.With(reason).Add(uint64(n))
+		s.Svc.instr().throttled.With(reason).Add(uint64(n))
 	}
 	writeJSON(w, 202, map[string]any{"ok": true})
 }
@@ -785,7 +785,7 @@ func (s *Server) handleThrottle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 	var reg WorkerRegistration
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&reg); err != nil {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid registration payload"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid registration payload"))
 		return
 	}
 	if reg.WorkerID == "" {
@@ -795,7 +795,7 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 		reg.MaxConcurrency = 1
 	}
 	if err := s.Svc.RegisterWorker(r.Context(), reg); err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{
@@ -808,12 +808,12 @@ func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
 	var reg WorkerRegistration
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&reg); err != nil {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid payload"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid payload"))
 		return
 	}
 	reg.WorkerID = r.PathValue("id")
 	if err := s.Svc.RegisterWorker(r.Context(), reg); err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"ok": true})
@@ -822,12 +822,12 @@ func (s *Server) handleWorkerHeartbeat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request) {
 	var caps WorkerCaps
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&caps); err != nil {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid claim payload"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid claim payload"))
 		return
 	}
 	task, err := s.Svc.Claim(r.Context(), caps)
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	if task == nil {
@@ -841,19 +841,28 @@ func (s *Server) handleTaskInput(w http.ResponseWriter, r *http.Request) {
 	jobID := r.PathValue("id")
 	token := r.Header.Get("X-Lease-Token")
 	if err := s.Svc.checkLease(r.Context(), jobID, token); err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
+		return
+	}
+	// The digest recorded at upload is authoritative; rehashing the whole input on every
+	// worker download cost a full extra read per attempt. Integrity does not depend on this
+	// header: the worker verifies the bytes it receives against the claimed task's
+	// input_sha256, which is the same stored value.
+	job, err := s.Svc.GetJob(r.Context(), jobID, "")
+	if err != nil {
+		s.writeErr(w, err)
 		return
 	}
 	f, st, err := s.Svc.Store.OpenInput(jobID)
 	if err != nil {
-		writeErr(w, NewError(410, jobs.ErrGone, "input no longer available"))
+		s.writeErr(w, NewError(410, jobs.ErrGone, "input no longer available"))
 		return
 	}
 	defer f.Close()
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", strconv.FormatInt(st.Size(), 10))
-	if sum, herr := storage.HashFile(s.Svc.Store.InputPath(jobID)); herr == nil {
-		w.Header().Set("X-Content-SHA256", sum)
+	if job.InputSHA256 != "" {
+		w.Header().Set("X-Content-SHA256", job.InputSHA256)
 	}
 	w.WriteHeader(200)
 	if _, err := io.Copy(w, f); err != nil {
@@ -868,7 +877,7 @@ func (s *Server) handleTaskHeartbeat(w http.ResponseWriter, r *http.Request) {
 		Stage      string `json:"stage"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid payload"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid payload"))
 		return
 	}
 	if body.Progress == 0 {
@@ -876,7 +885,7 @@ func (s *Server) handleTaskHeartbeat(w http.ResponseWriter, r *http.Request) {
 	}
 	until, err := s.Svc.Heartbeat(r.Context(), r.PathValue("id"), body.LeaseToken, body.Progress, body.Stage)
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"lease_until": until, "renew_every": s.Svc.Cfg.HeartbeatInterval.String()})
@@ -894,24 +903,24 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		Document      *documentir.Document `json:"document"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 256<<20)).Decode(&body); err != nil {
-		writeErr(w, NewError(400, jobs.ErrMalformed, "invalid result payload: "+err.Error()))
+		s.writeErr(w, NewError(400, jobs.ErrMalformed, "invalid result payload: "+err.Error()))
 		return
 	}
 	if body.Document == nil {
-		writeErr(w, NewError(400, jobs.ErrMalformed, "missing document"))
+		s.writeErr(w, NewError(400, jobs.ErrMalformed, "missing document"))
 		return
 	}
 	body.Document.Finalize()
 	jsonBytes, err := json.Marshal(body.Document)
 	if err != nil {
-		writeErr(w, NewError(500, jobs.ErrInternal, "encode IR"))
+		s.writeErr(w, NewError(500, jobs.ErrInternal, "encode IR"))
 		return
 	}
 	// Rendering allocates from the IR's declared dimensions, so validate before touching it:
 	// a compromised or buggy engine must not be able to OOM the coordinator with a table that
 	// merely claims to be 200k x 100k.
 	if verr := documentir.DefaultLimits.Validate(body.Document); verr != nil {
-		writeErr(w, NewError(422, jobs.ErrMalformed, "engine result rejected: "+verr.Error()))
+		s.writeErr(w, NewError(422, jobs.ErrMalformed, "engine result rejected: "+verr.Error()))
 		return
 	}
 	job, err := s.Svc.Complete(r.Context(), CompleteParams{
@@ -928,7 +937,7 @@ func (s *Server) handleTaskResult(w http.ResponseWriter, r *http.Request) {
 		Warnings:  len(body.Document.Warnings),
 	})
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{
@@ -947,7 +956,7 @@ func (s *Server) handleTaskFail(w http.ResponseWriter, r *http.Request) {
 		Retryable  bool   `json:"retryable"`
 	}
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&body); err != nil {
-		writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid payload"))
+		s.writeErr(w, NewError(400, jobs.ErrInvalidRequest, "invalid payload"))
 		return
 	}
 	if body.Code == "" {
@@ -955,7 +964,7 @@ func (s *Server) handleTaskFail(w http.ResponseWriter, r *http.Request) {
 	}
 	job, err := s.Svc.Fail(r.Context(), r.PathValue("id"), body.LeaseToken, body.Code, body.Message, body.Retryable)
 	if err != nil {
-		writeErr(w, err)
+		s.writeErr(w, err)
 		return
 	}
 	writeJSON(w, 200, map[string]any{"job_id": job.ID, "status": job.ProcessingStatus})
@@ -1025,6 +1034,17 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 	_ = enc.Encode(v)
 }
 
+// writeErr is the handlers' error writer: it counts refusals on the service's instruments
+// (RC-5: an operator can answer "why was this tenant refused" without reading logs) and then
+// writes the body. The guards use the plain writeErr function; they only produce 401s.
+func (s *Server) writeErr(w http.ResponseWriter, err error) {
+	if reason := throttleReason(AsError(err).Code); reason != "" {
+		s.Svc.instr().throttled.With(reason).Inc()
+	}
+	writeErr(w, err)
+}
+
+// writeErr writes a coordinator error as the JSON error body.
 func writeErr(w http.ResponseWriter, err error) {
 	var known *Error
 	if !errors.As(err, &known) {
@@ -1037,11 +1057,6 @@ func writeErr(w http.ResponseWriter, err error) {
 	}
 	if ce.RetryAfter > 0 {
 		w.Header().Set("Retry-After", strconv.Itoa(ce.RetryAfter))
-	}
-	// RC-5: make throttling observable so an operator can answer "why was this
-	// tenant refused" without reading its logs.
-	if reason := throttleReason(ce.Code); reason != "" {
-		defaultInstruments.throttled.With(reason).Inc()
 	}
 	writeJSON(w, ce.Status, map[string]any{
 		"error": map[string]any{
