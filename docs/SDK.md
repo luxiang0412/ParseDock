@@ -11,6 +11,77 @@ Two surfaces, one contract.
 The generated clients mirror `api/openapi.yaml`; the hand-written Python wrapper encodes the
 lifecycle rules that an OpenAPI document cannot express.
 
+## Using the SDKs
+
+### Python
+
+```bash
+pip install -e sdk/python        # not on PyPI yet
+```
+
+```python
+from parsedock_sdk import ParseDockClient, ParseDockError
+
+with ParseDockClient("http://localhost:8080", token=TOKEN) as c:
+    job = c.create_job("invoice.pdf", mode="auto", idempotency_key="invoice-42")
+    final = c.wait(job["job_id"], timeout=600)
+    if final["status"] != "completed":
+        raise SystemExit(final.get("error_code"))
+    md, version = c.download(job["job_id"], fmt="markdown")   # bytes, result_version
+    ir, _ = c.download(job["job_id"], fmt="json")             # Document IR
+    c.ack(job["job_id"], version)                             # release the server copy
+    c.wait_released(job["job_id"])
+```
+
+Other entry points: `download_and_ack(..., sink=...)` (ACK only after your sink
+returns), `parse_sync(path)` (small files), `events(job_id, last_event_id=...)`
+(SSE, resumable), `cancel(job_id)`. Errors are `ParseDockError(status, code,
+message)` with `.retryable`; the wrapper retries retryable failures with backoff.
+`docs/SDK.md` §Errors lists the codes, `skills/parsedock-python-sdk/SKILL.md` is a
+condensed version for agent use.
+
+### Java
+
+```bash
+mvn -f sdk/java-generated/pom.xml -DskipTests install   # not on Maven Central yet
+```
+
+```xml
+<dependency>
+  <groupId>dev.parsedock</groupId>
+  <artifactId>parsedock-client</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+```java
+ApiClient client = new ApiClient();
+client.setBasePath("http://localhost:8080");
+client.setBearerToken(System.getenv("PARSEDOCK_TOKEN"));
+JobsApi api = new JobsApi(client);
+
+// (file, mode, device, ttlSeconds, priority, idempotencyKey, + the query mirror
+// of the same fields: pass nulls)
+Job job = api.createJob(new File("invoice.pdf"), "auto", "auto",
+        null, null, null, null, null, null, null);
+Job done;
+do {
+    Thread.sleep(300);
+    done = api.getJob(job.getJobId());
+} while (done.getStatus() == Job.StatusEnum.QUEUED
+        || done.getStatus() == Job.StatusEnum.RUNNING);
+
+String markdown = api.downloadResult(done.getJobId(), "markdown");
+DocumentIR ir = JSON.deserialize(api.downloadResult(done.getJobId(), "json"), DocumentIR.class);
+api.ackJob(done.getJobId(),
+           new AckJobRequest().resultVersion(done.getResultVersion()), null);
+```
+
+Failures throw `ApiException` (`getCode()` = HTTP status). The generated client
+has **no retry policy**: back off on `429 rate_limited` and 5xx, never on the
+other 4xx codes. `sdk/java-client-test` is a worked example (JUnit, runs against a
+live server); `skills/parsedock-java-sdk/SKILL.md` is the condensed version.
+
 ## Lifecycle rules the wrapper enforces
 
 1. **ACK only after your sink succeeded.** `download_and_ack(job_id, sink=...)` writes the
