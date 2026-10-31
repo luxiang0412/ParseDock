@@ -187,8 +187,11 @@ every cleanup_interval:
  3  failed/cancelled & active & older than retention → release_pending
  4  for each pending job:
       live download lease? → skip (counted as skipped_active_downloads)
+      (holding the job's publication lock, so no completion is mid-publish)
       mark deleting → delete inputs/ + results/ dirs → released|expired
-      set tombstone_expires_at → emit event
+      set tombstone_expires_at → emit event; the final UPDATE is a compare-and-set
+      on retention_status='deleting', so storage release, event, audit and counters
+      happen exactly once even when two passes race
  5  rows released|expired with tombstone<=now        → DELETE (cascades events/attempts/artifacts)
  6  delete expired download leases
  7  queued|running with max_lifetime_at<=now         → failed(timeout) + release_pending
@@ -224,17 +227,24 @@ paths (`Fail`, quota rejection). Both must respect a **live download lease**, be
 streaming a result — or `scripts/backup_online.py`, which pins every snapshot job with the same
 lease table — may still be reading them.
 
-The rule is one atomic transition followed by a lookup:
+The rule is two atomic transitions, the second of which contains the lease check:
 
 ```
 UPDATE jobs SET retention_status='release_pending' WHERE id=? AND retention_status='active'
-   → then: live download lease?  yes / unknown → keep files, let the cleaner finish
-                                  no            → delete now
+UPDATE jobs SET retention_status='deleting', retention_target='released'
+   WHERE id=? AND retention_status='release_pending' AND NOT EXISTS(live download lease)
+   → 1 row          → delete files now; the cleaner finalizes 'deleting' → released
+   → 0 rows / error → keep files in release_pending, let the cleaner finish later
 ```
+
+Files are therefore never removed while the row is still `release_pending`: the inline path
+uses the cleaner's own `deleting` state, so a crash right after the deletion is recovered by
+the cleaner's re-scan of `deleting` rows, and a failed job is visible as `deleting` until the
+next pass finalizes it (`TestFailDeletesThroughDeletingState`).
 
 Pinning only accepts `active` rows, so the database arbitrates the race: either the pin
 commits first (the deletion then sees the lease and defers) or the transition wins and the pin
-fails, making the backup retry with a fresh snapshot. A *failed* lease lookup is treated as
+fails, making the backup retry with a fresh snapshot. A *failed* statement is treated as
 "leased" — unknown is never permission to delete.
 
 Late results from a **superseded** attempt are different: they remove nothing at all. The

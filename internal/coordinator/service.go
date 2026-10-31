@@ -1115,21 +1115,24 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	if err := tx.Commit(); err != nil {
 		return nil, NewError(500, jobs.ErrInternal, err.Error())
 	}
-	// A client (or an online backup) may hold a live download lease on the input; deleting
-	// under it would pull the bytes out from under a reader. In that case the cleaner removes
-	// the files once the lease expires (it already honours download_leases).
-	if le, lerr := s.hasActiveDownloadLease(ctx, jobID); lerr != nil || le {
-		// Unknown is treated as leased: the cleaner will remove the files later.
-		return s.GetJob(ctx, jobID, "")
-	}
-	_ = s.Store.DeleteJob(jobID)
+	// A client (or an online backup) may hold a live download lease on the input; the shared
+	// deletion path defers to the cleaner in that case. The job lock keeps a superseded
+	// attempt's publication and this deletion from interleaving.
+	unlock := s.lockJob(jobID)
+	s.deleteJobUnlessLeased(ctx, jobID)
+	unlock()
 	return s.GetJob(ctx, jobID, "")
 }
 
-// deleteJobUnlessLeased removes a job's files unless a live download lease protects them.
-// Every terminal path that discards files goes through here: an online backup pins jobs with
-// exactly these leases, and deleting under one would break a copy that already snapshotted
-// the job. The cleaner removes the files once the lease expires.
+// deleteJobUnlessLeased removes a terminal job's files unless a live download lease protects
+// them. Every terminal path that discards files goes through here: an online backup pins jobs
+// with exactly these leases, and deleting under one would break a copy that already
+// snapshotted the job. The cleaner removes the files once the lease expires. The caller holds
+// the job's lock (lockJob).
+//
+// Files are only deleted after the row has entered 'deleting', the same state the cleaner
+// uses: downloads and lease renewals refuse it, and a crash after the deletion leaves a row
+// the cleaner re-scans and finalizes (released + tombstone + storage release + event).
 func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
 	// Move the job out of 'active' before deciding. Pinning only accepts active rows, so the
 	// database arbitrates the race: either the pin commits first (we then see the lease) or
@@ -1138,12 +1141,21 @@ func (s *Service) deleteJobUnlessLeased(ctx context.Context, jobID string) {
 		WHERE id = ? AND retention_status = 'active'`, ts(nowUTC()), jobID); err != nil {
 		return // cannot authorise deletion; leave the files to the cleaner
 	}
-	le, err := s.hasActiveDownloadLease(ctx, jobID)
-	if err != nil || le {
-		// A failed lookup is not permission to delete: the lease may exist.
+	// The lease check is part of the transition, exactly as in the cleaner: a failed statement
+	// or a live lease leaves the row in release_pending and the files in place.
+	res, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting',
+		retention_target = ?, updated_at = ?
+		WHERE id = ? AND retention_status = 'release_pending'
+		  AND NOT EXISTS (SELECT 1 FROM download_leases
+		                  WHERE job_id = ? AND julianday(expires_at) > julianday(?))`,
+		string(jobs.RetentionReleased), ts(nowUTC()), jobID, jobID, ts(nowUTC()))
+	if err != nil {
 		return
 	}
-	_ = s.Store.DeleteJob(jobID)
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return
+	}
+	_ = s.Store.DeleteJob(jobID) // on failure the cleaner retries from 'deleting'
 }
 
 // hasActiveDownloadLease reports whether a live download lease exists for the job.

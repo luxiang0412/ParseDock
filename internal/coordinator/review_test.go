@@ -210,6 +210,97 @@ func TestCancelRollsBackWhenAttemptUpdateFails(t *testing.T) {
 	}
 }
 
+// Review finding 6: the final retention UPDATE had no `retention_status = 'deleting'` guard,
+// so two passes that both got past "mark deleting" both finalized: storage was released twice
+// and the event, audit line and counter were emitted twice.
+func TestFinalizeDeletedIsCompareAndSet(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task := claimNative(t, s)
+	done := completeTask(t, s, job.ID, task.LeaseToken)
+	if _, err := s.Ack(ctx, job.ID, "owner-1", done.ResultVersion, "release"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET retention_status = 'deleting', retention_target = 'released'
+		WHERE id = ?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	rep := &CleanupReport{}
+	first := s.finalizeDeleted(ctx, rep, job.ID, jobs.RetentionReleased)
+	second := s.finalizeDeleted(ctx, rep, job.ID, jobs.RetentionReleased)
+	if !first || second {
+		t.Fatalf("finalize = %v then %v; want exactly one success (errors %v)", first, second, rep.Errors)
+	}
+	evs, _ := s.Events(ctx, job.ID, 0, 100)
+	n := 0
+	for _, e := range evs {
+		if e.Type == "released" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d released events, want 1", n)
+	}
+}
+
+// Review finding 6: the cleaner deleted job files without the per-job lock that completion
+// holds while publishing.
+func TestReclaimWaitsForJobLock(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	if _, err := s.DB.ExecContext(ctx, `UPDATE jobs SET processing_status = 'failed', retention_status = 'release_pending'
+		WHERE id = ?`, job.ID); err != nil {
+		t.Fatal(err)
+	}
+	unlock := s.lockJob(job.ID) // a publication in progress
+	finished := make(chan struct{})
+	go func() {
+		s.reclaimJob(ctx, &CleanupReport{}, pendingReclaim{id: job.ID, status: string(jobs.RetentionReleasePending)})
+		close(finished)
+	}()
+	select {
+	case <-finished:
+		t.Fatal("cleaner reclaimed a job while its publication lock was held")
+	case <-time.After(100 * time.Millisecond):
+	}
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); err != nil {
+		t.Fatalf("files deleted under the job lock: %v", err)
+	}
+	unlock()
+	<-finished
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); !os.IsNotExist(err) {
+		t.Fatalf("input not removed after the lock was released: %v", err)
+	}
+}
+
+// Review finding 6: Fail deleted files while the row was still release_pending (bypassing the
+// 'deleting' state the cleaner and downloads arbitrate on).
+func TestFailDeletesThroughDeletingState(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task := claimNative(t, s)
+	got, err := s.Fail(ctx, job.ID, task.LeaseToken, jobs.ErrEngineUnavailable, "parser crashed", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RetentionStatus != jobs.RetentionDeleting {
+		t.Fatalf("retention after Fail = %s, want deleting", got.RetentionStatus)
+	}
+	if _, err := os.Stat(s.Store.InputPath(job.ID)); !os.IsNotExist(err) {
+		t.Fatalf("input still present: %v", err)
+	}
+	if rep := s.RunCleanup(ctx); rep.Released != 1 {
+		t.Fatalf("cleaner did not finalize the failed job: %+v", rep)
+	}
+	got, _ = s.GetJob(ctx, job.ID, "")
+	if got.RetentionStatus != jobs.RetentionReleased {
+		t.Fatalf("final retention = %s", got.RetentionStatus)
+	}
+}
+
 // Review finding 1: the terminal event is written in the completion's transaction, so a
 // failure to record it leaves the job untouched instead of completed-without-event.
 func TestCompletionEventIsAtomicWithStatus(t *testing.T) {
