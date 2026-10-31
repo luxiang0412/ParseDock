@@ -55,7 +55,7 @@ Add this dependency to your project's POM:
 
 ```xml
 <dependency>
-  <groupId>dev.parsedock</groupId>
+  <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client</artifactId>
   <version>0.1.0</version>
   <scope>compile</scope>
@@ -73,7 +73,7 @@ Add this dependency to your project's build file:
   }
 
   dependencies {
-     implementation "dev.parsedock:parsedock-client:0.1.0"
+     implementation "com.luxiangs:parsedock-client:0.1.0"
   }
 ```
 

@@ -1,6 +1,6 @@
 lazy val root = (project in file(".")).
   settings(
-    organization := "dev.parsedock",
+    organization := "com.luxiangs",
     name := "parsedock-client",
     version := "0.1.0",
     scalaVersion := "2.13.6",

@@ -1,0 +1,54 @@
+# Publish the Java client to Maven Central on a version tag.
+#
+# Requires, in the repository (Settings -> Secrets and variables -> Actions):
+#   MAVEN_CENTRAL_USERNAME / MAVEN_CENTRAL_TOKEN  Central Portal user token
+#   GPG_PRIVATE_KEY                               ASCII-armored private key
+#   MAVEN_GPG_PASSPHRASE                          key passphrase
+# and a verified namespace on central.sonatype.com matching the POM groupId
+# (com.luxiangs needs a DNS TXT record for luxiangs.com; io.github.luxiang0412
+# is verified through the GitHub account instead).
+#
+# autoPublish=false: the deployment lands as a pending bundle in the Central
+# Portal and is published by a human, so a bad tag cannot reach users.
+name: release-maven
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: build, sign and deploy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: central
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          server-id: central
+          server-username: MAVEN_CENTRAL_USERNAME
+          server-password: MAVEN_CENTRAL_TOKEN
+      - name: import signing key
+        env:
+          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        run: |
+          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
+          gpg --list-secret-keys --keyid-format LONG
+      - name: verify the POM carries release metadata
+        run: |
+          grep -q "<name>Apache License 2.0</name>" sdk/java-generated/pom.xml
+          grep -q "<id>release</id>" sdk/java-generated/pom.xml
+      - name: deploy to Maven Central (pending bundle)
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: mvn -B -Prelease -DskipTests deploy -f sdk/java-generated/pom.xml
