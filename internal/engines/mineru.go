@@ -2,7 +2,6 @@ package engines
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -73,7 +72,16 @@ func (m *MinerU) Probe(ctx context.Context) error {
 	}
 	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, MaxOutput: 8192}, os.TempDir(), "server", "status")
 	if err != nil {
-		return fmt.Errorf("mineru server not reachable: %v", firstLine(string(res.Stderr)))
+		// res is nil when the binary could not even be started (missing, not executable):
+		// report that instead of dereferencing it and taking the worker down.
+		if res == nil {
+			return fmt.Errorf("mineru server not reachable: %v", err)
+		}
+		detail := firstLine(strings.TrimSpace(string(res.Stderr)))
+		if detail == "" {
+			detail = err.Error()
+		}
+		return fmt.Errorf("mineru server not reachable: %s", detail)
 	}
 	return nil
 }
@@ -140,22 +148,7 @@ func (m *MinerU) Parse(ctx context.Context, req Request) (*documentir.Document, 
 	res, err := RunCLI(ctx, CLISpec{Bin: m.Bin, Env: env, Sandbox: m.Sandbox, MaxOutput: 8 << 20, MaxRSSMB: m.MaxRSSMB},
 		req.WorkDir, args...)
 	if err != nil {
-		if res != nil && res.TimedOut {
-			return nil, Errf(true, jobs.ErrTimeout, "mineru timed out after %s", timeout)
-		}
-		if errors.Is(err, ErrOOM) {
-			return nil, Errf(true, jobs.ErrEngineOOM,
-				"mineru exceeded its memory ceiling while parsing this document")
-		}
-		if errors.Is(err, ErrSandboxUnavailable) {
-			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
-		}
-		code, msg := jobs.ErrMalformed, "mineru failed"
-		if res != nil {
-			code, msg = ClassifyCLIError(string(res.Stderr))
-			msg = fmt.Sprintf("mineru exit %d: %s", res.ExitCode, msg)
-		}
-		return nil, &Error{Code: code, Message: msg}
+		return nil, cliFailure("mineru", timeout, res, err)
 	}
 	raw, rerr := os.ReadFile(outFile)
 	if rerr != nil {

@@ -177,7 +177,11 @@ shows `SIGKILL` after `engine exceeded --engine-max-rss-mb`.
 ```bash
 journalctl -u parsedock-worker | grep -E 'engine_out_of_memory|out of memory' | tail
 ```
-The RSS ceiling kills the whole process group (PR-04); the job is retried with backoff. If
+The RSS ceiling kills the whole process group (PR-04); the job is retried with backoff. A
+parser killed by a SIGKILL that ParseDock did not send (the kernel or cgroup OOM killer:
+exit -1, empty stderr) and a parser that reports an allocator failure on stderr (Rust
+`memory allocation of N bytes failed`, `out of memory`, `MemoryError`) are classified the
+same way, so check `dmesg`/the container's OOM events too. If
 it persists, the file is genuinely larger than the worker can handle: raise
 `--engine-max-rss-mb`/worker memory, or route it to a bigger worker. For 550–770 MiB
 expanded XLSX ledgers this is expected until sheet-window extraction lands (RC-2).

@@ -8,12 +8,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"parsedock.dev/parsedock/internal/jobs"
 )
@@ -343,44 +345,118 @@ func checkUnshare(ctx context.Context) error {
 // workFile returns a scratch path inside the worker's per-attempt directory.
 func workFile(workDir, name string) string { return filepath.Join(workDir, name) }
 
+// cliFailure maps a failed RunCLI outcome to a stable engine error. It is the single
+// place the CLI adapters (xberg, docling-rs, mineru) classify a failed run, so a rule
+// such as "an external SIGKILL is an OOM kill" changes in one spot.
+func cliFailure(engine string, timeout time.Duration, res *ExecResult, err error) *Error {
+	switch {
+	case errors.Is(err, ErrSandboxUnavailable):
+		return Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
+	case res == nil:
+		// The parser never started (binary missing or not executable): a property of this
+		// worker, not of the document.
+		return Errf(true, jobs.ErrEngineUnavailable, "%s could not be started: %v", engine, err)
+	case res.TimedOut:
+		return Errf(true, jobs.ErrTimeout, "%s timed out after %s", engine, timeout)
+	case errors.Is(err, context.Canceled):
+		// The caller stopped the parse (job cancelled, lease lost, shutdown). The worker
+		// decides what to report; this code only keeps it from reading as a bad file.
+		return Errf(true, jobs.ErrCancelled, "%s was stopped because the parse was cancelled", engine)
+	case res.OOM || errors.Is(err, ErrOOM):
+		return Errf(true, jobs.ErrEngineOOM,
+			"%s exceeded its memory ceiling while parsing this document", engine)
+	case res.KilledBySignal:
+		return Errf(true, jobs.ErrEngineOOM,
+			"%s was killed by a SIGKILL ParseDock did not send (exit %d); this is almost always the kernel or cgroup OOM killer",
+			engine, res.ExitCode)
+	}
+	code, msg := ClassifyCLIError(string(res.Stderr))
+	return &Error{Code: code, Message: fmt.Sprintf("%s exit %d: %s", engine, res.ExitCode, msg),
+		Retryable: code == jobs.ErrEngineOOM}
+}
+
+// classifierMessageMax bounds the message shown to clients; classification itself scans
+// all of the (already 1 MiB-bounded) stderr.
+const classifierMessageMax = 600
+
+var (
+	// logLevelRe finds a log-level token near the start of a line: "WARN x", "[WARN] x",
+	// "WARN: x", "WARNING:root:x", "2026-...Z  INFO x".
+	logLevelRe = regexp.MustCompile(`^(?:\S+\s+){0,3}?\[?(TRACE|DEBUG|INFO|WARN|WARNING)\]?(?:[:\s]|$)`)
+	// errorWordRe marks a line as an error even when a level word appears later in it
+	// ("Error: missing INFO dictionary").
+	errorWordRe = regexp.MustCompile(`(?i)\b(error|fatal|panic|critical|caused by)\b`)
+	// pathishRe matches tokens that are file names or paths, so a document called
+	// "encrypted-report.pdf" or a directory named "unsupported" cannot steer the code.
+	pathishRe  = regexp.MustCompile(`'[^']*'|"[^"]*"|\S*[/\\]\S*|\S+\.[A-Za-z0-9]{1,5}\b`)
+	oomRe      = regexp.MustCompile(`memory allocation of \d+ bytes failed|out of memory|cannot allocate memory|bad_alloc|memoryerror`)
+	timeoutRe  = regexp.MustCompile(`timed out|deadline exceeded`)
+	noCryptRe  = regexp.MustCompile(`\b(not|isn't|is not|wasn't|was not)\s+(password[- ]protected|encrypted)\b|\bno password\b|\bwithout (a )?password\b`)
+	cryptRe    = regexp.MustCompile(`\b(password|passphrase|encrypted|encryption|decrypt|decryption)\b`)
+	unsuppRe   = regexp.MustCompile(`\bunsupported\b|\bnot supported\b`)
+	expandedRe = regexp.MustCompile(`archive too large|exceeds docling_rs_sheet_max_cells|document_too_large`)
+)
+
+// isLogNoise reports whether a stderr line is an informational log line rather than
+// the error itself.
+func isLogNoise(line string) bool {
+	m := logLevelRe.FindStringSubmatchIndex(line)
+	if m == nil {
+		return false
+	}
+	if e := errorWordRe.FindStringIndex(line); e != nil && e[0] < m[2] {
+		return false
+	}
+	return true
+}
+
 // ClassifyCLIError turns a parser's stderr into a stable error code plus a short,
 // useful message. Log noise (WARN/INFO lines, timestamps) is dropped: the previous
 // "tail 400 bytes" approach truncated into the middle of a warning and hid the
-// actual cause in a real-corpus run (PR-01 follow-up).
+// actual cause in a real-corpus run (PR-01 follow-up). The whole kept text is
+// classified; only the returned message is shortened.
 func ClassifyCLIError(stderr string) (code string, message string) {
 	lines := strings.Split(stderr, "\n")
 	keep := make([]string, 0, len(lines))
 	for _, line := range lines {
 		l := strings.TrimSpace(line)
-		if l == "" {
-			continue
-		}
-		up := strings.ToUpper(l)
-		if strings.Contains(up, " WARN ") || strings.Contains(up, " INFO ") ||
-			strings.Contains(up, " DEBUG ") || strings.Contains(up, " TRACE ") {
+		if l == "" || isLogNoise(l) {
 			continue
 		}
 		keep = append(keep, l)
 	}
-	msg := strings.Join(keep, " | ")
-	if msg == "" {
-		msg = strings.TrimSpace(stderr)
+	full := strings.Join(keep, " | ")
+	if full == "" {
+		full = strings.TrimSpace(stderr)
 	}
-	if len(msg) > 600 {
-		msg = msg[len(msg)-600:]
-	}
-	low := strings.ToLower(msg)
+	msg := tailRunes(full, classifierMessageMax)
+	low := strings.ToLower(full)
+	// Keywords are matched with file names and quoted strings removed, and with explicit
+	// negations ("not encrypted") taken out first.
+	words := pathishRe.ReplaceAllString(low, " ")
 	switch {
-	case strings.Contains(low, "archive too large"),
-		strings.Contains(low, "exceeds docling_rs_sheet_max_cells"),
-		strings.Contains(low, "document_too_large"):
+	case expandedRe.MatchString(low):
 		return jobs.ErrExpandedTooLarge, "document expands beyond the parser limits: " + msg
-	case strings.Contains(low, "timed out"), strings.Contains(low, "deadline exceeded"):
+	case oomRe.MatchString(words):
+		return jobs.ErrEngineOOM, msg
+	case timeoutRe.MatchString(words):
 		return jobs.ErrTimeout, msg
-	case strings.Contains(low, "password"), strings.Contains(low, "encrypted"):
+	case cryptRe.MatchString(noCryptRe.ReplaceAllString(words, " ")):
 		return jobs.ErrEncrypted, msg
-	case strings.Contains(low, "unsupported"), strings.Contains(low, "not supported"):
+	case unsuppRe.MatchString(words):
 		return jobs.ErrUnsupportedType, msg
 	}
 	return jobs.ErrMalformed, msg
+}
+
+// tailRunes keeps the last n bytes of s without splitting a UTF-8 sequence.
+func tailRunes(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	i := len(s) - n
+	for i < len(s) && !utf8.RuneStart(s[i]) {
+		i++
+	}
+	return s[i:]
 }

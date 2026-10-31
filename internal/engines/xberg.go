@@ -3,7 +3,6 @@ package engines
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -208,22 +207,7 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		err = nil
 	}
 	if err != nil {
-		if res != nil && res.TimedOut {
-			return nil, Errf(true, jobs.ErrTimeout, "xberg timed out after %s", timeout)
-		}
-		if errors.Is(err, ErrOOM) {
-			return nil, Errf(true, jobs.ErrEngineOOM,
-				"xberg exceeded its memory ceiling while parsing this document")
-		}
-		if errors.Is(err, ErrSandboxUnavailable) {
-			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
-		}
-		code, msg := jobs.ErrMalformed, "xberg failed"
-		if res != nil {
-			code, msg = ClassifyCLIError(string(res.Stderr))
-			msg = fmt.Sprintf("xberg exit %d: %s", res.ExitCode, msg)
-		}
-		return nil, &Error{Code: code, Message: msg}
+		return nil, cliFailure("xberg", timeout, res, err)
 	}
 	if req.Progress != nil {
 		req.Progress(80, "engine_done")

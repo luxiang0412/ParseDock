@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -116,22 +115,7 @@ func (d *DoclingRS) Parse(ctx context.Context, req Request) (*documentir.Documen
 		err = nil
 	}
 	if err != nil {
-		if res != nil && res.TimedOut {
-			return nil, Errf(true, jobs.ErrTimeout, "docling-rs timed out after %s", timeout)
-		}
-		if errors.Is(err, ErrOOM) {
-			return nil, Errf(true, jobs.ErrEngineOOM,
-				"docling-rs exceeded its memory ceiling while parsing this document")
-		}
-		if errors.Is(err, ErrSandboxUnavailable) {
-			return nil, Errf(false, jobs.ErrEngineUnavailable, "engine sandbox requested but unavailable: %v", err)
-		}
-		code, msg := jobs.ErrMalformed, "docling-rs failed"
-		if res != nil {
-			code, msg = ClassifyCLIError(string(res.Stderr))
-			msg = fmt.Sprintf("docling-rs exit %d: %s", res.ExitCode, msg)
-		}
-		return nil, &Error{Code: code, Message: msg}
+		return nil, cliFailure("docling-rs", timeout, res, err)
 	}
 	if req.Progress != nil {
 		req.Progress(80, "engine_done")
