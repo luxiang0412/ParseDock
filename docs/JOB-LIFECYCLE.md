@@ -2,7 +2,7 @@
 
 > Implementation: `internal/coordinator/{service,cleanup,http}.go`,
 > `internal/storage/store.go`, schema in `migrations/0001_init.sql`.
-> Evidence: `benchmark/results/raw/acceptance-lifecycle-*.json` (T03–T16)
+> Evidence: `benchmark/results/raw/acceptance-lifecycle-*.json` (T03–T17 except T11)
 > and `acceptance-real-*.json` (T01/T02/T11).
 
 ## 1. Two dimensions, never one column

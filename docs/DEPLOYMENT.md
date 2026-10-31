@@ -156,10 +156,13 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--trusted-proxies` | `PARSEDOCK_TRUSTED_PROXIES` | – (none) | api: comma-separated CIDRs/addresses whose `X-Forwarded-For` is believed (walked from the right). Default: the TCP peer is the client. The resolved address keys the failed-auth limiter and is forwarded to the coordinator's audit lines as `client_ip` |
 | `--body-read-timeout` | `PARSEDOCK_BODY_READ_TIMEOUT` | `10m` | api + coordinator: longest time to receive one request body (declared bodies ≤ 1 MiB: at most `1m`); a stalled or trickling upload is cut off. `0` disables. There is deliberately no write timeout (SSE, downloads) |
 | `--data-dir` | `PARSEDOCK_DATA_DIR` | `./runtime/data` | SQLite + files (coordinator only) |
+| `--db` | `PARSEDOCK_DB` | `<data-dir>/coordinator.db` | SQLite database path (coordinator only) |
+| `--log-level` | `PARSEDOCK_LOG_LEVEL` | `info` | `debug`/`info`/`warn`/`error` (an unknown value falls back to `info`) |
 | `--engines` | `PARSEDOCK_ENGINES` | `native` | enabled engines |
 | `--result-ttl` | `PARSEDOCK_RESULT_TTL` | `1h` | default result retention |
 | `--max-result-ttl` | `PARSEDOCK_MAX_RESULT_TTL` | `24h` | client TTL ceiling |
 | `--max-job-lifetime` | `PARSEDOCK_MAX_JOB_LIFETIME` | `24h` | absolute job lifetime |
+| `--failed-retention` | `PARSEDOCK_FAILED_RETENTION` | `10m` | how long the files of a `failed`/`cancelled` job are kept for debugging before the cleaner moves it to `release_pending` |
 | `--cleanup-interval` | `PARSEDOCK_CLEANUP_INTERVAL` | `60s` | cleaner period |
 | `--download-lease` | `PARSEDOCK_DOWNLOAD_LEASE` | `60s` | download lease |
 | `--worker-lease` | `PARSEDOCK_WORKER_LEASE` | `60s` | worker lease |
@@ -186,10 +189,11 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `HF_HUB_CACHE` (worker image) | – | `/opt/xberg-models` | where the worker image seeds xberg's PaddleOCR/Sceptre models at build time (652 MiB). `paddle-ocr` is the only backend that needs model files beyond the tesseract tessdata; without the seed it would download them at run time, which fails on an internal worker network. |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
 | `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
-| `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `auto` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time. The label is an operator statement: since PR-D1 a `gpu_required` job additionally needs **per-task proof** that the GPU was used, otherwise it fails with `gpu_unavailable` (see `docs/RUNBOOK.md` → "GPU jobs: reading the evidence"). Registration reports `gpu_inference_verified: false`, so a visible device is never presented as a verified capability. |
+| `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `cpu` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time. The label is an operator statement: since PR-D1 a `gpu_required` job additionally needs **per-task proof** that the GPU was used, otherwise it fails with `gpu_unavailable` (see `docs/RUNBOOK.md` → "GPU jobs: reading the evidence"). Registration reports `gpu_inference_verified: false`, so a visible device is never presented as a verified capability. |
 | `--worker-id` | `PARSEDOCK_WORKER_ID` | generated | stable worker identity across restarts |
 | `--worker-concurrency` | `PARSEDOCK_WORKER_CONCURRENCY` | `1` | parallel slots per worker; ignored (capped to 1) for GPU device types |
 | `--work-dir` | `PARSEDOCK_WORK_DIR` | `./runtime/work` | worker scratch; on the GPU image keep it **below** the model-cache volume (`/work/scratch`) |
+| `--poll-interval` | `PARSEDOCK_POLL_INTERVAL` | `250ms` | how long an idle worker waits between claim attempts; the latency floor when the queue is shallow |
 | `--engine-min-vram-mb` | `PARSEDOCK_ENGINE_MIN_VRAM_MB` | – | `engine:MiB` list; `gpu_required` is refused (`409 gpu_unavailable`) unless a live GPU worker has that much free on the card the parser will use |
 | `--tls-cert` / `--tls-key` | `PARSEDOCK_TLS_CERT` / `_KEY` | – | coordinator listener certificate; also used as the client certificate on api/worker |
 | `--tls-client-ca` | `PARSEDOCK_TLS_CLIENT_CA` | – | enables mutual TLS on the coordinator; **startup fails without `--tls-cert/--tls-key`** |
@@ -197,8 +201,16 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--tls-server-name` | `PARSEDOCK_TLS_SERVER_NAME` | – | required when dialling an IP literal |
 | `--tls-insecure` | `PARSEDOCK_TLS_INSECURE` | off | skip verification — development only, refused by the release checklist; logs a warning at startup |
 | `--dev-insecure` | `PARSEDOCK_DEV_INSECURE=1` | off | tests only: anonymous `/v1` when no keys are configured (`X-Debug-Owner`, validated), short keys accepted, no internal-binding check. Logs a loud warning |
-| `--escalate-scans` | `PARSEDOCK_ESCALATE_SCANS` | `1` | retry a CJK scan once with the accurate engine when the fast engine reports low OCR confidence (only `mode=auto`, only when the retry yields at least as much text) |
-| engine paths | `PARSEDOCK_XBERG_BIN`, `PARSEDOCK_DOCLING_RS_BIN`, … | – | adapters |
+| `--escalate-scans` | `PARSEDOCK_ESCALATE_SCANS` | `1` | `mode=auto` only: retry a scannable document once with the accurate engine when the fast result carries a `no_text_layer` warning or a measured OCR confidence below the threshold (any script). The retry is discarded, and the fast result kept, when it errors, is empty, or still reports low confidence (`internal/engines/escalate.go`, `internal/worker/worker.go` `maybeEscalate`) |
+| `--xberg-bin` / `--xberg-lib-dir` | `PARSEDOCK_XBERG_BIN` / `_LIB_DIR` | – | xberg CLI path and the directory with its shared libraries |
+| `--xberg-ocr` | `PARSEDOCK_XBERG_OCR` | `1` | enable OCR in xberg |
+| `--docling-rs-bin` / `--docling-rs-models` | `PARSEDOCK_DOCLING_RS_BIN` / `_MODELS` | – | docling-rs CLI path and the directory containing its `.models` |
+| `--docling-rs-text-layer` | `PARSEDOCK_DOCLING_RS_TEXT_LAYER=1` | off | docling-rs text-layer-only mode |
+| `--docling-serve-url` / `--docling-serve-gpu` | `PARSEDOCK_DOCLING_SERVE_URL` / `_GPU=1` | – / off | docling-serve base URL; mark it GPU-capable |
+| `--tika-url` | `PARSEDOCK_TIKA_URL` | – | Tika server base URL |
+| `--mineru-bin` / `--mineru-tier` / `--mineru-home` | `PARSEDOCK_MINERU_BIN` / `_TIER` / `_HOME` | – / `flash` / – | MinerU CLI path, tier (`flash` = local only), ephemeral `MINERU_HOME` |
+| `--check` | – | – | print capabilities and exit |
+| `--version` | – | – | print the service and API versions as JSON and exit |
 
 `docparse --check` prints host facts, the effective config and the routing table as
 JSON — useful as a deployment smoke test and for support tickets.

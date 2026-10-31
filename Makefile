@@ -54,7 +54,7 @@ test: vet ## unit + integration tests (Go)
 contract: ## PR-00: OpenAPI/SDK/router contract checks
 	python3 tests/contract/openapi_contract.py
 
-ci: ## run the same phases CI runs (static,unit,contract,lifecycle,image)
+ci: ## run the CI phases static,unit,contract,lifecycle,image (CI also runs web + sdk jobs)
 	bash scripts/ci-local.sh all
 
 ci-phase: ## run one CI phase (PHASE=static|unit|contract|lifecycle|image|engines|container)
@@ -86,7 +86,7 @@ license-audit: ## SBOM + GPL gate for the built images (external distribution)
 fixtures: ## regenerate fixtures + the 110-document corpus (needs venv-fixtures)
 	$(PY_FIX) benchmark/scripts/gen_fixtures.py --corpus 110
 
-acceptance: ## T03–T16 lifecycle acceptance with the mock engine
+acceptance: ## lifecycle acceptance T03–T17 except T11 (14 cases) with the mock engine
 	python3 tests/integration/acceptance.py --profile lifecycle
 
 acceptance-real: ## T01/T02/T11 against real engines (native,xberg,docling-rs)

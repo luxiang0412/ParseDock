@@ -1,10 +1,12 @@
 name: CI
 
-# Blocking PR pipeline (PR-01). Every job runs the same commands as
-# `scripts/ci-local.sh <phase>`, so a local `make ci` and CI cannot drift.
+# Blocking PR pipeline (PR-01). The static/unit/contract/lifecycle/image jobs run
+# `scripts/ci-local.sh <phase>`, so a local `make ci` and CI cannot drift for them;
+# `web` has inline npm steps (local: `make web-test`) and `sdk` runs
+# `scripts/sdk-check.sh --fast`.
 #
 # Required checks (branch protection): static, unit, contract, lifecycle, image,
-# ci-summary. Real-engine acceptance lives in nightly.yml + engine-changes.yml so
+# web, sdk, ci-summary. Real-engine acceptance lives in nightly.yml + engine-changes.yml so
 # the PR path stays under the 8 minute budget.
 
 on:

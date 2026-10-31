@@ -9,11 +9,13 @@
 #               ruff, build, actionlint, go mod tidy drift
 #   unit        go test (cmd, internal, migrations) + scoring unit tests
 #   contract    OpenAPI validation, spec/SDK/router drift, SDK regeneration drift
-#   lifecycle   mock acceptance (T03-T16), PR-00/PR-02/PR-07 runtime contracts, backup/restore
+#   lifecycle   mock acceptance (T03-T17 except T11), PR-00/02/07/09/12 runtime contracts,
+#               backup/restore
 #   image       control-plane image build, smoke, digest, licence audit (report)
 #   engines     install real engines, real-engine acceptance, bench + score
 #   container   worker image build, container smoke with real engines, SBOM
-#   all         static + unit + contract + lifecycle + image (local full run)
+#   all         static + unit + contract + lifecycle + image (local full run; the CI
+#               `web` and `sdk` jobs are not phases here: `make web-test`, `make sdk-check`)
 #
 # Every phase writes build/ci/<phase>.log and build/ci/<phase>.json (timings,
 # status). Artifacts are copied to build/ci/ for upload.
