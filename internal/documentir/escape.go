@@ -14,6 +14,11 @@ import (
 // Markdown source stays readable for people and LLMs (an identifier like on_time_pct is
 // left alone because an intraword underscore is never emphasis).
 
+// EscapeMarkdownInline escapes plain text for use inside CommonMark inline content. It
+// is for adapters that assemble rich_text from formatted runs: the run text is literal,
+// only the markup around it is Markdown.
+func EscapeMarkdownInline(s string) string { return escapeInline(s) }
+
 // escapeInline escapes characters that could start inline markup.
 func escapeInline(s string) string {
 	if s == "" || !strings.ContainsAny(s, "\\*_`~[]<&") {

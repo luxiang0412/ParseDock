@@ -102,6 +102,14 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
   0 missed against xberg's own plain output on the 69 synthetic PDFs). Sheets keep a
   `## <sheet>` heading. Empty spreadsheet rows are no longer mistaken for the Markdown
   delimiter row and dropped.
+* **docling-rs / docling-serve reading order follows the whole body tree.** A DOCX table
+  is a child of its section header; the mapper only followed text children of text nodes
+  and appended such tables at the end of the document. Nodes the tree does not reach are
+  now inserted where the texts array puts them instead of at the end. A paragraph made of
+  formatted runs (an `inline` group) is one element with `rich_text` (bold, italic,
+  strikethrough, hyperlinks) instead of one paragraph per run; numbered items keep their
+  marker; page headers/footers are typed and marked as furniture. Spreadsheet sheets
+  appear as `##` headings.
 
 ### Added
 

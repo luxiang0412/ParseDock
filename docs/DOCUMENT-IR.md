@@ -226,12 +226,21 @@ must unmarshal and round-trip unchanged.
 
 | Engine | pages | bbox | reading order | headings | tables | sheet names | confidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| docling-rs / docling-serve | ✅ `pages` map | ✅ + origin | ✅ body tree | ✅ `section_header` + level | ✅ cells + spans | ✅ `groups[label=sheet].name` | ❌ |
+| docling-rs / docling-serve | ✅ `pages` map | ✅ + origin | ✅ body tree, every child kind (a table under its section header stays there); unreached nodes inserted by texts-array position | ✅ `section_header` + level; sheets as `##` headings | ✅ cells + spans | ✅ `groups[label=sheet].name` | ❌ |
 | xberg | ✅ page split | ✅ tables only | page Markdown order (`--content-format markdown`); tables at their inline position, enriched with the structured table's bbox | ✅ Markdown headings; lists, quotes and inline formatting (`rich_text`) | ✅ grid | ❌ (warning; sheets become `##` headings from `sheet_name`) | ⚠️ document-level quality score |
 | MinerU (flash) | ✅ `<!-- page N of M -->` | ❌ | markdown order | ⚠️ from markdown | ✅ via markdown tables | ❌ | ❌ |
 | Tika | ⚠️ only when form feeds exist (never for PDF in 4.2) | ❌ | text order | ⚠️ markdown headings for OOXML | ⚠️ markdown tables for OOXML | ❌ | ❌ |
 | legacy `.doc/.xls/.ppt` | ❌ (`legacy_format` warning) | ❌ | text/table order | xberg: no; docling: section headings where present | xberg: grid per sheet; docling: table cells | xlsx only via `.xls` sheet index | ❌ |
 | native | – (line) | ❌ | line order | ✅ markdown headings | ✅ csv/tsv grid | ⚠️ `csv` pseudo-sheet | ❌ |
+
+Docling-specific mapping details: an `inline` group (a paragraph made of formatted runs)
+becomes **one** element whose `rich_text` carries each run's `formatting` (bold, italic,
+strikethrough) and `hyperlink`; `enumerated`/`marker` become `list_ordered`/`list_marker`;
+list nesting comes from nested list groups; `code_language` is kept. docling-rs 2.53.3
+reports run formatting and hyperlinks for DOCX only; its PDF text carries none, and a
+formatted run inside a heading or a table cell is flattened by the engine itself.
+`content_layer=furniture` (e.g. the DOCX "page header"/"page footer" groups) is kept in JSON
+with `metadata.content_layer=furniture`, typed `header`/`footer` where the group says so.
 
 ## 5. Validation performed in Phase 0
 
