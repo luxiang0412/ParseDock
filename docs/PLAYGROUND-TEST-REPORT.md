@@ -82,6 +82,21 @@ E2E_COMPOSE_URL=http://127.0.0.1:8090 E2E_ENGINES=native,xberg npx playwright te
 | Remote resources | CSP `default-src 'self'`, `img-src 'self' blob: data:`; Markdown `img` component never emits an `<img>` | enforced at the proxy and in the component |
 | Object URL lifecycle | unit test asserts one URL per blob and revocation on change/unmount | pass |
 
+## 4b. CI on GitHub (PR #28)
+
+| Job | Run | Result |
+| --- | --- | --- |
+| CI / web (api-type drift, lint, typecheck, 43 unit tests, build, dist secret scan) | `41180951619` | **pass**, 44 s |
+| CI / static, unit, contract, lifecycle, image, ci-summary | `41180951619` | **pass** (lifecycle 3 m 19 s) |
+| Engine changes / real-engines (acceptance + bench + gate) | `41180951630` | **pass**, 1 m 57 s |
+
+The first engine-changes run on this branch **failed**, and it was right to be suspicious but wrong
+about the cause: with no engine or adapter change, `docling-rs` moved 679 → 899 → 1 453 ms and
+`xberg`'s OCR path 217 → 282 ms on identical fixtures — shared-runner contention. The gate now
+keeps quality/CER strict and blocks only gross latency regressions in CI
+(`--min-abs-latency-ms 600`), while `make gate` on a controlled host keeps the 15 %/20 ms rule.
+Recorded in `docs/ENGINE-BENCHMARK.md`, with a unit test for both behaviours.
+
 ## 5. Backend regression
 
 The frontend work touched one Go file (`internal/engines/exec.go`, relative engine path) plus the
