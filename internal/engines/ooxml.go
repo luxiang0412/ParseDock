@@ -81,8 +81,12 @@ type xlsxSharedStrings struct {
 // sheetFormulas holds the formula cells of one sheet plus the origin of the sheet's
 // used range. Engine table coordinates are table-local, so enrichment is only safe
 // when the used range starts at A1 and the mapping is therefore an identity.
-// maxFormulaCells bounds the formula cells retained for one sheet.
-const maxFormulaCells = 500_000
+// maxFormulaCells bounds the formula cells retained for one sheet, and
+// maxWorkbookFormulaCells for the whole workbook.
+const (
+	maxFormulaCells         = 500_000
+	maxWorkbookFormulaCells = 1_000_000
+)
 
 type sheetFormulas struct {
 	originRow, originCol int
@@ -172,6 +176,7 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 	}
 
 	formulas := map[string]sheetFormulas{}
+	retained := 0
 	var warnings []documentir.Warning
 	for _, sh := range sheets {
 		if err := ctx.Err(); err != nil {
@@ -201,6 +206,12 @@ func EnrichXLSXFormulas(ctx context.Context, inputPath string, doc *documentir.D
 		if len(scan.cells) == 0 {
 			continue
 		}
+		// Per-sheet caps do not bound the workbook: many sheets would still add up. Past the
+		// workbook budget the remaining sheets are skipped without enrichment.
+		if retained+len(scan.cells) > maxWorkbookFormulaCells {
+			continue
+		}
+		retained += len(scan.cells)
 		formulas[sh.name] = *scan
 	}
 	if len(formulas) == 0 {
@@ -342,8 +353,14 @@ func sheetHasFormulaTag(ctx context.Context, zr *zip.ReadCloser, name string) (b
 		return false, err
 	}
 	defer rc.Close()
+	return containsFormulaTag(ctx, rc)
+}
+
+// containsFormulaTag is the chunk scan used by sheetHasFormulaTag, split out so the boundary
+// handling is testable without a zip archive.
+func containsFormulaTag(ctx context.Context, r io.Reader) (bool, error) {
 	buf := make([]byte, 1<<20)
-	prevF := false // last byte of the previous chunk was '<'
+	prevF := false // last byte of the previous chunk was '<' or ':'
 	// OOXML in the wild prefixes elements (<x:f>), and the decoder matches on Name.Local,
 	// so both spellings must be detected.
 	needles := [][]byte{[]byte("<f"), []byte(":f")}
@@ -351,9 +368,11 @@ func sheetHasFormulaTag(ctx context.Context, zr *zip.ReadCloser, name string) (b
 		if err := ctx.Err(); err != nil {
 			return false, err
 		}
-		n, rerr := rc.Read(buf)
+		n, rerr := r.Read(buf)
 		if n > 0 {
 			chunk := buf[:n]
+			// "<f" and ":f" are matched inside a chunk; a tag split across the boundary
+			// leaves the prefix as the last byte, so remember both possibilities.
 			if prevF && len(chunk) > 0 && chunk[0] == 'f' {
 				return true, nil
 			}

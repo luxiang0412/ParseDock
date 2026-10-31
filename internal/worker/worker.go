@@ -472,7 +472,7 @@ func (w *Worker) execute(ctx context.Context, task *coordClaim) error {
 	if size == 0 {
 		return w.fail(ctx, task, jobs.ErrMalformed, "engine produced no text", false)
 	}
-	if err := w.uploadResult(ctx, task, engine, result); err != nil {
+	if err := w.uploadResult(parseCtx, task, engine, result); err != nil {
 		return err
 	}
 	w.Log.Info("task completed", "job", task.JobID, "engine", engine.Name(),

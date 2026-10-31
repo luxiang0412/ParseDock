@@ -63,7 +63,17 @@ func (l Limits) Validate(d *Document) error {
 	// allocate the grid repeatedly.
 	areas := make(map[string]int64, len(d.Tables))
 	for i := range d.Tables {
-		areas[d.Tables[i].ID] = int64(d.Tables[i].Rows) * int64(d.Tables[i].Cols)
+		id := d.Tables[i].ID
+		if id == "" {
+			return fmt.Errorf("table %d has no id", i)
+		}
+		if _, dup := areas[id]; dup {
+			// The renderers disagree on duplicates (text uses the first, markdown the last),
+			// so a document with duplicate IDs can neither be rendered faithfully nor be
+			// bounded by the reference accounting below.
+			return fmt.Errorf("duplicate table id %q", id)
+		}
+		areas[id] = int64(d.Tables[i].Rows) * int64(d.Tables[i].Cols)
 	}
 	var rendered int64
 	for i := range d.Elements {

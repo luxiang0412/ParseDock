@@ -91,7 +91,7 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 		_ = rows.Close()
 		for _, p := range list {
 			var busy int
-			_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM download_leases WHERE job_id = ? AND expires_at > ?`,
+			_ = s.DB.QueryRowContext(ctx, `SELECT COUNT(*) FROM download_leases WHERE job_id = ? AND julianday(expires_at) > julianday(?)`,
 				p.id, ts(nowUTC())).Scan(&busy)
 			if busy > 0 {
 				rep.SkippedBusy++
@@ -114,7 +114,7 @@ func (s *Service) RunCleanup(ctx context.Context) *CleanupReport {
 				retention_target = ?, updated_at = ?
 				WHERE id = ? AND retention_status IN ('release_pending','expiry_pending','deleting')
 				  AND NOT EXISTS (SELECT 1 FROM download_leases
-				                  WHERE job_id = ? AND expires_at > ?)`,
+				                  WHERE job_id = ? AND julianday(expires_at) > julianday(?))`,
 				string(final), ts(nowUTC()), p.id, p.id, ts(nowUTC()))
 			if err != nil {
 				rep.Errors = append(rep.Errors, "mark deleting: "+err.Error())
@@ -241,7 +241,7 @@ func (s *Service) execCount(ctx context.Context, rep *CleanupReport, q, reason s
 func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int {
 	now := nowUTC()
 	rows, err := s.DB.QueryContext(ctx, `SELECT job_id, attempt_no, worker_id FROM attempts
-		WHERE state = 'running' AND lease_until <= ?`, ts(now))
+		WHERE state = 'running' AND julianday(lease_until) <= julianday(?)`, ts(now))
 	if err != nil {
 		rep.Errors = append(rep.Errors, "reap query: "+err.Error())
 		return 0
@@ -281,7 +281,7 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 		// the lease in the meantime, and another cleanup pass may be racing this one. Expire
 		// only a still-running, still-expired attempt, and require exactly one row.
 		res, err := tx.ExecContext(ctx, `UPDATE attempts SET state = 'expired', error = 'lease expired'
-			WHERE job_id = ? AND attempt_no = ? AND state = 'running' AND lease_until <= ?`,
+			WHERE job_id = ? AND attempt_no = ? AND state = 'running' AND julianday(lease_until) <= julianday(?)`,
 			l.jobID, l.attempt, ts(now))
 		if err != nil {
 			_ = tx.Rollback()
@@ -327,6 +327,17 @@ func (s *Service) reapWorkerLeases(ctx context.Context, rep *CleanupReport) int 
 // sweepOrphans removes input/result directories that have no live job row.
 // Only directories older than 10 minutes are touched, so an in-flight commit
 // is never destroyed.
+// committedResultVersion reads the version the database currently points at.
+func (s *Service) committedResultVersion(jobID string) (string, error) {
+	var v sql.NullString
+	err := s.DB.QueryRowContext(context.Background(),
+		`SELECT result_version FROM jobs WHERE id = ?`, jobID).Scan(&v)
+	if err != nil {
+		return "", err
+	}
+	return v.String, nil
+}
+
 // staleStageDirs lists publication staging directories older than the orphan cutoff.
 func staleStageDirs(jobDir string) []string {
 	entries, err := os.ReadDir(jobDir)
@@ -351,9 +362,18 @@ func staleStageDirs(jobDir string) []string {
 // byte-identical generation another attempt just committed), and a crash can leave a staging
 // directory. Only entries older than the orphan cutoff are removed, so an in-flight
 // publication is never touched. Returns how many were removed.
-func (s *Service) pruneGenerations(jobDir, sub, keepVersion string) int {
+func (s *Service) pruneGenerations(jobDir, sub, keepVersion, jobID string) int {
 	if sub != "results" {
 		return 0
+	}
+	// The caller holds the job's publication lock. Re-read the committed version anyway: it
+	// read it before listing the directory, and a completion may have republished into one of
+	// these entries since.
+	if v, err := s.committedResultVersion(jobID); err == nil {
+		keepVersion = v
+	}
+	if leased, err := s.hasActiveDownloadLease(context.Background(), jobID); err == nil && leased {
+		return 0 // a client or an online backup may be copying this job
 	}
 	entries, err := os.ReadDir(jobDir)
 	if err != nil {
@@ -393,43 +413,51 @@ func (s *Service) sweepOrphans(ctx context.Context, rep *CleanupReport) int {
 			if err != nil || info.ModTime().After(cutoff) {
 				continue
 			}
-			// Staging directories from a crashed publication are never served; drop them
-			// once they are old, regardless of the job's state.
-			for _, stale := range staleStageDirs(filepath.Join(s.Store.Root, sub, e.Name())) {
-				_ = os.RemoveAll(stale)
-				rep.StaleParts++
-			}
-			var status, retention, version string
-			err = s.DB.QueryRowContext(ctx, `SELECT processing_status, retention_status, COALESCE(result_version,'')
-				FROM jobs WHERE id = ?`, e.Name()).
-				Scan(&status, &retention, &version)
-			switch {
-			case errors.Is(err, sql.ErrNoRows):
-				// The row is gone (tombstone purge), so the directory is definitively orphaned.
-			case err != nil:
-				// A failed lookup is not evidence of an orphan: a cancelled context during
-				// shutdown makes every query fail, and deleting then would remove live data.
-				rep.Errors = append(rep.Errors, "orphan scan: "+err.Error())
-				continue
-			case !jobs.RetentionStatus(retention).Terminal():
-				// A live job may be publishing, but generations the database does not
-				// reference (a losing completion, an abandoned attempt) are dead weight and
-				// are not charged to storage. Only remove them once they are clearly old.
-				rep.Released += s.pruneGenerations(filepath.Join(s.Store.Root, sub, e.Name()), sub, version)
-				continue
-			}
-			if ctx.Err() != nil {
-				return removed
-			}
-			// A completed job without a DB row can only happen after the
-			// tombstone purge, so the files are definitively orphaned.
-			if err := os.RemoveAll(filepath.Join(s.Store.Root, sub, e.Name())); err == nil {
-				removed++
-				slog.Warn("removed orphan directory", "sub", sub, "job", e.Name())
-			}
+			// Serialise with publication for this job: Complete holds the same lock from the
+			// first staged byte to the committed row, so nothing here can see a half-written
+			// generation as abandoned.
+			unlock := lockJob(e.Name())
+			removed += s.sweepOne(ctx, rep, sub, e.Name(), cutoff)
+			unlock()
 		}
 	}
 	return removed
+}
+
+// sweepOne reclaims one job directory. The caller holds the job's publication lock.
+func (s *Service) sweepOne(ctx context.Context, rep *CleanupReport, sub, jobID string, cutoff time.Time) int {
+	dir := filepath.Join(s.Store.Root, sub, jobID)
+	// Staging directories from a crashed publication are never served; with the lock held
+	// none can be in flight.
+	for _, stale := range staleStageDirs(dir) {
+		_ = os.RemoveAll(stale)
+		rep.StaleParts++
+	}
+	var status, retention, version string
+	err := s.DB.QueryRowContext(ctx, `SELECT processing_status, retention_status, COALESCE(result_version,'')
+		FROM jobs WHERE id = ?`, jobID).
+		Scan(&status, &retention, &version)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// The row is gone (tombstone purge), so the directory is definitively orphaned.
+	case err != nil:
+		// A failed lookup is not evidence of an orphan: a cancelled context during shutdown
+		// makes every query fail, and deleting then would remove live data.
+		rep.Errors = append(rep.Errors, "orphan scan: "+err.Error())
+		return 0
+	case !jobs.RetentionStatus(retention).Terminal():
+		// Generations the database does not reference (a losing completion, an abandoned
+		// attempt) are dead weight and are not charged to storage.
+		return s.pruneGenerations(dir, sub, version, jobID)
+	}
+	if ctx.Err() != nil {
+		return 0 // a cancelled pass must not delete anything
+	}
+	if err := os.RemoveAll(dir); err == nil {
+		slog.Warn("removed orphan directory", "sub", sub, "job", jobID)
+		return 1
+	}
+	return 0
 }
 
 // LastCleanup reports when the cleaner last completed a pass.
