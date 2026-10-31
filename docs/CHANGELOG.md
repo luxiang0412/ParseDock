@@ -4,6 +4,45 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 `0.x` is a frozen contract but not yet a stability promise beyond the documented
 [Document IR compatibility policy](DOCUMENT-IR.md#2a-compatibility-policy-what-doc-ir01-promises).
 
+## Unreleased
+
+### Security
+
+* **Separate worker credential** (`--worker-token` / `PARSEDOCK_WORKER_TOKEN`). With it,
+  workers can call only the worker protocol; `/v1` (which asserts owners) and the
+  operator endpoints accept only the internal token and answer the worker token with
+  `403`. Optional and backward compatible in the binary (warning when unset); the
+  reference compose files now **require** it and give workers nothing else — add one
+  more `openssl rand -hex 24` to an existing `.env`.
+* Standalone generates random in-process internal/worker tokens when none are set, so
+  its coordinator listener is no longer open to every local process.
+* `/readyz` returns verdicts only to unauthenticated callers; `free_bytes`,
+  `last_cleanup` and error text need the internal token. `checks.cleanup` is always
+  present now.
+* Gateway: failed authentication is rate limited per client address (`429`); limiter
+  maps are bounded; `X-Debug-Owner` is validated; plaintext API keys under 16
+  characters fail startup (unless `--dev-insecure`) and one token for two owners fails
+  startup; the client's own key is no longer forwarded to the coordinator.
+* Client IP reaches the coordinator's audit lines (`client_ip`); `X-Forwarded-For` is
+  believed only from `--trusted-proxies`.
+* Per-request body read deadline (`--body-read-timeout`, default 10 min).
+* Playground: binds `127.0.0.1` by default (`PLAYGROUND_BIND`), keeps CSP/XFO/nosniff on
+  `index.html`, clears `X-Api-Key`; control-plane containers drop all capabilities.
+
+### Fixed
+
+* Synchronous `POST /v1/parse` longer than 30 s returned `502` at the gateway (shared
+  30 s response-header timeout); the gateway proxy now waits 150 s.
+* Malformed numeric/duration environment values are a startup error instead of a
+  silent fallback to the default; `--heartbeat` must be shorter than `--worker-lease`.
+* `--rate-limit=0` disables the per-owner limiter (it was reset to 20).
+* Standalone with TLS used `http://` for its in-process clients; standalone now waits
+  for gateway, worker and coordinator (in that order) before closing the database.
+* `deploy/host`: the worker now gets the 128 MiB upload limit too (it refused anything
+  above its own 64 MiB default); cluster-lite's coordinator port is reachable by remote
+  workers (it was only on an internal network).
+* `X-Api-Key` is documented in `api/openapi.yaml` (`apiKeyAuth`).
+
 ## v0.1.0 — 2026-10-31
 
 First tagged release. A complete, self-hosted document-parsing service: async job
