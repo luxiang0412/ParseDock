@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -108,6 +109,9 @@ type stubEngine struct {
 	modes   []string
 	text    string
 	warn    string
+	warns   []string
+	ocr     *documentir.OCRQuality
+	err     error
 	calls   int
 	parseMS int64
 }
@@ -118,22 +122,41 @@ func (s *stubEngine) Device() string              { return "cpu" }
 func (s *stubEngine) Formats() []string           { return []string{"pdf", "png"} }
 func (s *stubEngine) Modes() []string             { return s.modes }
 func (s *stubEngine) Probe(context.Context) error { return nil }
-func (s *stubEngine) Parse(_ context.Context, req engines.Request) (*documentir.Document, error) {
-	s.calls++
+
+// stubDoc materialises what the stub engine would have returned, so a test can
+// hand maybeEscalate the document the fast engine produced.
+func stubDoc(s *stubEngine) *documentir.Document {
 	d := documentir.New()
 	d.Elements = []documentir.Element{{ID: "el_1", Type: documentir.ElParagraph, Text: s.text}}
 	if s.warn != "" {
 		d.AddWarning(s.warn, "stub", "warn")
 	}
+	for _, w := range s.warns {
+		d.AddWarning(w, "stub", "warn")
+	}
+	d.OCR = s.ocr
 	d.Metrics.ParseMs = s.parseMS
-	return d, nil
+	return d
 }
 
-// RC-3 / PR-04: a poor OCR result on CJK text is retried once with the accurate
-// engine, and the fallback is recorded in the IR.
+// lowOCR is the evidence a tesseract run on a garbled page reports.
+func lowOCR(score float64) *documentir.OCRQuality {
+	return &documentir.OCRQuality{Used: true, Scored: true, MinScore: score, MinScorePage: 1}
+}
+
+func (s *stubEngine) Parse(_ context.Context, req engines.Request) (*documentir.Document, error) {
+	s.calls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	return stubDoc(s), nil
+}
+
+// PR-B: a *measured* low confidence on CJK text is retried once, and the
+// fallback plus its cost are recorded.
 func TestEscalationUsesAccurateEngine(t *testing.T) {
 	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"},
-		text: "采购订单 金额", warn: documentir.WarnOCRLowConfidence, parseMS: 10}
+		text: "采购订单 金额", ocr: lowOCR(0.26), parseMS: 10}
 	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"},
 		text: "采购订单 金额 人民币 128,400 元 交付日期", parseMS: 40}
 	w := New(Config{WorkDir: t.TempDir(), EscalateScans: true},
@@ -147,8 +170,11 @@ func TestEscalationUsesAccurateEngine(t *testing.T) {
 	if !doc.Routing.Fallback {
 		t.Fatal("routing.fallback not set")
 	}
-	if !strings.Contains(doc.Routing.Reason, "ocr_quality_escalation") {
-		t.Fatalf("routing reason not auditable: %q", doc.Routing.Reason)
+	for _, want := range []string{"ocr_quality_escalation", "trigger=low_confidence:0.26@1",
+		"attempts=2", "decision=accepted", "fast_ms=10", "accurate_ms=40"} {
+		if !strings.Contains(doc.Routing.Reason, want) {
+			t.Fatalf("routing reason %q missing %q", doc.Routing.Reason, want)
+		}
 	}
 	if doc.Metrics.ParseMs != 50 {
 		t.Fatalf("parse time not accumulated: %d", doc.Metrics.ParseMs)
@@ -158,24 +184,108 @@ func TestEscalationUsesAccurateEngine(t *testing.T) {
 	}
 }
 
-// A retry that produces less text is rejected: escalation must not degrade output.
-func TestEscalationKeepsFastResultWhenAccurateIsWorse(t *testing.T) {
+// PR-B: the retry is not accepted when the accurate engine's own evidence is
+// worse. Text length is not a quality signal and is not consulted.
+func TestEscalationRejectsLowConfidenceRetry(t *testing.T) {
 	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"},
-		text: "采购订单 金额 人民币 128,400 元 交付日期 供应商 华北物流", warn: documentir.WarnOCRLowConfidence}
-	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"}, text: "采购"}
+		text: "采购订单 金额", ocr: lowOCR(0.26), parseMS: 30}
+	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"},
+		text: "采购订单 金额 更多 更多 更多 更多", ocr: lowOCR(0.41), parseMS: 90}
 	w := New(Config{WorkDir: t.TempDir(), EscalateScans: true},
 		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
 
 	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
 	if used.Name() != "fast" || doc.Routing.Fallback {
-		t.Fatalf("worse result replaced the fast one: engine=%s fallback=%v", used.Name(), doc.Routing.Fallback)
+		t.Fatalf("worse retry replaced the fast result: engine=%s fallback=%v", used.Name(), doc.Routing.Fallback)
+	}
+	if !strings.Contains(doc.Routing.Reason, "decision=rejected:alt_low_confidence(0.41)") {
+		t.Fatalf("rejection not recorded: %q", doc.Routing.Reason)
+	}
+	if doc.Metrics.ParseMs != 120 {
+		t.Fatalf("rejected retry time not charged: %d", doc.Metrics.ParseMs)
+	}
+}
+
+// An empty retry is not an improvement either.
+func TestEscalationRejectsEmptyRetry(t *testing.T) {
+	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"}, text: "采购订单 金额", ocr: lowOCR(0.26)}
+	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"}, text: ""}
+	w := New(Config{WorkDir: t.TempDir(), EscalateScans: true},
+		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
+
+	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	if used.Name() != "fast" || !strings.Contains(doc.Routing.Reason, "decision=rejected:empty") {
+		t.Fatalf("empty retry accepted: engine=%s reason=%q", used.Name(), doc.Routing.Reason)
+	}
+}
+
+// PR-B requirement 7: a failed retry keeps the fast result, publishes nothing
+// half-written, and still records that the attempt happened.
+func TestEscalationFailureKeepsFastResult(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		err  error
+		ctx  func() (context.Context, context.CancelFunc)
+	}{
+		{"engine error", errors.New("boom"), func() (context.Context, context.CancelFunc) {
+			return context.WithCancel(context.Background())
+		}},
+		{"timeout", context.DeadlineExceeded, func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+			return ctx, cancel
+		}},
+		{"cancelled", context.Canceled, func() (context.Context, context.CancelFunc) {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			return ctx, func() {}
+		}},
+	} {
+		fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"}, text: "采购订单 金额", ocr: lowOCR(0.26), parseMS: 12}
+		accurate := &stubEngine{name: "accurate", modes: []string{"accurate"}, err: c.err, parseMS: 0}
+		w := New(Config{WorkDir: t.TempDir(), EscalateScans: true},
+			engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
+		task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
+		ctx, cancel := c.ctx()
+		defer cancel()
+
+		doc, used := w.maybeEscalate(ctx, task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+		if used.Name() != "fast" || doc.Routing.Fallback {
+			t.Fatalf("%s: fast result lost: engine=%s fallback=%v", c.name, used.Name(), doc.Routing.Fallback)
+		}
+		if doc.Elements[0].Text != "采购订单 金额" {
+			t.Fatalf("%s: result mutated: %q", c.name, doc.Elements[0].Text)
+		}
+		if !strings.Contains(doc.Routing.Reason, "decision=rejected:error") {
+			t.Fatalf("%s: decision not recorded: %q", c.name, doc.Routing.Reason)
+		}
+	}
+}
+
+// PR-B: "no confidence" is not "low confidence"; a good PP-OCRv6 result must not
+// be re-parsed.
+func TestNoEscalationOnUnknownQuality(t *testing.T) {
+	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"},
+		text:  "采购订单 金额 人民币 128,400 元 交付日期 供应商 华北物流有限公司 复核",
+		warns: []string{documentir.WarnOCRUsed, documentir.WarnOCRUsedUnknown},
+		ocr:   &documentir.OCRQuality{Used: true}, parseMS: 1300}
+	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"}, text: "…"}
+	w := New(Config{WorkDir: t.TempDir(), EscalateScans: true},
+		engines.NewRegistry(fast, accurate), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	task := &coordClaim{JobID: "job_x", Format: "pdf", Mode: "auto", Device: "auto"}
+
+	doc, used := w.maybeEscalate(context.Background(), task, fast, stubDoc(fast), t.TempDir(), "/tmp/in.pdf")
+	if used.Name() != "fast" || accurate.calls != 0 {
+		t.Fatalf("unknown quality escalated: engine=%s accurate_calls=%d", used.Name(), accurate.calls)
+	}
+	if doc.Metrics.ParseMs != 1300 {
+		t.Fatalf("no retry, but parse time changed: %d", doc.Metrics.ParseMs)
 	}
 }
 
 func TestEscalationDisabledAndExplicitModes(t *testing.T) {
-	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"},
-		text: "采购订单 金额", warn: documentir.WarnOCRLowConfidence}
+	fast := &stubEngine{name: "fast", modes: []string{"fast", "auto"}, text: "采购订单 金额", ocr: lowOCR(0.26)}
 	accurate := &stubEngine{name: "accurate", modes: []string{"accurate"}, text: "采购订单 金额 更多"}
 	reg := engines.NewRegistry(fast, accurate)
 	for _, c := range []struct {
@@ -185,6 +295,7 @@ func TestEscalationDisabledAndExplicitModes(t *testing.T) {
 	}{
 		{"disabled by config", false, "auto"},
 		{"explicit fast mode", true, "fast"},
+		{"accurate mode", true, "accurate"},
 	} {
 		w := New(Config{WorkDir: t.TempDir(), EscalateScans: c.enabled}, reg,
 			slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -193,16 +304,6 @@ func TestEscalationDisabledAndExplicitModes(t *testing.T) {
 			t.Fatalf("%s: escalated unexpectedly to %s", c.name, used.Name())
 		}
 	}
-}
-
-func stubDoc(s *stubEngine) *documentir.Document {
-	d := documentir.New()
-	d.Elements = []documentir.Element{{ID: "el_1", Type: documentir.ElParagraph, Text: s.text}}
-	if s.warn != "" {
-		d.AddWarning(s.warn, "stub", "warn")
-	}
-	d.Metrics.ParseMs = s.parseMS
-	return d
 }
 
 func TestGPUDeviceTypesAreMeasured(t *testing.T) {

@@ -112,7 +112,16 @@ engine exposes them (XLSX via structured engines).
   "source_location": { … } }
 ```
 
-Stable codes: `ocr_not_run`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
+OCR-related codes are three distinct things and must not be conflated:
+
+| Code | Meaning | Usable as a quality signal? |
+| --- | --- | --- |
+| `ocr_used` | OCR ran on at least one page. | **No.** It is the normal path for a scan. |
+| `ocr_quality_unknown` | OCR ran but the backend reported no confidence (e.g. PP-OCRv6). | **No.** Unknown is not low. |
+| `ocr_low_confidence` | A page reported a confidence below 0.60; the message quotes the score and page. | Yes, for scheduling only. |
+| `no_text_layer` | Extraction produced fewer than 20 characters on a PDF/image. | Yes — it means extraction failed, not that the input was scanned. |
+
+Stable codes: `ocr_not_run`, `ocr_used`, `ocr_quality_unknown`, `ocr_low_confidence`, `no_text_layer`, `truncated`,
 `page_limit_reached`, `partial_content`, `encrypted`, `degraded_conversion`,
 `unsupported_element`, `layout_heuristic`, `no_coordinates`, plus adapter-specific
 `sheet_name_unavailable`, `encoding_converted`, `no_page_boundaries`,
@@ -160,7 +169,7 @@ extracted, page numbers and coordinates are not available.
 | PDF reading order | docling-rs body order preserved (two-column fixture ordered left column then right) |
 | PDF page numbers | present for all page-based engines |
 | Heading hierarchy | docling-rs levels preserved; markdown-derived levels only where the engine emitted them |
-| OCR locality/confidence | **gap**: no candidate returns per-word/line bbox + confidence for scans in the tested configuration; results carry `ocr_low_confidence`/`no_coordinates` warnings instead |
+| OCR locality/confidence | **gap**: no candidate returns per-word/line bbox + confidence for scans in the tested configuration; results carry `ocr_used`/`ocr_quality_unknown`/`no_coordinates` warnings instead, and `ocr_low_confidence` only when a backend actually reported a score below threshold |
 | Page box (for rendering a bbox) | `source_location.page_width_pt` / `page_height_pt` are populated from Docling's page map **for PDF/slide only** (points, 1/72"). For XLSX, Docling's "page size" is a cell-grid extent, so it is deliberately not reported as points; use `sheet` + `cell_range`. Absent elsewhere (PR-00 / F08) |
 | Tika page numbers | only when Tika emits page boundaries (form feeds). Tika 4.2 does **not** for PDFs, so PR-00 changed the adapter to omit `page` and warn `no_page_boundaries` instead of stamping page 1 on the whole document |
 
