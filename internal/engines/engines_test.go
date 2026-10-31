@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"parsedock.dev/parsedock/internal/documentir"
 	"parsedock.dev/parsedock/internal/jobs"
@@ -346,5 +347,37 @@ func TestFormulaTagAcrossChunkBoundary(t *testing.T) {
 	ok, err := containsFormulaTag(context.Background(), strings.NewReader(plain))
 	if err != nil || ok {
 		t.Fatalf("formula-free sheet reported as having formulas (ok=%v err=%v)", ok, err)
+	}
+}
+
+// A relative engine path must be resolved against the operator's cwd, not against the
+// attempt directory (exec.Cmd resolves a relative Path against Dir).
+func TestRunCLIResolvesRelativeBinaryPath(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "engine.sh")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho ran\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(old) })
+
+	work := filepath.Join(dir, "attempt")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	res, err := RunCLI(ctx, CLISpec{Bin: "./engine.sh"}, work)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if strings.TrimSpace(string(res.Stdout)) != "ran" {
+		t.Fatalf("stdout = %q (exit %d, stderr %q)", res.Stdout, res.ExitCode, res.Stderr)
 	}
 }

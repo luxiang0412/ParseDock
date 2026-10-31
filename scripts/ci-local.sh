@@ -139,7 +139,11 @@ phase_engines() {
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
   # Quality gate (PR-11): a change that regresses quality >2 % relative or latency >15 %
   # fails here unless the baseline is deliberately updated in the PR.
-  step "engine quality gate" python3 "$ROOT/benchmark/scripts/gate.py" || return 1
+  # Quality is deterministic and enforced strictly. Latency on a shared 2-vCPU runner moves
+  # 30-80 % between identical runs of the same fixture (OCR and per-invocation model loads), so
+  # CI only blocks on gross latency regressions; `make gate` on a controlled host uses the
+  # default 20 ms floor.
+  step "engine quality gate" python3 "$ROOT/benchmark/scripts/gate.py" --min-abs-latency-ms 600 || return 1
 }
 
 phase_container() {

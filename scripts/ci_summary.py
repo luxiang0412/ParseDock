@@ -21,7 +21,7 @@ import sys
 from pathlib import Path
 
 # The aggregator cannot report on itself: these are the jobs it gates.
-REQUIRED = ("static", "unit", "contract", "lifecycle", "image")
+REQUIRED = ("static", "unit", "contract", "lifecycle", "image", "web")
 
 
 def parse(pairs: list[str]) -> dict[str, str]:

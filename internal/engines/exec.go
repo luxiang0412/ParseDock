@@ -64,6 +64,14 @@ func RunCLI(ctx context.Context, spec CLISpec, workDir string, args ...string) (
 		return nil, errors.New("engine binary not configured")
 	}
 	bin := spec.Bin
+	// A relative binary path is resolved by the kernel against Cmd.Dir below, not against the
+	// directory the coordinator was started in, so "--xberg-bin runtime/engines/..." would fail
+	// with "no such file" inside every attempt directory. Pin it to the operator's cwd.
+	if strings.ContainsRune(bin, os.PathSeparator) && !filepath.IsAbs(bin) {
+		if abs, err := filepath.Abs(bin); err == nil {
+			bin = abs
+		}
+	}
 	if spec.Sandbox == "unshare-net" {
 		if err := checkUnshare(ctx); err != nil {
 			// Fail closed: never silently run an engine without the isolation

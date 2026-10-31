@@ -148,6 +148,27 @@ class GateTest(unittest.TestCase):
         self.assertEqual(self.run_gate(), 1)
         self.assertEqual(self.run_gate(["--allow-missing"]), 0)
 
+    def test_model_load_engine_latency_is_not_gated(self):
+        """docling-rs time is model loading; on a shared runner its p50 swings 30-80 %."""
+        self.write(
+            [{"engine": "docling-rs", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "docling-rs", "file": "a.pdf", "median_ms": "500", "p95_ms": "500"}],
+            [{"engine": "docling-rs", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        sys.argv = ["gate.py", "--update"]
+        self.assertEqual(self.gate.main(), 0)
+        # 3x slower: exempt from the latency check...
+        self.write(
+            [{"engine": "docling-rs", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "docling-rs", "file": "a.pdf", "median_ms": "1500", "p95_ms": "1500"}],
+            [{"engine": "docling-rs", "dimensions": {"quality": 9.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 0)
+        # ...but its quality is still gated.
+        self.write(
+            [{"engine": "docling-rs", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
+            [{"engine": "docling-rs", "file": "a.pdf", "median_ms": "1500", "p95_ms": "1500"}],
+            [{"engine": "docling-rs", "dimensions": {"quality": 8.0}, "quality_sub": {"structure": 9.0}}])
+        self.assertEqual(self.run_gate(), 1)
+
     def test_missing_baseline_is_an_error(self):
         self.write([{"engine": "xberg", "file": "a.pdf", "cer": "0.01", "table_cell_accuracy": "0.9"}],
                    [{"engine": "xberg", "file": "a.pdf", "median_ms": "100", "p95_ms": "200"}],

@@ -27,6 +27,21 @@ Still open and *not* code problems: external distribution of the worker image is
 **blocked** on licence item L1 (`libx265`, GPL-2.0), two-host cluster measurement needs a
 second host, and branch protection needs a paid private repo (or a public one).
 
+### Playground (web UI)
+
+`web/` is a React + Vite workbench: upload a document, watch it parse, and compare the original
+with the Markdown the API returned. It runs behind a same-origin proxy that injects the API key —
+the browser never holds it — and it never acknowledges a result on its own.
+
+```bash
+make playground-up     # CPU stack + playground on http://localhost:8090 (needs deploy/.env)
+make web-test          # lint, typecheck, unit tests, build, secret scan
+make web-e2e           # Playwright against a real backend (make build first)
+```
+
+See `docs/PLAYGROUND-IMPLEMENTATION.md` (design and decisions) and
+`docs/PLAYGROUND-TEST-REPORT.md` (evidence), plus `web/README.md` for daily commands.
+
 Contributing, or working here as an agent? Read `AGENTS.md` first — it has the
 non-negotiables, the command that *is* CI, and the traps we already paid for.
 
@@ -217,6 +232,9 @@ protection on the free plan).
 | `docs/SLO.md` | SLO targets, result-loss budget, metric reference, tracing stance |
 | `docs/RUNBOOK.md` | backup/restore, upgrade, and one playbook per alert |
 | `docs/SDK.md` | Python package/CLI, Java client, version rule, lifecycle contract |
+| `docs/PLAYGROUND-IMPLEMENTATION.md` | web playground: architecture, decisions, limits |
+| `docs/PLAYGROUND-TEST-REPORT.md` | playground evidence: unit/E2E/security runs, screenshots |
+| `docs/PLAYGROUND-READINESS.md` | pre-implementation survey (API, previews, integration) |
 | `docs/CI.md` | CI workflows, phases, pinned inputs, artifacts, licence policy |
 | `docs/REAL-CORPUS-TEST.md` | 958-file real corpus: results, defects found, engine comparison |
 | `docs/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |

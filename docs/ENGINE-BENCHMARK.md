@@ -251,7 +251,17 @@ The gate runs on a **run-scoped** summary: `phase_engines` sets
 baseline records the **scope** the CI job actually measures (`native,xberg,docling-rs` on
 `pdf_native_en`, `pdf_scanned_en`, `docx`, `csv`); a baseline-covered sample missing from the
 current run is a failure unless `--allow-missing` is passed for a deliberate partial-engine
-run. `tests/unit/test_gate.py` covers pass, quality drop, latency regression, median-only
+run. Quality (CER, table structure) is deterministic and always gated strictly. Latency on a shared
+2-vCPU CI runner is not: identical runs of the same fixture moved 679 → 899 → 1 453 ms for
+docling-rs and 217 → 282 ms for xberg's OCR path, with no code change. So:
+
+* **CI** (`ci-local.sh engines`) enforces quality and only blocks on gross latency regressions
+  (`--min-abs-latency-ms 600`); latency is still measured and recorded.
+* **`make gate` on a controlled host** uses the default 20 ms noise floor and the full 15 %
+  relative rule.
+* Engines whose time is dominated by per-invocation model loading (`docling-rs`,
+  `docling-serve`, `mineru`) are exempt from the latency comparison in both contexts — their
+  quality and structure are still gated. `tests/unit/test_gate.py` covers pass, quality drop, latency regression, median-only
 regression, millisecond noise, missing sample (with and without `--allow-missing`) and the
 missing-baseline case. The rule is relative on purpose: absolute numbers differ per host,
 relative drift does not. A deliberate quality/latency change is allowed, but it must update

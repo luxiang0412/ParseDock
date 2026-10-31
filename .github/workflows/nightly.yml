@@ -79,6 +79,55 @@ jobs:
       - name: sdk-check (python e2e, CLI, version consistency, Java build)
         run: bash scripts/sdk-check.sh
 
+  playground:
+    name: playground-e2e
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22.20.0
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: cache engine binaries
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            runtime/engines/xberg-cli
+            runtime/engines/docling-rs
+          key: engines-${{ hashFiles('images.lock.json') }}
+      - name: install engines + build binary
+        run: bash scripts/ci-install-engines.sh xberg,docling-rs && make build
+      - name: install web dependencies
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+      - name: build the app
+        working-directory: web
+        run: npm run build
+      - name: E2E against a real ParseDock backend (xberg engine)
+        working-directory: web
+        env:
+          CI: "1"
+          E2E_ENGINES: native,xberg
+        run: npx playwright test --project=desktop --project=mobile
+      - name: upload screenshots and traces
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: playground-e2e
+          path: |
+            docs/screenshots/
+            web/playwright-report/
+            web/test-results/
+          if-no-files-found: warn
+
   container:
     name: container-smoke
     runs-on: ubuntu-24.04

@@ -65,6 +65,14 @@ make load              # cluster-lite throughput
 Sensitive corporate material (`test_data/`) is local-only and never committed; the batch
 harness redacts file identities by default.
 
+## Playground (beyond Phase 1)
+
+`web/` adds the ParseDock Playground: upload → parse → side-by-side original vs Markdown, with
+SSE progress, cancel, explicit release (never automatic), local-file previews (PDF via pdf.js,
+images, text/CSV, DOCX, XLSX) and a same-origin proxy that keeps the API key out of the browser.
+Docker profile `playground`, unit + Playwright E2E, screenshots in `docs/screenshots/`. Details:
+`docs/PLAYGROUND-IMPLEMENTATION.md`, evidence: `docs/PLAYGROUND-TEST-REPORT.md`.
+
 ## Post-Phase-1 audits
 
 Three whole-repository audits (static, by a reviewing model, then verified against the code)
