@@ -118,14 +118,35 @@ curl -H "Authorization: Bearer $KEY" "…/v1/jobs/$JOB/result?format=json" | jq 
 the consumer stored them. The Python SDK's `download_and_ack()` releases only after
 your sink function returns successfully.
 
+Clients (both are published from this tree):
+
+```bash
+pip install parsedock==0.1.0        # Python: lifecycle wrapper + `parsedock` CLI
+```
+
+```xml
+<dependency>                          <!-- Java: generated client -->
+  <groupId>com.luxiangs</groupId>
+  <artifactId>parsedock-client</artifactId>
+  <version>0.1.0</version>
+</dependency>
+```
+
+The Java 0.1.0 bundle is validated in the Central Portal and needs the one-click
+**Publish** before it resolves from Maven Central; until then
+`mvn -f sdk/java-generated/pom.xml install` gives you the same artifact locally.
+
 Semantics that are easy to get wrong:
 
-* `POST /ack` and `POST /cancel` on a **completed** job are the same release
-  operation and both require `result_version` (cancel returns `409` without it).
+* `POST /ack` is the **only** operation that releases a result. `POST /cancel` stops
+  a queued/running job and returns `409` for a completed one — cancelling never
+  deletes the result, so the outcome cannot depend on a cancel/ACK race.
 * `GET …/result` sends a per-representation `ETag` (validates those bytes) and
   `X-Result-Version` (the manifest hash, the only ACK token). `If-None-Match` → 304.
-* `POST /v1/parse` is **one-shot**: `200` releases the result immediately; a timeout
-  returns `202` and the job continues through the normal ACK/TTL path.
+* `POST /v1/parse` returns the IR but **does not release** it: a written response is
+  not proof of receipt, so the result follows the normal TTL and you ACK it with the
+  `X-Result-Version` from that response. A timeout returns `202` and the job continues
+  asynchronously.
 * SSE `scope=processing` (default) ends at the terminal processing state;
   `scope=retention` follows the job until `released`/`expired`.
 * `mode=accurate` means "prefer structure and provenance", not "more accurate text
@@ -234,7 +255,9 @@ protection on the free plan).
 | `docs/PHASE1-SUMMARY.md` | Phase 1 status: what shipped, what was verified, what is blocked and why |
 | `docs/SLO.md` | SLO targets, result-loss budget, metric reference, tracing stance |
 | `docs/RUNBOOK.md` | backup/restore, upgrade, and one playbook per alert |
-| `docs/SDK.md` | Python package/CLI, Java client, version rule, lifecycle contract |
+| `docs/CHANGELOG.md` | what shipped in each version, and the known limitations |
+| `docs/RELEASING.md` | how a release is cut: tag, PyPI (OIDC), Maven Central, the failures to expect |
+| `docs/SDK.md` | Python package/CLI, Java client, version rule, lifecycle contract, publishing status |
 | `docs/PLAYGROUND-IMPLEMENTATION.md` | web playground: architecture, decisions, limits |
 | `docs/PLAYGROUND-TEST-REPORT.md` | playground evidence: unit/E2E/security runs, screenshots |
 | `docs/PLAYGROUND-READINESS.md` | pre-implementation survey (API, previews, integration) |

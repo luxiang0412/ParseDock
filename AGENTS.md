@@ -59,7 +59,10 @@ client → api replica (auth, scopes, rate limit, quota pre-check) → coordinat
 | `scripts/ci-local.sh` | the single source of truth for CI phases |
 | `benchmark/` | fixtures (`generated/`, 110-doc `corpus/`), bench/score/gate scripts |
 | `web/` | React + Vite playground (its own `package.json`; not part of the Go build) |
-| `docs/` | design + operations; `docs/PHASE1-SUMMARY.md` is the status page |
+| `docs/` | design + operations; `docs/PHASE1-SUMMARY.md` is the status page, `docs/CHANGELOG.md` what shipped, `docs/RELEASING.md` how a release is cut |
+| `sdk/` | hand-written Python package (`sdk/python`), generated clients (`sdk/*-generated`, never hand-edit) and the Java integration test (`sdk/java-client-test`) |
+| `examples/` | runnable Python and Java projects (`make run`) |
+| `.agents/skills/` | agent-facing guides for the two SDKs |
 
 ## Commands
 
