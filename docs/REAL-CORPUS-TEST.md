@@ -134,6 +134,15 @@ files the harness skips are not documents at all, and the 34 failures are all li
 So of the 4.4 GiB corpus, the **1.6 GiB share is nine zip archives**, and the next largest
 unprocessed group is the 16 oversized spreadsheets.
 
+### Correction: OCR language was pinned to `eng`
+
+This run (and the earlier ones) started the stack with `--xberg-ocr-lang eng`. The corpus is
+mostly Chinese, so **the OCR quality numbers for the 332 scanned files understate the engine**:
+on the Chinese scanned fixture, `eng` returns garbage while `--xberg-ocr-lang zh` reproduces the
+page exactly, and `zh` degrades an English scan in the same way. A combined `chi_sim+eng` value
+is rejected by xberg 1.3.10. Treat the scan numbers here as a lower bound; a per-language worker
+(or a deployment-level choice) is the correct configuration. See `docs/DEPLOYMENT.md`.
+
 ### Still open after this run
 
 * A 10 MB / 1.34M-cell workbook spent 1.7 s in formula enrichment (down from 2.35 s after
