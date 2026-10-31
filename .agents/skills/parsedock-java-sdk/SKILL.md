@@ -9,10 +9,12 @@ Generated from `api/openapi.yaml` with OpenAPI Generator (`make sdk`). The clien
 is checked in at `sdk/java-generated`; hand-written tests and examples live
 outside it so regeneration cannot delete them.
 
-Not on Maven Central yet — install the generated client into your local repo:
+From Maven Central (0.1.0 is uploaded and validated; if it does not resolve yet the
+first release still needs the manual *Publish* in the Central Portal) or from the
+repository checkout:
 
 ```bash
-mvn -f sdk/java-generated/pom.xml -DskipTests install
+mvn -f sdk/java-generated/pom.xml -DskipTests install   # local fallback
 ```
 
 ```xml

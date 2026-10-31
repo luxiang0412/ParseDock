@@ -81,6 +81,34 @@ is distributable; **the worker image is not** until licence item L1
 (`libx265`, GPL-2.0 inside the xberg distribution) is resolved — see
 `docs/CHANGELOG.md` → Known limitations.
 
+## 4a. Failures we hit on the first release (and the fix)
+
+| Symptom | Cause | Fix in the workflow / repo |
+| --- | --- | --- |
+| `gpg: signing failed: Bad passphrase` | `MAVEN_GPG_PASSPHRASE` had a trailing newline, or was the passphrase of a different key | a preflight step now prints the imported key id and signs a two-line payload, so the error names the secret; set secrets with `printf '%s' "$P" \| gh secret set … < /dev/stdin` |
+| Upload fails with `Invalid request. Status: 401`, log line `namecode: ${env.MAVEN_CENTRAL_USERNAME}` | `setup-java` writes `${env.MAVEN_CENTRAL_USERNAME}` into `settings.xml`; Maven resolves it from the **process environment**, and an environment secret is not an env var | the job maps both secrets at job level (`env:`) |
+| `Deployment … failed` + `common: - Bundle has content that does NOT have a .pom file: com/luxiangs/parsedock-client` | Maven **3.10** changes the archive layout handed to `central-publishing-maven-plugin`; the Portal's validator then sees content without a POM ([upstream #78](https://github.com/mavenplugins/central-publishing-maven-plugin/issues/78)) | the workflow installs Maven **3.9.9** from archive.apache.org with a pinned SHA-512 and prepends it to `PATH` |
+| A tests classifier jar in the bundle | the generator attaches `test-jar`; consumers do not need our test classes | `scripts/patch_java_pom.py` removes that execution on every `make sdk` |
+
+The validation message from the Portal is printed in the workflow log as a `common:` block —
+read it before changing anything, it names the exact path or file that failed.
+
+## 4b. Verifying a published release
+
+```bash
+# Python (bypass a lagging mirror)
+pip install --index-url https://pypi.org/simple parsedock==0.1.0
+parsedock --version
+
+# Java
+curl -sI https://repo1.maven.org/maven2/com/luxiangs/parsedock-client/0.1.0/parsedock-client-0.1.0.pom
+mvn -q dependency:get -Dartifact=com.luxiangs:parsedock-client:0.1.0
+```
+
+Then run the SDK suites against the published artifacts: `scripts/sdk-check.sh` installs
+from the workspace, so point it at a fresh virtualenv (or the Maven coordinates) to prove
+the released bytes, not just the checkout.
+
 ## 5. After the release
 
 * `docs/CHANGELOG.md` gets a new section (the release notes are copied from it).

@@ -9,10 +9,11 @@ make run                              # bundled fixture → …/pdf_text_en_3p.p
 make run FILE=~/docs/report.pdf MODE=accurate
 ```
 
-Or without make (the client is not on Maven Central yet, so install it first):
+Or without make (the client resolves from Maven Central once 0.1.0 is published;
+otherwise install it locally first):
 
 ```bash
-mvn -f ../../sdk/java-generated/pom.xml -DskipTests install
+mvn -f ../../sdk/java-generated/pom.xml -DskipTests install   # local fallback
 PARSEDOCK_TOKEN=... mvn -q compile exec:java \
   -Dexec.args="$HOME/docs/report.pdf"
 ```
