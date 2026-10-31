@@ -828,6 +828,18 @@ type CompleteParams struct {
 	Warnings  int
 }
 
+// engineLabel bounds the {engine} metric label to the engines the coordinator is configured
+// with. The name comes from the worker's result payload; used verbatim, every distinct string
+// would create a new series (Instruments forbids unbounded labels).
+func (s *Service) engineLabel(name string) string {
+	for _, e := range s.Cfg.Engines {
+		if e.Name == name {
+			return name
+		}
+	}
+	return "other"
+}
+
 // resultTTL resolves how long a result committed now is retained: the client's request when
 // there is one, never above MaxResultTTL.
 func (s *Service) resultTTL(reqSeconds int64) time.Duration {
@@ -1053,8 +1065,9 @@ func (s *Service) Complete(ctx context.Context, p CompleteParams) (*jobs.Job, er
 	if leased, lerr := s.hasActiveDownloadLease(ctx, p.JobID); lerr == nil && !leased {
 		_ = s.Store.PruneResults(p.JobID, manifest.Version)
 	}
-	s.instr().parseTime.With(p.Engine).Observe(durSeconds(now.Sub(startedAt)))
-	s.instr().resultBytes.With(p.Engine).Add(uint64(resultBytes))
+	label := s.engineLabel(p.Engine)
+	s.instr().parseTime.With(label).Observe(durSeconds(now.Sub(startedAt)))
+	s.instr().resultBytes.With(label).Add(uint64(resultBytes))
 	return s.GetJob(ctx, p.JobID, "")
 }
 
@@ -1077,6 +1090,11 @@ func (s *Service) Fail(ctx context.Context, jobID, token, code, msg string, retr
 	}
 	if err := s.checkLease(ctx, jobID, token); err != nil {
 		return nil, err
+	}
+	// The code is stored as error_code and returned to clients, and the code set is a public
+	// contract: a worker (buggy, newer, or compromised) must not be able to mint new ones.
+	if !jobs.IsKnownErrorCode(code) {
+		code = jobs.ErrInternal
 	}
 	now := nowUTC()
 	var attempt, maxAttempts int

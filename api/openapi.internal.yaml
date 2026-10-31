@@ -260,7 +260,9 @@ paths:
                 lease_token: { type: string }
                 code:
                   type: string
-                  description: Stable error code (`malformed_file`, `timeout`, `gpu_unavailable`, …).
+                  description: |
+                    Stable error code (`malformed_file`, `timeout`, `gpu_unavailable`, …). A code
+                    outside the public error-code set is stored as `internal_error`.
                 message: { type: string }
                 retryable: { type: boolean }
       responses:

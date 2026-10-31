@@ -1,6 +1,11 @@
 package jobs
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"io/fs"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,7 +56,7 @@ func TestIDHelpersUseDistinctPrefixes(t *testing.T) {
 			t.Fatalf("%q: want prefix %q and 26 id characters", v, prefix)
 		}
 	}
-	if NewToken() == NewToken() {
+	if a, b := NewToken(), NewToken(); a == b {
 		t.Fatal("two lease tokens are equal")
 	}
 }
@@ -73,6 +78,56 @@ func TestValidateModeAndDevice(t *testing.T) {
 	}
 	if _, err := ValidateDevice("tpu"); err == nil {
 		t.Fatal("unknown device accepted")
+	}
+}
+
+// The known-code set must list exactly the Err* string constants declared in this package.
+func TestKnownErrorCodesMatchConstants(t *testing.T) {
+	fset := token.NewFileSet()
+	pkgs, err := parser.ParseDir(fset, ".", func(fi fs.FileInfo) bool {
+		return !strings.HasSuffix(fi.Name(), "_test.go")
+	}, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared := map[string]bool{}
+	for _, pkg := range pkgs {
+		for _, f := range pkg.Files {
+			for _, decl := range f.Decls {
+				gd, ok := decl.(*ast.GenDecl)
+				if !ok || gd.Tok != token.CONST {
+					continue
+				}
+				for _, spec := range gd.Specs {
+					vs := spec.(*ast.ValueSpec)
+					for i, name := range vs.Names {
+						if !strings.HasPrefix(name.Name, "Err") || i >= len(vs.Values) {
+							continue
+						}
+						if lit, ok := vs.Values[i].(*ast.BasicLit); ok && lit.Kind == token.STRING {
+							v, _ := strconv.Unquote(lit.Value)
+							declared[v] = true
+						}
+					}
+				}
+			}
+		}
+	}
+	if len(declared) == 0 {
+		t.Fatal("no Err* constants found; the parser walk is broken")
+	}
+	for code := range declared {
+		if !IsKnownErrorCode(code) {
+			t.Errorf("error code %q is declared but missing from knownErrorCodes", code)
+		}
+	}
+	for code := range knownErrorCodes {
+		if !declared[code] {
+			t.Errorf("knownErrorCodes lists %q, which is not a declared constant", code)
+		}
+	}
+	if IsKnownErrorCode("totally_made_up") || IsKnownErrorCode("") {
+		t.Error("unknown code accepted")
 	}
 }
 

@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"parsedock.dev/parsedock/internal/jobs"
+	"parsedock.dev/parsedock/internal/metrics"
 )
 
 // Review finding: the job lock table was a global sync.Map that never dropped an entry, and
@@ -460,6 +461,52 @@ func TestCreateJobRejectsLongIdempotencyKey(t *testing.T) {
 	first := create(t, s, "a.txt", []byte("hello"), CreateParams{IdempotencyKey: long})
 	if first.IdempotencyKey != long {
 		t.Fatalf("200-character key stored as %q", first.IdempotencyKey)
+	}
+}
+
+// Review finding 8: /fail stored whatever code the worker sent as the public error_code.
+func TestFailMapsUnknownCodeToInternal(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task := claimNative(t, s)
+	got, err := s.Fail(ctx, job.ID, task.LeaseToken, "pwned_<script>", "boom", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ErrorCode != jobs.ErrInternal {
+		t.Fatalf("error_code = %q, want internal_error", got.ErrorCode)
+	}
+	// A known code passes through unchanged.
+	job2 := create(t, s, "b.txt", []byte("hello"), CreateParams{})
+	task2 := claimNative(t, s)
+	got, err = s.Fail(ctx, job2.ID, task2.LeaseToken, jobs.ErrEngineOOM, "rss ceiling", false)
+	if err != nil || got.ErrorCode != jobs.ErrEngineOOM {
+		t.Fatalf("known code: %v %v", got, err)
+	}
+}
+
+// Review finding 8: the worker-supplied engine name was used verbatim as a metric label.
+func TestEngineMetricLabelIsBounded(t *testing.T) {
+	s := testService(t, nil)
+	s.Instruments = NewInstruments(metrics.New())
+	job := create(t, s, "a.txt", []byte("hello"), CreateParams{})
+	task := claimNative(t, s)
+	if _, err := s.Complete(context.Background(), CompleteParams{JobID: job.ID, Token: task.LeaseToken,
+		Engine: "engine-" + task.LeaseToken, Version: "1", Markdown: []byte("# hi"), Text: []byte("hi"),
+		JSON: []byte(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := s.Instruments.Reg.WriteText(&buf); err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if strings.Contains(out, task.LeaseToken) {
+		t.Fatal("unknown engine name leaked into a metric label")
+	}
+	if !strings.Contains(out, `parsedock_result_bytes_total{engine="other"}`) {
+		t.Fatalf("unknown engine not folded into engine=\"other\":\n%s", out)
 	}
 }
 

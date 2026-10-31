@@ -47,8 +47,8 @@ appears.
 | `parsedock_queue_depth` | gauge | – | queued jobs |
 | `parsedock_oldest_queued_seconds` | gauge | – | age of the oldest queued job |
 | `parsedock_claim_wait_seconds` | histogram | – | creation → first claim (retries excluded) |
-| `parsedock_parse_seconds` | histogram | `engine` | claim → committed result |
-| `parsedock_result_bytes_total` | counter | `engine` | committed artifact bytes |
+| `parsedock_parse_seconds` | histogram | `engine` | claim → committed result; an engine name the coordinator is not configured with is reported as `engine="other"` |
+| `parsedock_result_bytes_total` | counter | `engine` | committed artifact bytes (same `other` folding) |
 | `parsedock_workers_online` | gauge | `device` | workers with a heartbeat in 3 min |
 | `parsedock_leases_expired_total` | counter | – | attempts lost to lease expiry |
 | `parsedock_cleanup_passes_total` | counter | `outcome`=`ok|error` | cleanup passes |
