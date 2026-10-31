@@ -217,7 +217,7 @@ var taskMarkerRe = regexp.MustCompile(`^\[[ xX]\] `)
 
 func listItemText(el *Element) string {
 	if el.RichText != "" {
-		return oneLine(el.RichText)
+		return oneLine(escapeRichHTML(el.RichText))
 	}
 	t := oneLine(el.Text)
 	// "[ ] " / "[x] " is a GFM task marker the engine reported; keep it live.
@@ -229,7 +229,7 @@ func listItemText(el *Element) string {
 
 func headingText(el *Element) string {
 	if el.RichText != "" {
-		return oneLine(el.RichText)
+		return oneLine(escapeRichHTML(el.RichText))
 	}
 	s := escapeInline(oneLine(el.Text))
 	// A trailing " #" run would be read as the optional closing sequence.
@@ -241,7 +241,7 @@ func headingText(el *Element) string {
 
 func inlineOneLine(el *Element) string {
 	if el.RichText != "" {
-		return oneLine(el.RichText)
+		return oneLine(escapeRichHTML(el.RichText))
 	}
 	return escapeInline(oneLine(el.Text))
 }
@@ -249,7 +249,7 @@ func inlineOneLine(el *Element) string {
 // blockText is a paragraph body: rich text verbatim, or plain text escaped line by line.
 func blockText(el *Element) string {
 	if el.RichText != "" {
-		return strings.TrimSpace(el.RichText)
+		return strings.TrimSpace(escapeRichHTML(el.RichText))
 	}
 	text := strings.TrimSpace(el.Text)
 	if text == "" {
@@ -269,7 +269,7 @@ func blockText(el *Element) string {
 }
 
 func blockquote(el *Element) string {
-	body := el.RichText
+	body := escapeRichHTML(el.RichText)
 	if body == "" {
 		var lines []string
 		for _, l := range strings.Split(strings.TrimSpace(el.Text), "\n") {
@@ -347,7 +347,7 @@ func hasSpans(t *Table) bool {
 // markdownCell renders one pipe-table cell: inline markup kept, pipes escaped, line
 // breaks as <br> (a raw newline would end the row).
 func markdownCell(c *Cell) string {
-	s := c.RichText
+	s := escapeRichHTML(c.RichText)
 	if s == "" {
 		s = escapeInline(c.Text)
 	}

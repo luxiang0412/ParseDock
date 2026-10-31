@@ -129,3 +129,67 @@ func isASCIIPunct(r rune) bool {
 func isWordRune(r rune) bool {
 	return unicode.IsLetter(r) || unicode.IsDigit(r)
 }
+
+var (
+	richAutolinkRe = regexp.MustCompile(`^<([A-Za-z][A-Za-z0-9+.-]{1,31}:[^\s<>]*|[A-Za-z0-9.!#$%&'*+/=?^_{|}~-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*)>`)
+	richBreakRe    = regexp.MustCompile(`^<br\s*/?>`)
+)
+
+// escapeRichHTML neutralises raw HTML inside rich_text. rich_text carries CommonMark
+// inline markup assembled by the adapters, but the run text inside it comes from the
+// document: a sentence that literally contains "<script>" or "<img onerror=...>" must
+// render as those characters, not as HTML in whatever renders the Markdown downstream.
+// Code spans are left untouched (a backslash is literal there), and autolinks and
+// <br> - the only HTML-looking constructs the adapters emit on purpose - are kept.
+func escapeRichHTML(s string) string {
+	if !strings.Contains(s, "<") {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 8)
+	for i := 0; i < len(s); {
+		switch c := s[i]; {
+		case c == '\\' && i+1 < len(s):
+			b.WriteString(s[i : i+2])
+			i += 2
+		case c == '`':
+			// A code span: copy through the matching run of the same length, if any.
+			j := i
+			for j < len(s) && s[j] == '`' {
+				j++
+			}
+			run := s[i:j]
+			if k := strings.Index(s[j:], run); k >= 0 {
+				end := j + k + len(run)
+				b.WriteString(s[i:end])
+				i = end
+			} else {
+				b.WriteString(run)
+				i = j
+			}
+		case c == '<':
+			rest := s[i:]
+			if m := richAutolinkRe.FindString(rest); m != "" {
+				b.WriteString(m)
+				i += len(m)
+				continue
+			}
+			if m := richBreakRe.FindString(rest); m != "" {
+				b.WriteString(m)
+				i += len(m)
+				continue
+			}
+			if i+1 < len(s) {
+				if n := s[i+1]; n == '/' || n == '!' || n == '?' || (n|0x20 >= 'a' && n|0x20 <= 'z') {
+					b.WriteByte('\\')
+				}
+			}
+			b.WriteByte('<')
+			i++
+		default:
+			b.WriteByte(c)
+			i++
+		}
+	}
+	return b.String()
+}
