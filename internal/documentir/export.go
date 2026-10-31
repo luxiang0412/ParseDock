@@ -147,10 +147,9 @@ func renderTextTable(t *Table) string {
 	return b.String()
 }
 
-// maxRenderCells caps the dense grid a single table may allocate. Ingest validation rejects
-// such tables already (Limits.Validate); this is the second line of defence so no future
-// caller can turn a bad IR into a multi-gigabyte allocation.
-const maxRenderCells = 2_000_000
+// maxRenderCells mirrors Limits.MaxTableCells: ingest validation rejects larger tables, and
+// this is the second line of defence so no caller can turn a bad IR into a huge allocation.
+const maxRenderCells = 10_000_000
 
 func tableGrid(t *Table) [][]string {
 	if t.Rows <= 0 || t.Cols <= 0 {

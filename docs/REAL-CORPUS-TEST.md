@@ -116,6 +116,15 @@ guard, so the fast result was kept. Quality totals are unchanged from §2 (23.34
    (`--poll-interval`). With a deep queue the same change raised a mock-engine 4-slot run from
    11.4 to 13.0 jobs/s.
 
+### Still open after this run
+
+* A 10 MB / 1.34M-cell workbook spent 1.7 s in formula enrichment (down from 2.35 s after
+  streaming the sheet XML instead of unmarshalling it) and ~4 s in serialising and rendering
+  the result. Large-sheet output, not parsing, is the remaining cost.
+* An 18-page scanned PDF costs 77 s: OCR-bound, and the `xberg` CLI exposes no page/thread
+  parallelism, so per-page splitting (our side) or a serve-mode adapter would be needed.
+* 4 `.doc` files whose content is not an OLE2 compound file despite the extension.
+
 ## 3. Defects found and fixed (PR #3)
 
 | # | Defect | Effect on the corpus | Fix |
