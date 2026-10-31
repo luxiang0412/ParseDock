@@ -55,8 +55,19 @@ class ParseDockError(Exception):
         self.code = code
         self.message = message
 
+    # Codes that share a transient HTTP status but will not clear by retrying.
+    # `quota_exceeded` is 429 like `rate_limited`, yet the quota only resets when
+    # the rolling window passes or an operator changes it: retrying burns the
+    # client's backoff budget and still fails.
+    _NOT_RETRYABLE = frozenset({"quota_exceeded", "unsupported_type", "encrypted_file",
+                                "file_too_large", "malformed_file", "invalid_request",
+                                "page_limit_exceeded", "expanded_too_large", "gone",
+                                "not_found", "gpu_unavailable", "engine_unavailable"})
+
     @property
     def retryable(self) -> bool:
+        if self.code in self._NOT_RETRYABLE:
+            return False
         return self.status in (429, 500, 502, 503, 504) or self.code in (
             "coordinator_unavailable",
             "insufficient_storage",

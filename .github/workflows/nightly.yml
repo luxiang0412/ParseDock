@@ -76,7 +76,12 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-      - name: sdk-check (python e2e, CLI, version consistency, Java build)
+      - name: install real engines and OCR (for the SDK real-engine layer)
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr tesseract-ocr-chi-sim
+          bash scripts/ci-install-engines.sh xberg
+      - name: sdk-check (python lifecycle + error matrix + real engines, Java build + integration)
         run: bash scripts/sdk-check.sh
 
   playground:

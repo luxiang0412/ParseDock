@@ -180,10 +180,28 @@ jobs:
         working-directory: web
         run: du -sh dist && ls -S dist/assets | head -5
 
+  # The SDK is a published contract surface: these checks run on every PR so a
+  # change to the OpenAPI document or the IR cannot silently break a client. The
+  # real-engine and Java layers run in nightly.yml (engines + JDK download cost).
+  sdk:
+    name: sdk
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: sdk-check --fast (python lifecycle, error matrix, version consistency)
+        run: bash scripts/sdk-check.sh --fast
+
   ci-summary:
     name: ci-summary
     if: always()
-    needs: [static, unit, contract, lifecycle, image, web]
+    needs: [static, unit, contract, lifecycle, image, web, sdk]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
@@ -202,4 +220,5 @@ jobs:
             lifecycle=${{ needs.lifecycle.result }}
             image=${{ needs.image.result }}
             web=${{ needs.web.result }}
+            sdk=${{ needs.sdk.result }}
         run: python3 scripts/ci_summary.py "$RESULTS" --github-summary "$GITHUB_STEP_SUMMARY"

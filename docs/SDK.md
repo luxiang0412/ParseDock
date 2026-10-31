@@ -50,9 +50,29 @@ all carry the same version. `scripts/sdk-check.sh` runs that plus the Python end
 lifecycle test, the CLI smoke run and the Maven build:
 
 ```bash
-make sdk-check              # everything
-bash scripts/sdk-check.sh --no-java   # what CI runs on every PR
+make sdk-check                     # everything
+bash scripts/sdk-check.sh --fast   # what CI runs on every PR (no Java, no engines)
 ```
+
+### What is tested, and against what
+
+Every layer below starts a **real `docparse` process** and talks HTTP; none of it
+stubs a server.
+
+| Layer | Script | Engine | Covers |
+| --- | --- | --- | --- |
+| lifecycle | `sdk/python/test_sdk.py` | `mock` | create → wait, idempotent replay, SSE, both downloads, stale ACK 409, failing sink does not release, ACK → 410 → released, repeat ACK, cancel, sync parse, CLI (exit codes, `--keep`) |
+| error matrix | `sdk/python/test_sdk_matrix.py` | `mock` | `rate_limited` 429 + client backoff, `quota_exceeded` **not** retried, `file_too_large` 413, `encrypted_file` 422, `gpu_unavailable` 409, `not_found` 404, SSE resume from `Last-Event-ID` without replay |
+| real engines | `sdk/python/test_sdk_real.py` | `xberg` | IR schema, elements, `routing.actual_device` vocabulary, warning codes, table grids, ACK/410, and a scanned PDF carrying `ocr_used` (skips if xberg/tesseract are absent) |
+| java client | `sdk/java-client-test` | `mock` | generated client: auth, multipart upload, poll, both downloads, stale ACK 409, ACK → 410, unknown job 404 |
+
+CI wiring: the `sdk` job in `ci.yml` runs `--fast` on every PR (so an OpenAPI or IR
+change cannot silently break a client), and the nightly `sdks` job runs the full
+set with real engines and the Java integration test.
+
+Known gaps: no PyPI/Maven publication, no `schemathesis` property-based fuzzing,
+no async client, and the Java client is generated (its integration test lives in
+`sdk/java-client-test` so regeneration cannot delete it).
 
 ## Not delivered (honest gap)
 
