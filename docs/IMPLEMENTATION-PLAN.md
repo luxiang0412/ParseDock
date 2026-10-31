@@ -37,8 +37,9 @@ generated SDK differs from the committed one.
 **DoD.** A green PR pipeline runs in < 8 min (mock profile) and produces the raw
 acceptance JSON as an artifact.
 
-**Status: DONE (PR-01).** Four workflows (`ci`, `engine-changes`, `nightly`,
-`release-gate`), all logic in `scripts/ci-local.sh`, pinned inputs in
+**Status: DONE (PR-01).** Four workflows at PR-01 time (`ci`, `engine-changes`, `nightly`,
+`release-gate`; `release-python` and `release-maven` were added for v0.1.0, and `ci.yml`
+later gained the `web` and `sdk` jobs, see `docs/CI.md`), phase logic in `scripts/ci-local.sh`, pinned inputs in
 `images.lock.json` enforced by `scripts/verify_pins.py`, reproducible binary proven
 by `scripts/repro-check.sh`, SDK drift checked, licence audit split into control
 plane PASS / worker BLOCK. Measured on GitHub-hosted runners: 3 m 53 s – 3 m 58 s
@@ -100,7 +101,7 @@ admission (PR-02) were fixed in the same cycle.
 
 ---
 
-## Real-corpus backlog (from `docs/REAL-CORPUS-TEST.md`, 958 files)
+## Real-corpus backlog (from `docs/REAL-CORPUS-TEST.md` §2, the original run: 958 eligible files)
 
 These are requirements that only a real corpus exposed. They are distributed into
 the slices below; nothing here is a bug that is still open (the three defects found
@@ -371,7 +372,8 @@ without restructuring.
 
 **DoD.** Both SDKs versioned with the service and published by release pipeline.
 
-**Status: PARTIAL (PR-10).** Delivered and verified:
+**Status: PARTIAL (PR-10).** Python package published to PyPI; the Java artefact, `schemathesis`
+fuzzing and the async client are still open (see "Not delivered"). Delivered and verified:
 
 * `sdk/python` is an installable package (`pyproject.toml`, `pip install -e sdk/python`) with
   a `parsedock` console script: `parsedock parse ./f.pdf -o out.md`, `parsedock status`,
@@ -383,15 +385,21 @@ without restructuring.
 * The Java client builds with Maven and the jar contains `org/openapitools/client/ApiClient`
   (the generated package name, which the check now asserts exactly after the first version
   wrongly looked for `dev/parsedock/client`).
-* `scripts/sdk-check.sh` runs all of it (`make sdk-check`); the Python half runs in the
-  PR `unit` phase (`--no-java`), the Java half in the new nightly `sdk-check` job.
+* `scripts/sdk-check.sh` runs all of it (`make sdk-check`); the PR `sdk` job in `ci.yml`
+  runs `sdk-check.sh --fast` (Python layers + version consistency), the Java half runs in
+  the nightly `sdks` job (check name `sdk-check`).
+* Publishing (v0.1.0, `docs/SDK.md` "Publishing status", `docs/RELEASING.md`): `parsedock==0.1.0`
+  is **live on PyPI** (`release-python.yml`, Trusted Publishing/OIDC). The Java bundle
+  `com.luxiangs:parsedock-client:0.1.0` was uploaded and validated in the Central Portal by
+  `release-maven.yml` and **waits for the manual Publish** (`autoPublish=false`); until then it
+  does not resolve from Maven Central.
 * `docs/SDK.md` documents the lifecycle rules the wrapper enforces (ACK only after the sink,
   `result_version` required, idempotent ACK, `410` is expected, polling shares the rate
   budget) and the honest gaps.
 
-**Not delivered:** publishing to PyPI/Maven Central (needs registry credentials and a
-licence/notice bundle; the release pipeline still publishes images only), `schemathesis`
-property-based contract fuzzing (the repo has 36 OpenAPI-derived contract checks plus a live
+**Not delivered:** the Maven Central release itself (the validated bundle needs the one-click
+Publish in the Central Portal), `schemathesis`
+property-based contract fuzzing (the repo has 47 OpenAPI-derived contract checks (2026-11-01) plus a live
 end-to-end SDK test; property fuzzing belongs in the nightly job with a pinned version), and
 the `httpx` async client (declared as an optional extra but not implemented).
 
@@ -485,21 +493,48 @@ whatever data it is given, so it will report the real number on production-sized
 
 ---
 
-## Post-release security review (gateway, credentials, deployment)
+## Review hardening batch (`review/integration`, 2026-11-01)
 
-**Status: DONE in code, runtime suites not yet re-run.** Separate worker token
-(coordinator guards: worker token only on `/internal/workers|tasks/*`, `403` elsewhere),
-standalone token generation, redacted `/readyz`, gateway proxy transport above the sync
-window, per-address failed-auth limiter, bounded limiters, key-length/duplicate policy,
-client IP into audit lines with `--trusted-proxies`, per-request body read deadline,
-strict env parsing and flag validation, playground loopback bind and header fix,
-capability drops in compose, cluster-lite network fix. Unit tests cover each
-(`internal/api`, `internal/tlsutil`, `internal/coordinator/auth_test.go`,
-`cmd/docparse`); the contract phase additionally checks the gateway mux and the scope
-table. Not verified yet: `scripts/ci-local.sh lifecycle`/`all` and a compose run
-(fixture keys were lengthened for the new 16-character floor). Out of scope: binding
-mTLS certificate roles to tokens; the worker learning the upload limit from the
-coordinator.
+Four review-fix branches merged into `review/integration` (`git log --oneline main..review/integration`),
+plus two follow-ups on the merged branch. User/operator-visible changes are in
+`docs/CHANGELOG.md` → "Unreleased".
+
+* **Worker and engines** (`fix/review-worker-engines`): a transient heartbeat failure no
+  longer abandons the task; deadlines are reported as timeouts; OOM kills are classified as
+  `engine_out_of_memory` (now part of the error-code contract) with a tighter stderr
+  classifier; `RunCLI` bounds its wait and reaps the process group; HTTP engine
+  deadlines/cancels are mapped, oversized Tika output is refused, PDF pages are counted via
+  `/meta`; routing precedence, wildcard ranking, xberg table kinds; GPU re-registration is
+  throttled and reports the model/VRAM of the card it measures; the scratch sweeper is scoped.
+* **Coordinator** (`fix/review-coordinator`): invalid `priority`/`ttl_seconds` → `400`
+  (TTL capped without overflow); idempotency keys over 200 characters → `400`; a cancel that
+  loses the race to completion → `409`; events are written with their transition and SSE
+  drains after a terminal status; retention finalisation is locked and compare-and-set,
+  `Fail` deletes via `deleting`; quota and cleanup reads fail closed; worker-reported error
+  codes are validated and engine metric labels bounded; internal error details are logged,
+  not returned; `/v1/parse` failures carry the status their code has everywhere else.
+* **API security** (`fix/review-api-security`): separate worker token (`--worker-token`;
+  the worker token opens only `/internal/workers|tasks/*`), standalone token generation,
+  redacted `/readyz` unless the internal token is presented, per-request body read timeout
+  (`--body-read-timeout`), per-address failed-auth limiter, bounded limiters, 16-character
+  plaintext key floor and duplicate-owner refusal, client IP into audit lines with
+  `--trusted-proxies`, strict env parsing, playground bound to `127.0.0.1`, capability drops
+  in compose, cluster-lite network fix.
+* **Toolchain and contract** (`fix/review-toolchain-contract`): Go `1.27.3`
+  (`GOTOOLCHAIN=local`), pinned `golangci-lint`, `govulncheck` and `ruff` in the `static`
+  phase, `docs/ERROR-CODES.md`, `internal/jobs/codes.go` checked against the constants.
+* **Follow-ups on the merged branch:** the gateway answers `coordinator_unavailable` with the
+  documented `503`; when `--heartbeat` is not set and `--worker-lease` is not longer than the
+  default, the heartbeat defaults to a third of the lease.
+
+**Evidence (dev host, 2026-11-01):** `bash scripts/ci-local.sh all` PASS in 191.7 s;
+`bash scripts/ci-local.sh lifecycle` PASS in 138.6 s; `python3 tests/contract/openapi_contract.py`
+47 checks, 0 failures; `make web-test` PASS; `govulncheck` on the pinned go1.27.3: 0 reachable
+vulnerabilities (the same scan on go1.24.4 reported 42 reachable standard-library ones).
+
+**Not verified:** the `engines` phase (real parsers + quality gate) on this batch, a real
+multi-host cluster-lite deployment, and GPU hardware. Out of scope: binding mTLS certificate
+roles to tokens; the worker learning the upload limit from the coordinator.
 
 ## Sequencing
 

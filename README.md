@@ -184,7 +184,7 @@ api/openapi.yaml         public + internal contract
 deploy/                  compose.cpu / compose.gpu / compose.cluster-lite
 docker/                  control-plane and engine worker images
 benchmark/               fixture generator, bench harness, raw results, summary CSV
-tests/integration/       T01–T16 acceptance harness
+tests/integration/       T01–T17 acceptance harness + runtime contracts
 sdk/                     generated Python/Java clients + hand-written Python wrapper
 docs/                    environment, licences, engines, IR, lifecycle, deployment…
 ```
@@ -195,7 +195,7 @@ docs/                    environment, licences, engines, IR, lifecycle, deployme
 make test              # go vet + Go unit/integration tests + scoring unit tests
 make contract          # OpenAPI (public+internal) / generated SDK / router drift
 make pr00             # PR-00 runtime contract (10 scenarios) + backup/restore
-make acceptance        # T03–T16 lifecycle (mock engine): ACK/TTL/lease/fencing/restart
+make acceptance        # T03–T17 except T11, lifecycle (mock engine): ACK/TTL/lease/fencing/restart/cancel
 make acceptance-real   # T01/T02/T11 against xberg + docling-rs
 make sdk-test          # Python SDK lifecycle incl. "failing sink does not release"
 make sdk-check         # Python + CLI + Java SDK build + one version across all artefacts
@@ -247,37 +247,41 @@ protection on the free plan).
 
 ## Documentation
 
+Living documents (kept in step with the code):
+
 | Document | Contents |
 | --- | --- |
 | `AGENTS.md` | operational contract for contributors/agents: rules, commands, traps, deliberate gaps |
-| `docs/history/PHASE0-SUMMARY.md` | Phase 0 final report (results, risks, next PRs) |
-| `docs/history/PHASE1-READINESS.md` | PR-00 result: per-finding fixes, evidence, GO/NO-GO |
-| `docs/PHASE1-SUMMARY.md` | Phase 1 status: what shipped, what was verified, what is blocked and why |
+| `docs/PHASE1-SUMMARY.md` | status page: what shipped, what was verified, what is blocked and why |
+| `docs/CHANGELOG.md` | what shipped in each version (and what is unreleased), known limitations |
+| `docs/IMPLEMENTATION-PLAN.md` | Phase 1 PR slices with per-PR status, plus later hardening batches |
+| `docs/ARCHITECTURE.md` | topology, request flow, package map, security boundaries |
+| `docs/DEPLOYMENT.md` | images, compose, every flag, tokens, probes, backups, capacity |
+| `docs/CLUSTER-LITE.md` | worker protocol, fencing, failure matrix, mTLS, upgrade triggers |
+| `docs/JOB-LIFECYCLE.md` | states, timers, ACK semantics, cleanup algorithm |
+| `docs/ERROR-CODES.md` | every stable error code: HTTP status, retryability, meaning, origin |
+| `docs/DOCUMENT-IR.md` | `doc-ir/0.1`, mapping per engine, compatibility policy, gaps |
 | `docs/SLO.md` | SLO targets, result-loss budget, metric reference, tracing stance |
 | `docs/RUNBOOK.md` | backup/restore, upgrade, and one playbook per alert |
-| `docs/CHANGELOG.md` | what shipped in each version, and the known limitations |
-| `docs/RELEASING.md` | how a release is cut: tag, PyPI (OIDC), Maven Central, the failures to expect |
+| `docs/CI.md` | CI workflows, phases, static tools, pinned inputs, artifacts, licence policy |
 | `docs/SDK.md` | Python package/CLI, Java client, version rule, lifecycle contract, publishing status |
-| `docs/PLAYGROUND-IMPLEMENTATION.md` | web playground: architecture, decisions, limits |
-| `docs/history/PLAYGROUND-TEST-REPORT.md` | playground evidence: unit/E2E/security runs, screenshots |
-| `docs/history/PLAYGROUND-READINESS.md` | pre-implementation survey (API, previews, integration) |
-| `docs/CI.md` | CI workflows, phases, pinned inputs, artifacts, licence policy |
-| `docs/REAL-CORPUS-TEST.md` | 958-file real corpus: results, defects found, engine comparison |
-| `docs/history/PR00-ISSUE-MATRIX.md` | F01–F11 verification against the code |
-| `docs/ENVIRONMENT.md` | host, toolchain, engine versions, isolation |
+| `docs/RELEASING.md` | how a release is cut: tag, PyPI (OIDC), Maven Central, the failures to expect |
+| `docs/PLAYGROUND-IMPLEMENTATION.md` | web playground: architecture, decisions, security model, limits |
 | `docs/LICENSE-REVIEW.md` | per-component licence verification + open items |
+| `docs/ENVIRONMENT.md` | host, toolchain, engine versions, isolation |
 | `docs/ENGINE-CANDIDATES.md` | what each candidate does/fails at |
 | `docs/ENGINE-BENCHMARK.md` | corpus, quality/latency/RSS/throughput, method |
 | `docs/ENGINE-DECISION.md` | weighted scoring, selected pair, risks, exit rules |
-| `docs/ARCHITECTURE.md` | topology, request flow, package map |
-| `docs/DOCUMENT-IR.md` | `doc-ir/0.1`, mapping per engine, gaps |
-| `docs/JOB-LIFECYCLE.md` | states, timers, ACK semantics, cleanup algorithm |
-| `docs/ERROR-CODES.md` | every stable error code: HTTP status, retryability, meaning, origin |
-| `docs/CLUSTER-LITE.md` | worker protocol, fencing, failure matrix, upgrade triggers |
-| `docs/history/GPU-REPORT.md` | GPU verification and what remains |
-| `docs/DEPLOYMENT.md` | images, compose, flags, probes, backups |
+| `docs/OCR-GPU-DECISIONS.md` | current OCR backend and GPU decisions |
 | `docs/DECISIONS.md` | ADR log |
-| `docs/IMPLEMENTATION-PLAN.md` | Phase 1 PR slices |
+| `docs/REAL-CORPUS-TEST.md` | real corpus run (current: 943/972 eligible files, 97.0 %): results, defects found, engine comparison |
+
+Point-in-time material, kept as evidence and **not maintained**:
+
+* [`docs/history/`](docs/history/README.md) — dated reports, designs and surveys (Phase 0
+  summary, PR-00 readiness and issue matrix, PR-01 CI report, GPU report, audits, OCR
+  research/benchmark/PR reports, playground readiness and test report).
+* [`docs/briefs/`](docs/briefs/README.md) — the task briefs each phase started from.
 
 ## License
 

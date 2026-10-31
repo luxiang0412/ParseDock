@@ -170,7 +170,7 @@ CI wiring: the `sdk` job in `ci.yml` runs `--fast` on every PR (so an OpenAPI or
 change cannot silently break a client), and the nightly `sdks` job runs the full
 set with real engines and the Java integration test.
 
-Known gaps: no PyPI/Maven publication, no `schemathesis` property-based fuzzing,
+Known gaps: Maven Central release pending (see Publishing status), no `schemathesis` property-based fuzzing,
 no async client, and the Java client is generated (its integration test lives in
 `sdk/java-client-test` so regeneration cannot delete it).
 
@@ -191,11 +191,10 @@ version, no second thing to keep in sync.
 
 ## Not delivered (honest gap)
 
-* **Published artefacts.** Nothing is pushed to PyPI or Maven Central yet; the release
-  pipeline (PR-01) builds the images, not the packages, and publishing needs registry
-  credentials and a licence/notice bundle. `make sdk-check` proves both SDKs build and work,
-  which is the precondition.
-* **`schemathesis` property-based contract testing.** The repo has 36 contract checks
+* **Maven Central release.** PyPI is live; the Java bundle is validated in the Central
+  Portal but not yet published (see "Publishing status" above). Container images are not
+  pushed to a registry.
+* **`schemathesis` property-based contract testing.** The repo has 47 contract checks
   generated from the OpenAPI document plus a live end-to-end SDK test; property-based
   fuzzing of every endpoint is the natural next step and needs a pinned schemathesis
   version in the nightly job rather than a new dependency in the PR path.

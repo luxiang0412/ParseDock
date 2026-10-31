@@ -6,6 +6,29 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ## Unreleased
 
+### Upgrade notes (read first)
+
+* **Compose requires `PARSEDOCK_WORKER_TOKEN`.** The reference compose files refuse to
+  start without a second random token for the workers (distinct from
+  `PARSEDOCK_INTERNAL_TOKEN`): add `PARSEDOCK_WORKER_TOKEN=$(openssl rand -hex 24)` to an
+  existing `.env`. The binary itself still runs without it (startup warning).
+* **Plaintext API keys shorter than 16 characters fail startup** (only a warning under
+  `--dev-insecure`); a token mapped to two owners fails startup too. `sha256:` entries are
+  unaffected.
+* **Invalid numeric/duration environment values are startup errors** (e.g.
+  `PARSEDOCK_WORKER_LEASE=60` without a unit) instead of a silent fallback to the default.
+  An explicitly set `--heartbeat` must be shorter than `--worker-lease` on the coordinator.
+* **`coordinator_unavailable` is `503`** at the gateway (it was `502`), as the OpenAPI spec
+  always documented. The Python SDK retries both.
+* **Stricter request validation:** unparsable `priority`, `priority` outside `0..100` and
+  `ttl_seconds < 1` → `400 invalid_request`; an `Idempotency-Key` longer than 200
+  characters → `400` (it was silently truncated, so two keys sharing a prefix replayed the
+  wrong job); a cancel that loses the race to completion → `409` (it answered `202`).
+* **`/readyz` is redacted** for callers without the internal token: verdicts only, no
+  `free_bytes`, `last_cleanup` or error text.
+* **The Playground binds `127.0.0.1`** by default; set `PLAYGROUND_BIND=0.0.0.0` to expose it.
+* **Go 1.27.3** (was 1.24.4) for builds and images; `GOTOOLCHAIN=local` in CI.
+
 ### Security
 
 * **Separate worker credential** (`--worker-token` / `PARSEDOCK_WORKER_TOKEN`). With it,
@@ -42,6 +65,28 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
   above its own 64 MiB default); cluster-lite's coordinator port is reachable by remote
   workers (it was only on an internal network).
 * `X-Api-Key` is documented in `api/openapi.yaml` (`apiKeyAuth`).
+* Worker: a single failed heartbeat no longer cancels a healthy parse (a network blip or a
+  coordinator restart used to fail the job as non-retryable `cancelled`); only an explicit
+  `cancelled`/`lease_lost` stops the attempt, other failures are retried until the lease
+  would have expired. A parse deadline is reported as a timeout, not `cancelled`.
+* Engines: OOM kills are classified as `engine_out_of_memory` (now in the OpenAPI enum and
+  the SDKs); the CLI runner bounds its wait and reaps the whole process group; HTTP engine
+  deadlines and cancellations map to the right codes; oversized Tika output is refused.
+* Coordinator: `/v1/parse` failures carry the HTTP status their code has everywhere else
+  (`quota_exceeded` is `429` with `Retry-After`, a cancelled job `409`); 500 responses no
+  longer contain internal paths or driver messages (details are logged with the request id);
+  worker-reported error codes outside the documented set become `internal_error`; SSE no
+  longer ends without the `completed` event when a completion races the poll; retention
+  finalisation is compare-and-set; quota and cleanup reads fail closed.
+* When `--heartbeat` is left at its default and `--worker-lease` is not longer than it, the
+  heartbeat defaults to a third of the lease instead of letting every lease expire.
+
+### Added
+
+* `docs/ERROR-CODES.md`: every stable error code with HTTP status, retryability, meaning and
+  origin; the contract test fails unless it, `internal/jobs` and the OpenAPI enum agree.
+* CI `static` phase: pinned `golangci-lint`, `govulncheck` (run on the pinned toolchain;
+  0 reachable vulnerabilities on go1.27.3) and `ruff`; `make lint`, `make vulncheck`.
 
 ## v0.1.0 — 2026-10-31
 
