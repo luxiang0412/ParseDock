@@ -151,6 +151,11 @@ public class Element {
   @javax.annotation.Nonnull
   private String text;
 
+  public static final String SERIALIZED_NAME_RICH_TEXT = "rich_text";
+  @SerializedName(SERIALIZED_NAME_RICH_TEXT)
+  @javax.annotation.Nullable
+  private String richText;
+
   public static final String SERIALIZED_NAME_LEVEL = "level";
   @SerializedName(SERIALIZED_NAME_LEVEL)
   @javax.annotation.Nullable
@@ -233,7 +238,7 @@ public class Element {
   }
 
   /**
-   * Get text
+   * Plain text with inline markup stripped
    * @return text
    */
   @javax.annotation.Nonnull
@@ -243,6 +248,25 @@ public class Element {
 
   public void setText(@javax.annotation.Nonnull String text) {
     this.text = text;
+  }
+
+
+  public Element richText(@javax.annotation.Nullable String richText) {
+    this.richText = richText;
+    return this;
+  }
+
+  /**
+   * Optional. The same content as &#x60;text&#x60; with CommonMark inline markup (&#x60;**bold**&#x60;, &#x60;*italic*&#x60;, &#x60;&#x60; &#x60;code&#x60; &#x60;&#x60;, &#x60;[text](url)&#x60;, &#x60;~~strike~~&#x60;). Absent when the engine reported no inline formatting; fall back to &#x60;text&#x60;. 
+   * @return richText
+   */
+  @javax.annotation.Nullable
+  public String getRichText() {
+    return richText;
+  }
+
+  public void setRichText(@javax.annotation.Nullable String richText) {
+    this.richText = richText;
   }
 
 
@@ -374,7 +398,7 @@ public class Element {
   }
 
   /**
-   * Get metadata
+   * String hints. Defined keys: &#x60;content_layer&#x3D;furniture&#x60; (page header/footer, skipped by the Markdown and text views), &#x60;markdown&#x3D;blockquote&#x60;, &#x60;list_ordered&#x3D;true&#x60;, &#x60;list_marker&#x60; (e.g. &#x60;3.&#x60;), &#x60;code_language&#x60;. 
    * @return metadata
    */
   @javax.annotation.Nullable
@@ -400,6 +424,7 @@ public class Element {
     return Objects.equals(this.id, element.id) &&
         Objects.equals(this.type, element.type) &&
         Objects.equals(this.text, element.text) &&
+        Objects.equals(this.richText, element.richText) &&
         Objects.equals(this.level, element.level) &&
         Objects.equals(this.readingOrder, element.readingOrder) &&
         Objects.equals(this.confidence, element.confidence) &&
@@ -415,7 +440,7 @@ public class Element {
 
   @Override
   public int hashCode() {
-    return Objects.hash(id, type, text, level, readingOrder, confidence, sourceLocation, tableId, imageRef, metadata);
+    return Objects.hash(id, type, text, richText, level, readingOrder, confidence, sourceLocation, tableId, imageRef, metadata);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -432,6 +457,7 @@ public class Element {
     sb.append("    id: ").append(toIndentedString(id)).append("\n");
     sb.append("    type: ").append(toIndentedString(type)).append("\n");
     sb.append("    text: ").append(toIndentedString(text)).append("\n");
+    sb.append("    richText: ").append(toIndentedString(richText)).append("\n");
     sb.append("    level: ").append(toIndentedString(level)).append("\n");
     sb.append("    readingOrder: ").append(toIndentedString(readingOrder)).append("\n");
     sb.append("    confidence: ").append(toIndentedString(confidence)).append("\n");
@@ -457,7 +483,7 @@ public class Element {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("id", "type", "text", "level", "reading_order", "confidence", "source_location", "table_id", "image_ref", "metadata"));
+    openapiFields = new HashSet<String>(Arrays.asList("id", "type", "text", "rich_text", "level", "reading_order", "confidence", "source_location", "table_id", "image_ref", "metadata"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(Arrays.asList("id", "type", "text", "reading_order"));
@@ -501,6 +527,9 @@ public class Element {
       TypeEnum.validateJsonElement(jsonObj.get("type"));
       if (!jsonObj.get("text").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `text` to be a primitive type in the JSON string but got `%s`", jsonObj.get("text").toString()));
+      }
+      if ((jsonObj.get("rich_text") != null && !jsonObj.get("rich_text").isJsonNull()) && !jsonObj.get("rich_text").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `rich_text` to be a primitive type in the JSON string but got `%s`", jsonObj.get("rich_text").toString()));
       }
       // validate the optional field `source_location`
       if (jsonObj.get("source_location") != null && !jsonObj.get("source_location").isJsonNull()) {

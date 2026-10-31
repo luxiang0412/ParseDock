@@ -81,8 +81,44 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 * When `--heartbeat` is left at its default and `--worker-lease` is not longer than it, the
   heartbeat defaults to a third of the lease instead of letting every lease expire.
 
+### Changed
+
+* **Markdown view fidelity.** Numbered lists keep their numbers (`list_marker`, or
+  numbered per run), nested items are indented to their parent's content column, quotes
+  render as `>`, code fences carry their language, pipe-table cells keep line breaks as
+  `<br>` and escape `|`, and tables with merged cells or several header rows render as an
+  HTML `<table>` with `rowspan`/`colspan` (text HTML-escaped). Plain text is escaped where
+  CommonMark would reinterpret it. Page furniture (`header`/`footer` elements and
+  `content_layer=furniture`) no longer appears in the Markdown **or text** body; it stays
+  in JSON.
+* **xberg asks for Markdown content** (`--content-format markdown`; the engine default is
+  plain text). DOCX/PDF results now carry headings, lists, quotes and inline formatting
+  (measured on the fixtures: `docx_report` 0/3 → 3/3 headings and 0/4 → 4/4 list items,
+  `pdf_text_en_3p` 0/4 → 4/4 headings). Tables stay at their position in the page instead of
+  being appended at the end (or twice, for CSV/content-only results); the structured
+  table's bounding box and cell line breaks are merged into the inline one. xberg's
+  Markdown writer starts a new paragraph at a source line beginning with a digit
+  ("4.2 hours …"); the adapter joins those back on text-layer PDF pages (192 joins, 0 wrong,
+  0 missed against xberg's own plain output on the 69 synthetic PDFs). Sheets keep a
+  `## <sheet>` heading. Empty spreadsheet rows are no longer mistaken for the Markdown
+  delimiter row and dropped.
+* **docling-rs / docling-serve reading order follows the whole body tree.** A DOCX table
+  is a child of its section header; the mapper only followed text children of text nodes
+  and appended such tables at the end of the document. Nodes the tree does not reach are
+  now inserted where the texts array puts them instead of at the end. A paragraph made of
+  formatted runs (an `inline` group) is one element with `rich_text` (bold, italic,
+  strikethrough, hyperlinks) instead of one paragraph per run; numbered items keep their
+  marker; page headers/footers are typed and marked as furniture. Spreadsheet sheets
+  appear as `##` headings.
+
 ### Added
 
+* **Document IR `rich_text`** (additive, still `doc-ir/0.1`): elements and table cells may
+  carry the same content as `text` with CommonMark inline markup (`**bold**`, `*italic*`,
+  `` `code` ``, `[text](url)`, `~~strike~~`). `text` stays plain, so the text view, search
+  and scoring are unchanged. Defined metadata keys are documented in
+  `docs/DOCUMENT-IR.md` (`content_layer`, `markdown`, `list_ordered`, `list_marker`,
+  `code_language`). Both SDKs and the playground types are regenerated.
 * `docs/ERROR-CODES.md`: every stable error code with HTTP status, retryability, meaning and
   origin; the contract test fails unless it, `internal/jobs` and the OpenAPI enum agree.
 * CI `static` phase: pinned `golangci-lint`, `govulncheck` (run on the pinned toolchain;

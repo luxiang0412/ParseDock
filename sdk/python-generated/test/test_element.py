@@ -38,6 +38,7 @@ class TestElement(unittest.TestCase):
                 id = 'el_2',
                 type = 'title',
                 text = '',
+                rich_text = '',
                 level = 56,
                 reading_order = 56,
                 confidence = 1.337,

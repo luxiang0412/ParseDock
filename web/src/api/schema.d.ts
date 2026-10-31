@@ -458,7 +458,14 @@ export interface components {
             id: string;
             /** @enum {string} */
             type: "title" | "section" | "paragraph" | "list" | "list_item" | "table" | "image" | "formula" | "caption" | "footnote" | "header" | "footer" | "code" | "page_break" | "unknown";
+            /** @description Plain text with inline markup stripped */
             text: string;
+            /**
+             * @description Optional. The same content as `text` with CommonMark inline markup
+             *     (`**bold**`, `*italic*`, `` `code` ``, `[text](url)`, `~~strike~~`). Absent
+             *     when the engine reported no inline formatting; fall back to `text`.
+             */
+            rich_text?: string;
             /** @description Heading level or list nesting; absent when 0 */
             level?: number;
             reading_order: number;
@@ -467,6 +474,11 @@ export interface components {
             source_location?: components["schemas"]["SourceLocation"];
             table_id?: string;
             image_ref?: string;
+            /**
+             * @description String hints. Defined keys: `content_layer=furniture` (page header/footer,
+             *     skipped by the Markdown and text views), `markdown=blockquote`,
+             *     `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`.
+             */
             metadata?: {
                 [key: string]: string;
             };
@@ -505,6 +517,8 @@ export interface components {
                 row_span?: number;
                 col_span?: number;
                 text?: string;
+                /** @description Optional cell text with CommonMark inline markup */
+                rich_text?: string;
                 formula?: string;
                 cached_value?: string;
                 /** @enum {string} */

@@ -70,17 +70,52 @@ type Routing struct {
 }
 
 // Element is one addressable unit of reading order.
+//
+// Text is always plain: inline markup is stripped so text search, embeddings, the
+// text view and quality scoring see the words only. RichText, when present, is the
+// same content with CommonMark inline markup (**bold**, *italic*, `code`,
+// [text](url), ~~strike~~) and is what the Markdown view renders. It is absent when
+// the engine reported no inline formatting, so consumers fall back to Text.
 type Element struct {
-	ID           string            `json:"id"`
-	Type         string            `json:"type"`
-	Text         string            `json:"text"`
-	Level        int               `json:"level,omitempty"` // heading level, list nesting
-	ReadingOrder int               `json:"reading_order"`
-	Confidence   *float64          `json:"confidence,omitempty"`
-	Loc          *SourceLocation   `json:"source_location,omitempty"`
-	TableID      string            `json:"table_id,omitempty"`
-	ImageRef     string            `json:"image_ref,omitempty"` // artifact-relative ref, never inline bytes
-	Metadata     map[string]string `json:"metadata,omitempty"`
+	ID           string          `json:"id"`
+	Type         string          `json:"type"`
+	Text         string          `json:"text"`
+	RichText     string          `json:"rich_text,omitempty"`
+	Level        int             `json:"level,omitempty"` // heading level, list nesting
+	ReadingOrder int             `json:"reading_order"`
+	Confidence   *float64        `json:"confidence,omitempty"`
+	Loc          *SourceLocation `json:"source_location,omitempty"`
+	TableID      string          `json:"table_id,omitempty"`
+	ImageRef     string          `json:"image_ref,omitempty"` // artifact-relative ref, never inline bytes
+	// Metadata carries open-ended, string-valued hints. The keys the renderers act on
+	// are the Meta* constants below; anything else is passed through untouched.
+	Metadata map[string]string `json:"metadata,omitempty"`
+}
+
+// Metadata keys with a defined meaning (docs/DOCUMENT-IR.md, "Element metadata").
+const (
+	// MetaContentLayer = "furniture" marks page furniture (running headers/footers,
+	// page numbers) that the engine kept out of the body. JSON keeps it; the Markdown
+	// and text views skip it.
+	MetaContentLayer = "content_layer"
+	// MetaMarkdown = "blockquote" marks a quoted paragraph.
+	MetaMarkdown = "markdown"
+	// MetaListOrdered = "true" marks an item of a numbered list.
+	MetaListOrdered = "list_ordered"
+	// MetaListMarker is the marker the source used ("3.", "a)", "iv."), when known.
+	MetaListMarker = "list_marker"
+	// MetaCodeLanguage is the language of a code block ("go", "python"), when known.
+	MetaCodeLanguage = "code_language"
+
+	ContentLayerFurniture = "furniture"
+	MarkdownBlockquote    = "blockquote"
+)
+
+// IsFurniture reports whether an element is page furniture rather than body
+// content: a page header/footer element, or anything the engine put on the
+// furniture content layer.
+func (e *Element) IsFurniture() bool {
+	return e.Type == ElHeader || e.Type == ElFooter || e.Metadata[MetaContentLayer] == ContentLayerFurniture
 }
 
 // SourceLocation declares which coordinate system a box belongs to.
@@ -129,6 +164,7 @@ type Cell struct {
 	RowSpan     int      `json:"row_span"`
 	ColSpan     int      `json:"col_span"`
 	Text        string   `json:"text"`
+	RichText    string   `json:"rich_text,omitempty"` // Text with CommonMark inline markup; see Element.RichText
 	Formula     string   `json:"formula,omitempty"`
 	CachedValue string   `json:"cached_value,omitempty"`
 	DataType    string   `json:"data_type,omitempty"` // string|number|date|bool

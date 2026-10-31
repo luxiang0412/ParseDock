@@ -27,7 +27,12 @@ left alone (prose is more likely than a broken table).
   into the contract.
 * Downstream (Chat citations, RAG metadata, audit trails) needs `page`/`bbox`/`sheet` provenance.
 
-Therefore ParseDock stores a structured IR and renders three views:
+Therefore ParseDock stores a structured IR and renders three views. The Markdown view is
+CommonMark + GFM: headings, numbered and bulleted lists (numbers and nesting kept), `>`
+quotes, fenced code with its language, pipe tables (HTML tables when cells are merged) and
+inline formatting from `rich_text`; plain text is escaped only where Markdown would
+otherwise reinterpret it (a literal `*`, a line starting with `1.` or `#`). Page furniture
+is skipped in Markdown and text and kept in JSON.
 
 | View | Endpoint | Content-Type | Use |
 | --- | --- | --- | --- |
@@ -76,7 +81,8 @@ On GPU workers `routing.reason` ends with `; exec=<kind>(<source>)`, e.g.
 {
   "id": "el_2",
   "type": "title|section|paragraph|list|list_item|table|image|formula|caption|footnote|header|footer|code|page_break|unknown",
-  "text": "…",
+  "text": "…",                       // plain text: inline markup stripped
+  "rich_text": "… **bold** …",       // optional: same content with CommonMark inline markup
   "level": 2,                        // heading level or list nesting; 0/absent otherwise
   "reading_order": 1,
   "confidence": 0.93,                // only when the engine actually reports it
@@ -86,6 +92,31 @@ On GPU workers `routing.reason` ends with `; exec=<kind>(<source>)`, e.g.
   "metadata": { "content_layer": "furniture" }
 }
 ```
+
+**`text` vs `rich_text`.** `text` is always plain, so search, embeddings, the `text` view
+and the benchmark scoring (gold is plain text) are unaffected by formatting. `rich_text`
+(also on table cells) carries the same words with CommonMark inline markup — `**bold**`,
+`*italic*`, `` `code` ``, `[text](url)`, `~~strike~~` — and is what the Markdown view
+renders. It is **absent** when the engine reported no inline formatting (or the
+markup-free text is identical); consumers then use `text`. It is never invented: it comes
+from the engine's own Markdown (xberg, MinerU, native `.md` input) or from Docling's
+per-run `formatting`/`hyperlink` fields. Underline and sub/superscript have no CommonMark
+form and are dropped from `rich_text` (the words stay). `rich_text` counts against the same
+text budget as `text` (`Limits.MaxTextBytes`).
+
+**Element metadata keys with a defined meaning** (all values are strings; unknown keys are
+passed through):
+
+| Key | Values | Set by | Rendered as (Markdown) |
+| --- | --- | --- | --- |
+| `content_layer` | `furniture` | Docling `content_layer`; page headers/footers | skipped in Markdown **and** text; kept in JSON |
+| `markdown` | `blockquote` | Markdown `>` lines | `> ` quote (multi-line) |
+| `list_ordered` | `true` | numbered list items (Markdown `1.`, Docling `enumerated`) | numbered item |
+| `list_marker` | e.g. `3.`, `a)` | the marker the source used, when known | that marker; without one, items are numbered per run |
+| `code_language` | e.g. `go` | Markdown ```` ```lang ```` fences | fenced block with that info string |
+
+`header` / `footer` elements are furniture too: the Markdown and text views skip them, JSON
+keeps them.
 
 ### SourceLocation
 
@@ -115,8 +146,11 @@ origins. If an engine gives no geometry, `bbox` is absent — never zero-filled.
                "data_type": "string|number|date|bool", "confidence": … } ] }
 ```
 
-Merged cells appear **once, at their anchor** with `row_span`/`col_span`; the renderer expands
-them into a rectangular grid for Markdown. `formula`/`cached_value` are only present when the
+Merged cells appear **once, at their anchor** with `row_span`/`col_span`. A pipe table cannot
+express a span (or more than one header row), so the Markdown view renders a table that has
+any `row_span`/`col_span > 1` or `header_rows > 1` as an HTML `<table>` with `rowspan`/`colspan` (cell text HTML-escaped, the first
+`header_rows` rows as `<th>`); every other table is a GFM pipe table whose cell line breaks
+become `<br>` and whose `|` is escaped. `formula`/`cached_value` are only present when the
 engine exposes them (XLSX via structured engines).
 
 ### Warning
@@ -192,12 +226,21 @@ must unmarshal and round-trip unchanged.
 
 | Engine | pages | bbox | reading order | headings | tables | sheet names | confidence |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| docling-rs / docling-serve | ✅ `pages` map | ✅ + origin | ✅ body tree | ✅ `section_header` + level | ✅ cells + spans | ✅ `groups[label=sheet].name` | ❌ |
-| xberg | ✅ page split | ✅ tables only | page text order + tables | ⚠️ from `style_name` annotations | ✅ grid | ❌ (warning) | ⚠️ document-level quality score |
+| docling-rs / docling-serve | ✅ `pages` map | ✅ + origin | ✅ body tree, every child kind (a table under its section header stays there); unreached nodes inserted by texts-array position | ✅ `section_header` + level; sheets as `##` headings | ✅ cells + spans | ✅ `groups[label=sheet].name` | ❌ |
+| xberg | ✅ page split | ✅ tables only | page Markdown order (`--content-format markdown`); tables at their inline position, enriched with the structured table's bbox | ✅ Markdown headings; lists, quotes and inline formatting (`rich_text`) | ✅ grid | ❌ (warning; sheets become `##` headings from `sheet_name`) | ⚠️ document-level quality score |
 | MinerU (flash) | ✅ `<!-- page N of M -->` | ❌ | markdown order | ⚠️ from markdown | ✅ via markdown tables | ❌ | ❌ |
 | Tika | ⚠️ only when form feeds exist (never for PDF in 4.2) | ❌ | text order | ⚠️ markdown headings for OOXML | ⚠️ markdown tables for OOXML | ❌ | ❌ |
 | legacy `.doc/.xls/.ppt` | ❌ (`legacy_format` warning) | ❌ | text/table order | xberg: no; docling: section headings where present | xberg: grid per sheet; docling: table cells | xlsx only via `.xls` sheet index | ❌ |
 | native | – (line) | ❌ | line order | ✅ markdown headings | ✅ csv/tsv grid | ⚠️ `csv` pseudo-sheet | ❌ |
+
+Docling-specific mapping details: an `inline` group (a paragraph made of formatted runs)
+becomes **one** element whose `rich_text` carries each run's `formatting` (bold, italic,
+strikethrough) and `hyperlink`; `enumerated`/`marker` become `list_ordered`/`list_marker`;
+list nesting comes from nested list groups; `code_language` is kept. docling-rs 2.53.3
+reports run formatting and hyperlinks for DOCX only; its PDF text carries none, and a
+formatted run inside a heading or a table cell is flattened by the engine itself.
+`content_layer=furniture` (e.g. the DOCX "page header"/"page footer" groups) is kept in JSON
+with `metadata.content_layer=furniture`, typed `header`/`footer` where the group says so.
 
 ## 5. Validation performed in Phase 0
 
@@ -239,8 +282,13 @@ must unmarshal and round-trip unchanged.
   empty rather than fabricated.
 * **Page rotation**: `rotation_deg` is defined but not populated (no engine reports
   it for the tested corpus).
-* **Reading order for two-column PDFs** is engine-dependent; docling-rs handles it,
-  Tika and xberg do not (plain text order).
+* **Reading order for layout-sensitive PDFs** is engine-dependent. xberg orders the
+  columns of a two-column page left then right (17/17 two-column PDFs in
+  `benchmark/fixtures/`), but where text runs are drawn on top of each other, as in
+  `pdf_two_column_en.pdf`, it merges the overlapping lines word by word; docling-rs keeps
+  them apart. Tika emits plain content-stream order. `mode=auto` routes PDFs to xberg
+  and does **not** escalate on layout (no signal tested was reliable enough, see
+  `docs/DEPLOYMENT.md` §4); use `mode=accurate` for such documents.
 
 Each gap is either a `warning` in the output or listed here; none of them is silently
 "fixed" by generating data.

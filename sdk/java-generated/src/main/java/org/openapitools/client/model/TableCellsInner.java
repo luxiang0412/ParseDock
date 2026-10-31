@@ -78,6 +78,11 @@ public class TableCellsInner {
   @javax.annotation.Nullable
   private String text;
 
+  public static final String SERIALIZED_NAME_RICH_TEXT = "rich_text";
+  @SerializedName(SERIALIZED_NAME_RICH_TEXT)
+  @javax.annotation.Nullable
+  private String richText;
+
   public static final String SERIALIZED_NAME_FORMULA = "formula";
   @SerializedName(SERIALIZED_NAME_FORMULA)
   @javax.annotation.Nullable
@@ -254,6 +259,25 @@ public class TableCellsInner {
   }
 
 
+  public TableCellsInner richText(@javax.annotation.Nullable String richText) {
+    this.richText = richText;
+    return this;
+  }
+
+  /**
+   * Optional cell text with CommonMark inline markup
+   * @return richText
+   */
+  @javax.annotation.Nullable
+  public String getRichText() {
+    return richText;
+  }
+
+  public void setRichText(@javax.annotation.Nullable String richText) {
+    this.richText = richText;
+  }
+
+
   public TableCellsInner formula(@javax.annotation.Nullable String formula) {
     this.formula = formula;
     return this;
@@ -345,6 +369,7 @@ public class TableCellsInner {
         Objects.equals(this.rowSpan, tableCellsInner.rowSpan) &&
         Objects.equals(this.colSpan, tableCellsInner.colSpan) &&
         Objects.equals(this.text, tableCellsInner.text) &&
+        Objects.equals(this.richText, tableCellsInner.richText) &&
         Objects.equals(this.formula, tableCellsInner.formula) &&
         Objects.equals(this.cachedValue, tableCellsInner.cachedValue) &&
         Objects.equals(this.dataType, tableCellsInner.dataType) &&
@@ -357,7 +382,7 @@ public class TableCellsInner {
 
   @Override
   public int hashCode() {
-    return Objects.hash(row, col, rowSpan, colSpan, text, formula, cachedValue, dataType, confidence);
+    return Objects.hash(row, col, rowSpan, colSpan, text, richText, formula, cachedValue, dataType, confidence);
   }
 
   private static <T> int hashCodeNullable(JsonNullable<T> a) {
@@ -376,6 +401,7 @@ public class TableCellsInner {
     sb.append("    rowSpan: ").append(toIndentedString(rowSpan)).append("\n");
     sb.append("    colSpan: ").append(toIndentedString(colSpan)).append("\n");
     sb.append("    text: ").append(toIndentedString(text)).append("\n");
+    sb.append("    richText: ").append(toIndentedString(richText)).append("\n");
     sb.append("    formula: ").append(toIndentedString(formula)).append("\n");
     sb.append("    cachedValue: ").append(toIndentedString(cachedValue)).append("\n");
     sb.append("    dataType: ").append(toIndentedString(dataType)).append("\n");
@@ -398,7 +424,7 @@ public class TableCellsInner {
 
   static {
     // a set of all properties/fields (JSON key names)
-    openapiFields = new HashSet<String>(Arrays.asList("row", "col", "row_span", "col_span", "text", "formula", "cached_value", "data_type", "confidence"));
+    openapiFields = new HashSet<String>(Arrays.asList("row", "col", "row_span", "col_span", "text", "rich_text", "formula", "cached_value", "data_type", "confidence"));
 
     // a set of required properties/fields (JSON key names)
     openapiRequiredFields = new HashSet<String>(0);
@@ -427,6 +453,9 @@ public class TableCellsInner {
         JsonObject jsonObj = jsonElement.getAsJsonObject();
       if ((jsonObj.get("text") != null && !jsonObj.get("text").isJsonNull()) && !jsonObj.get("text").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `text` to be a primitive type in the JSON string but got `%s`", jsonObj.get("text").toString()));
+      }
+      if ((jsonObj.get("rich_text") != null && !jsonObj.get("rich_text").isJsonNull()) && !jsonObj.get("rich_text").isJsonPrimitive()) {
+        throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `rich_text` to be a primitive type in the JSON string but got `%s`", jsonObj.get("rich_text").toString()));
       }
       if ((jsonObj.get("formula") != null && !jsonObj.get("formula").isJsonNull()) && !jsonObj.get("formula").isJsonPrimitive()) {
         throw new IllegalArgumentException(String.format(java.util.Locale.ROOT, "Expected the field `formula` to be a primitive type in the JSON string but got `%s`", jsonObj.get("formula").toString()));

@@ -53,14 +53,19 @@
           "type": "string",
           "enum": ["title", "section", "paragraph", "list", "list_item", "table", "image", "formula", "caption", "footnote", "header", "footer", "code", "page_break", "unknown"]
         },
-        "text": { "type": "string" },
+        "text": { "type": "string", "description": "Plain text: inline markup stripped." },
+        "rich_text": { "type": "string", "description": "Optional: the same content as text with CommonMark inline markup (**bold**, *italic*, `code`, [text](url), ~~strike~~). Absent when the engine reported no inline formatting." },
         "level": { "type": "integer", "minimum": 0 },
         "reading_order": { "type": "integer", "minimum": 0 },
         "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 },
         "source_location": { "$ref": "#/$defs/location" },
         "table_id": { "type": "string" },
         "image_ref": { "type": "string", "description": "Reserved: no adapter emits one until artifacts are downloadable (PR-06)." },
-        "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+        "metadata": {
+          "type": "object",
+          "description": "String hints. Defined keys: content_layer=furniture, markdown=blockquote, list_ordered=true, list_marker, code_language (docs/DOCUMENT-IR.md).",
+          "additionalProperties": { "type": "string" }
+        }
       }
     },
     "location": {
@@ -116,6 +121,7 @@
         "row_span": { "type": "integer", "minimum": 1 },
         "col_span": { "type": "integer", "minimum": 1 },
         "text": { "type": "string" },
+        "rich_text": { "type": "string", "description": "Optional: cell text with CommonMark inline markup; see element.rich_text." },
         "formula": { "type": "string" },
         "cached_value": { "type": "string" },
         "data_type": { "type": "string", "enum": ["string", "number", "date", "bool"] },

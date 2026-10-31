@@ -86,12 +86,14 @@ func (l Limits) Validate(d *Document) error {
 				rendered, l.MaxTableCells*2)
 		}
 	}
+	// rich_text is a second copy of the same content and is rendered too, so it counts
+	// against the same budget as text.
 	for i := range d.Elements {
-		text += int64(len(d.Elements[i].Text))
+		text += int64(len(d.Elements[i].Text)) + int64(len(d.Elements[i].RichText))
 	}
 	for i := range d.Tables {
 		for j := range d.Tables[i].Cells {
-			text += int64(len(d.Tables[i].Cells[j].Text))
+			text += int64(len(d.Tables[i].Cells[j].Text)) + int64(len(d.Tables[i].Cells[j].RichText))
 		}
 	}
 	if text > l.MaxTextBytes {

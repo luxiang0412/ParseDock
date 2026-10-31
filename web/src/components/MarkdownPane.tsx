@@ -5,6 +5,7 @@ import rehypeSanitize from 'rehype-sanitize'
 import remarkGfm from 'remark-gfm'
 import { useI18n } from '../i18n'
 import { Button } from './Button'
+import { rehypeHtmlTables } from './rehypeHtmlTables'
 
 type Tab = 'rendered' | 'source'
 
@@ -155,7 +156,11 @@ export function MarkdownPane({
           </div>
         ) : tab === 'rendered' ? (
           <article className="md px-5 py-5">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]} components={components}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHtmlTables, rehypeSanitize]}
+              components={components}
+            >
               {markdown}
             </ReactMarkdown>
           </article>

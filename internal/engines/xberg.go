@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
@@ -95,7 +94,10 @@ func ValidateOCRBackend(name string) error {
 // input path. Split out from Parse so the OCR flag plumbing is testable without
 // running the engine.
 func (x *Xberg) extractArgs() []string {
-	args := []string{"extract", "--no-config-discovery", "--format", "json"}
+	// --content-format markdown: xberg's default content is plain text, which loses
+	// headings, lists, quotes, inline formatting and table positions. Per-page content
+	// and the tables array are unaffected by the switch.
+	args := []string{"extract", "--no-config-discovery", "--format", "json", "--content-format", "markdown"}
 	if !x.Cache {
 		args = append(args, "--no-cache", "true")
 	}
@@ -115,23 +117,27 @@ func (x *Xberg) extractArgs() []string {
 	return args
 }
 
+// xbergPage is one entry of result.pages: a PDF page, a slide or a sheet.
+type xbergPage struct {
+	PageNumber int    `json:"page_number"`
+	Content    string `json:"content"`
+	SheetName  string `json:"sheet_name"` // spreadsheets only
+	// Reported for tesseract; null score / 0 words for paddle-ocr, which
+	// is "unknown", not "low".
+	OCRConfidence struct {
+		Score     *float64 `json:"score"`
+		WordCount int      `json:"word_count"`
+		Backend   string   `json:"backend"`
+	} `json:"ocr_confidence"`
+}
+
 type xbergOutput struct {
 	ExtractionTimeMs float64 `json:"extraction_time_ms"`
 	PeakMemoryBytes  float64 `json:"peak_memory_bytes"`
 	Result           struct {
-		Content string `json:"content"`
-		Pages   []struct {
-			PageNumber int    `json:"page_number"`
-			Content    string `json:"content"`
-			// Reported for tesseract; null score / 0 words for paddle-ocr, which
-			// is "unknown", not "low".
-			OCRConfidence struct {
-				Score     *float64 `json:"score"`
-				WordCount int      `json:"word_count"`
-				Backend   string   `json:"backend"`
-			} `json:"ocr_confidence"`
-		} `json:"pages"`
-		Tables []struct {
+		Content string      `json:"content"`
+		Pages   []xbergPage `json:"pages"`
+		Tables  []struct {
 			Cells       [][]string `json:"cells"`
 			Markdown    string     `json:"markdown"`
 			PageNumber  int        `json:"page_number"`
@@ -167,8 +173,6 @@ type xbergOutput struct {
 		ExtractionMethod string `json:"extraction_method"`
 	} `json:"result"`
 }
-
-var styleAnnoRe = regexp.MustCompile(`\(style_name:\s*([^)]+)\)\s*$`)
 
 // Parse implements Engine.
 func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, error) {
@@ -264,13 +268,9 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 
 	switch {
 	case len(out.Result.Pages) > 0:
-		x.mapPages(doc, &out, req)
+		x.mapPages(doc, &out, req, ocrUsed)
 	case out.Result.Content != "":
-		if looksLikeMarkdown(out.Result.Content) {
-			LiftMarkdown(doc, out.Result.Content)
-		} else {
-			liftPlainText(doc, out.Result.Content)
-		}
+		LiftMarkdown(doc, out.Result.Content)
 		x.attachTables(doc, &out, req.Format, 0, true)
 	default:
 		return nil, Errf(false, jobs.ErrMalformed, "engine produced no content")
@@ -301,55 +301,88 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 	return doc, nil
 }
 
-func (x *Xberg) mapPages(doc *documentir.Document, out *xbergOutput, req Request) {
+// mapPages lifts each page's Markdown into the IR. Elements keep the page number;
+// tables keep the engine's bounding box when the inline table and the structured one
+// are the same table (see attachTables).
+func (x *Xberg) mapPages(doc *documentir.Document, out *xbergOutput, req Request, ocrUsed bool) {
+	kind := pageKind(req.Format)
 	for _, page := range out.Result.Pages {
 		content := strings.TrimSpace(page.Content)
-		if content == "" {
-			continue
+		scratch := documentir.New()
+		// Spreadsheet pages are sheets. The document-level content starts each one with
+		// "## <sheet>", the per-page content does not; keep the sheet boundary visible.
+		if name := strings.TrimSpace(page.SheetName); name != "" && !startsWithHeading(content, name) {
+			scratch.Elements = append(scratch.Elements, documentir.Element{
+				ID: "el_1", Type: documentir.ElSection, Level: 2, Text: name,
+			})
 		}
-		if looksLikeMarkdown(content) {
-			scratch := documentir.New()
+		if content != "" {
 			LiftMarkdown(scratch, content)
-			remapTables(scratch, len(doc.Tables), len(doc.Elements))
-			for i := range scratch.Elements {
-				el := scratch.Elements[i]
-				el.Loc = &documentir.SourceLocation{Kind: pageKind(req.Format), Page: page.PageNumber}
-				doc.Elements = append(doc.Elements, el)
-			}
-			for _, t := range scratch.Tables {
-				t.Loc = &documentir.SourceLocation{Kind: pageKind(req.Format), Page: page.PageNumber}
-				doc.Tables = append(doc.Tables, t)
-			}
+		}
+		if len(scratch.Elements) == 0 {
 			continue
 		}
-		blocks := splitBlocks(content)
-		for _, b := range blocks {
-			el := documentir.Element{
-				Type: documentir.ElParagraph, Text: b,
-				Loc: &documentir.SourceLocation{Kind: pageKind(req.Format), Page: page.PageNumber},
+		if req.Format == "pdf" && !ocrUsed && page.OCRConfidence.Backend == "" && page.OCRConfidence.Score == nil {
+			joinSplitParagraphs(scratch)
+		}
+		x.attachTables(scratch, out, req.Format, page.PageNumber, false)
+		remapTables(scratch, len(doc.Tables), len(doc.Elements))
+		tableLoc := make(map[string]*documentir.SourceLocation, len(scratch.Tables))
+		for i := range scratch.Tables {
+			t := &scratch.Tables[i]
+			if t.Loc == nil || t.Loc.Kind == "none" {
+				t.Loc = &documentir.SourceLocation{Kind: kind, Page: page.PageNumber}
 			}
-			if txt, style := splitStyleAnnotation(b); style != "" {
-				el.Text = txt
-				el.Level, el.Type = styleLevel(style)
+			tableLoc[t.ID] = t.Loc
+		}
+		for _, el := range scratch.Elements {
+			if l, ok := tableLoc[el.TableID]; ok && el.Type == documentir.ElTable {
+				el.Loc = l
+			} else {
+				el.Loc = &documentir.SourceLocation{Kind: kind, Page: page.PageNumber}
 			}
-			el.ID = fmt.Sprintf("el_%d", len(doc.Elements)+1)
 			doc.Elements = append(doc.Elements, el)
 		}
-		x.attachTables(doc, out, req.Format, page.PageNumber, false)
+		doc.Tables = append(doc.Tables, scratch.Tables...)
 	}
 }
 
-// attachTables appends engine-detected tables with real bounding boxes.
+// attachTables reconciles xberg's structured tables with the tables already lifted
+// from the Markdown content of doc (one page, or the whole document when all is set).
+//
+// The Markdown already holds each table at its position in the reading order, so a
+// structured table that is the same table only enriches it: page number, bounding box,
+// and cell text with the line breaks Markdown cannot carry. Appending it as well (what
+// the adapter did with plain content) printed every table twice, the second copy at the
+// end of the page. A structured table with no inline counterpart is appended at the end
+// of the page, which is the only position the engine gives for it.
 func (x *Xberg) attachTables(doc *documentir.Document, out *xbergOutput, format string, page int, all bool) {
-	existing := map[string]bool{}
-	for _, t := range doc.Tables {
-		existing[t.ID] = true
-	}
+	inline := len(doc.Tables)
+	matched := make([]bool, inline)
 	for _, t := range out.Result.Tables {
 		if !all && t.PageNumber != page {
 			continue
 		}
 		if len(t.Cells) == 0 {
+			continue
+		}
+		loc := &documentir.SourceLocation{Kind: pageKind(format), Page: t.PageNumber}
+		if loc.Page == 0 {
+			loc.Page = page
+		}
+		if t.BoundingBox != nil {
+			loc.BBox = &documentir.BBox{Coord: "pdf_user_space_v1",
+				X0: t.BoundingBox.X0, Y0: t.BoundingBox.Y0, X1: t.BoundingBox.X1, Y1: t.BoundingBox.Y1}
+		}
+		if i := matchInlineTable(doc.Tables[:inline], matched, t.Cells); i >= 0 {
+			matched[i] = true
+			enrichInlineTable(&doc.Tables[i], t.Cells, loc)
+			continue
+		}
+		if overlapsInlineTable(doc.Tables[:inline], t.Cells) {
+			// Same table in a different shape (e.g. a merged header the Markdown spread
+			// over two rows): the inline copy is already in place; a second one would
+			// only repeat it.
 			continue
 		}
 		id := fmt.Sprintf("tbl_%d", len(doc.Tables)+1)
@@ -363,14 +396,6 @@ func (x *Xberg) attachTables(doc *documentir.Document, out *xbergOutput, format 
 					Row: ri, Col: ci, RowSpan: 1, ColSpan: 1, Text: val, DataType: guessType(val),
 				})
 			}
-		}
-		loc := &documentir.SourceLocation{Kind: pageKind(format), Page: t.PageNumber}
-		if loc.Page == 0 {
-			loc.Page = page
-		}
-		if t.BoundingBox != nil {
-			loc.BBox = &documentir.BBox{Coord: "pdf_user_space_v1",
-				X0: t.BoundingBox.X0, Y0: t.BoundingBox.Y0, X1: t.BoundingBox.X1, Y1: t.BoundingBox.Y1}
 		}
 		tbl.Loc = loc
 		doc.Tables = append(doc.Tables, tbl)
@@ -394,46 +419,10 @@ func pageKind(format string) string {
 	}
 }
 
-func splitStyleAnnotation(s string) (string, string) {
-	m := styleAnnoRe.FindStringSubmatch(s)
-	if m == nil {
-		return s, ""
-	}
-	return strings.TrimSpace(styleAnnoRe.ReplaceAllString(s, "")), strings.ToLower(strings.TrimSpace(m[1]))
-}
-
-func styleLevel(style string) (int, string) {
-	switch {
-	case style == "title":
-		return 1, documentir.ElTitle
-	case strings.HasPrefix(style, "heading"):
-		var lvl int
-		if _, err := fmt.Sscanf(style, "heading %d", &lvl); err == nil && lvl >= 1 && lvl <= 6 {
-			return lvl, documentir.ElSection
-		}
-		return 2, documentir.ElSection
-	case style == "subtitle":
-		return 2, documentir.ElSection
-	}
-	return 0, documentir.ElParagraph
-}
-
 func looksLikeMarkdown(s string) bool {
 	return strings.Contains(s, "\n## ") || strings.HasPrefix(s, "## ") ||
 		strings.Contains(s, "\n# ") || strings.Contains(s, "| --- |") ||
 		strings.Contains(s, "|---|")
-}
-
-func splitBlocks(s string) []string {
-	parts := strings.Split(strings.ReplaceAll(s, "\r\n", "\n"), "\n\n")
-	out := make([]string, 0, len(parts))
-	for _, p := range parts {
-		p = strings.TrimSpace(p)
-		if p != "" {
-			out = append(out, p)
-		}
-	}
-	return out
 }
 
 func copyFile(src, dst string) error {
