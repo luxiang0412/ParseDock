@@ -197,7 +197,12 @@ export interface paths {
          *     `timeout_ms` (default 30 s, max 2 min) for completion.
          *     * finished → `200` with the Document IR;
          *     * deadline reached → `202` with the job resource; it keeps running asynchronously;
-         *     * failure → `422` with the stable error code.
+         *     * failure → the job's stable error code, with the same status the code has
+         *       everywhere else: `422` for document and engine failures (`malformed_file`,
+         *       `encrypted_file`, `page_limit_exceeded`, `engine_*`, `timeout`,
+         *       `internal_error`), `413`/`415` for size and type, `429 quota_exceeded` with
+         *       `Retry-After` when the result does not fit the storage quota, and
+         *       `409 cancelled` when the job was cancelled while the call waited.
          *
          *     The result is **not released** by this call: a written response does not
          *     prove the caller received it, so the normal TTL applies. The response
@@ -620,9 +625,16 @@ export interface components {
          *     back to CPU, and the result marks the actual device.
          */
         DeviceQuery: "auto" | "cpu" | "gpu_preferred" | "gpu_required";
-        /** @description Requested result TTL, capped by the server's maximum. */
+        /**
+         * @description Requested result TTL, capped by the server's maximum. A non-integer or a value
+         *     below 1 is rejected with `400 invalid_request`.
+         */
         TtlSecondsQuery: number;
-        /** @description Same key + same owner returns the original job (`200`) instead of creating a second one. */
+        /**
+         * @description Same key + same owner returns the original job (`200`) instead of creating a second
+         *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
+         *     never truncated, so distinct long keys cannot collide.
+         */
         IdempotencyKeyHeader: string;
     };
     requestBodies: never;
@@ -656,13 +668,23 @@ export interface operations {
                  *     back to CPU, and the result marks the actual device.
                  */
                 device?: components["parameters"]["DeviceQuery"];
-                /** @description Requested result TTL, capped by the server's maximum. */
+                /**
+                 * @description Requested result TTL, capped by the server's maximum. A non-integer or a value
+                 *     below 1 is rejected with `400 invalid_request`.
+                 */
                 ttl_seconds?: components["parameters"]["TtlSecondsQuery"];
-                /** @description Higher runs first within the same queue. */
+                /**
+                 * @description Higher runs first within the same queue. A non-integer or a value outside
+                 *     0–100 is rejected with `400 invalid_request`.
+                 */
                 priority?: number;
             };
             header?: {
-                /** @description Same key + same owner returns the original job (`200`) instead of creating a second one. */
+                /**
+                 * @description Same key + same owner returns the original job (`200`) instead of creating a second
+                 *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
+                 *     never truncated, so distinct long keys cannot collide.
+                 */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
             };
             path?: never;
@@ -686,9 +708,15 @@ export interface operations {
                      * @enum {string}
                      */
                     device?: "auto" | "cpu" | "gpu_preferred" | "gpu_required";
-                    /** @description Requested result TTL; capped by the server maximum. */
+                    /**
+                     * @description Requested result TTL; capped by the server maximum. A non-integer or a
+                     *     value below 1 is rejected with `400 invalid_request`.
+                     */
                     ttl_seconds?: number;
-                    /** @description Alternative to the Idempotency-Key header. */
+                    /**
+                     * @description Alternative to the Idempotency-Key header. Longer than 200 characters is
+                     *     rejected with `400 invalid_request` (keys are never truncated).
+                     */
                     idempotency_key?: string;
                 };
             };
@@ -857,7 +885,11 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Same key + same owner returns the original job (`200`) instead of creating a second one. */
+                /**
+                 * @description Same key + same owner returns the original job (`200`) instead of creating a second
+                 *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
+                 *     never truncated, so distinct long keys cannot collide.
+                 */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
             };
             path: {
@@ -920,7 +952,11 @@ export interface operations {
         parameters: {
             query?: never;
             header?: {
-                /** @description Same key + same owner returns the original job (`200`) instead of creating a second one. */
+                /**
+                 * @description Same key + same owner returns the original job (`200`) instead of creating a second
+                 *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
+                 *     never truncated, so distinct long keys cannot collide.
+                 */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
             };
             path: {
@@ -1057,8 +1093,30 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["InsufficientScope"];
+            /**
+             * @description `cancelled` — the job was cancelled before it finished; `conflict` — the
+             *     idempotency key was already used (use `/v1/jobs` for async access);
+             *     `gpu_unavailable` — `device=gpu_required` with no GPU worker.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             413: components["responses"]["TooLarge"];
-            /** @description Parse failed or the document is unsupported. */
+            /** @description Format not in the allow-list, or content does not match the extension. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Parse failed, or the document is malformed, encrypted or over a limit. */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -1068,6 +1126,15 @@ export interface operations {
                 };
             };
             429: components["responses"]["RateLimited"];
+            /** @description Storage below the safety watermark; retry later. */
+            507: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     healthz: {
