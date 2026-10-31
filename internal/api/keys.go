@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -34,6 +35,60 @@ type Key struct {
 	Owner  string
 	Scopes map[string]bool
 	Label  string // short, non-secret identifier for logs (owner + first 8 hex chars)
+	// plainLen is the length of a plaintext token (0 for a sha256: entry, whose
+	// length is unknowable). Used only by CheckKeys at startup.
+	plainLen int
+}
+
+// Plaintext key length policy. 16 characters is the floor below which a key is a
+// password, not a credential; 32 (e.g. `openssl rand -hex 16`) is the recommendation.
+const (
+	MinKeyLength         = 16
+	RecommendedKeyLength = 32
+)
+
+// CheckKeys enforces the startup policy on a parsed key set:
+//
+//   - a plaintext token shorter than MinKeyLength is an error unless devInsecure
+//     (then it is a warning, so throwaway test stacks keep working);
+//   - a plaintext token shorter than RecommendedKeyLength is a warning;
+//   - the same token (same hash) mapped to two different owners is always an error:
+//     Lookup would silently pick the first entry and the second owner could never
+//     authenticate — or, worse, someone would be acting as the wrong tenant;
+//   - the same token listed twice for one owner is a warning (the first entry's
+//     scopes win).
+//
+// Messages identify entries by position and owner only, never by token or hash.
+func CheckKeys(keys []Key, devInsecure bool) (warnings []string, err error) {
+	seen := map[[32]byte]int{}
+	for i, k := range keys {
+		n := i + 1
+		if k.plainLen > 0 && k.plainLen < MinKeyLength {
+			msg := fmt.Sprintf("API key entry #%d (owner %q) is %d characters; at least %d are required",
+				n, k.Owner, k.plainLen, MinKeyLength)
+			if !devInsecure {
+				return nil, errors.New(msg + " (generate one with `openssl rand -hex 24`)")
+			}
+			warnings = append(warnings, msg+"; accepted only because --dev-insecure is set")
+		} else if k.plainLen > 0 && k.plainLen < RecommendedKeyLength {
+			warnings = append(warnings, fmt.Sprintf(
+				"API key entry #%d (owner %q) is %d characters; %d or more are recommended",
+				n, k.Owner, k.plainLen, RecommendedKeyLength))
+		}
+		if j, dup := seen[k.hash]; dup {
+			prev := keys[j]
+			if prev.Owner != k.Owner {
+				return nil, fmt.Errorf("API key entries #%d and #%d are the same token for different owners (%q, %q)",
+					j+1, n, prev.Owner, k.Owner)
+			}
+			warnings = append(warnings, fmt.Sprintf(
+				"API key entries #%d and #%d are the same token for owner %q; only the first entry's scopes apply",
+				j+1, n, k.Owner))
+			continue
+		}
+		seen[k.hash] = i
+	}
+	return warnings, nil
 }
 
 // ParseKeys parses the --api-keys value (comma separated entries).
@@ -116,6 +171,7 @@ func parseKey(entry string) (Key, error) {
 		copy(k.hash[:], raw)
 	} else {
 		k.hash = sha256.Sum256([]byte(secret))
+		k.plainLen = len(secret)
 		k.Label = owner + "/" + hex.EncodeToString(k.hash[:4])
 	}
 	if k.Label == "" {
