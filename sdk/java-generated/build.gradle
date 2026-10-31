@@ -3,7 +3,7 @@ apply plugin: 'eclipse'
 apply plugin: 'java'
 apply plugin: 'com.diffplug.spotless'
 
-group = 'dev.parsedock'
+group = 'com.luxiangs'
 version = '0.1.0'
 
 buildscript {

@@ -48,7 +48,7 @@ Java clients, and measured SLOs.
 * Python SDK (`parsedock` package, `parsedock` CLI): retries with `Retry-After`,
   generated idempotency keys, SSE, ACK-after-sink, `navigate`-free errors carrying
   a stable `code` and `retryable` flag.
-* Java client (`dev.parsedock:parsedock-client`, generated from the OpenAPI
+* Java client (`com.luxiangs:parsedock-client`, generated from the OpenAPI
   document, unknown-enum tolerant).
 * Playground: React 19 + Vite + Tailwind single-page comparison view (original vs
   parsed Markdown) with page-wide drag and drop, SSE progress, explicit release,

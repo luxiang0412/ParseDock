@@ -51,7 +51,7 @@ deployment waits for a human in the Central Portal).
 
 | groupId | Verification |
 | --- | --- |
-| `dev.parsedock` (current) | DNS TXT record on `parsedock.dev` (the domain has to be yours) |
+| `com.luxiangs` (current) | DNS TXT record on `luxiangs.com` (the domain has to be yours) |
 | `io.github.luxiang0412` | verified through the GitHub account, no DNS needed |
 
 To switch, change `groupId=` in the `make sdk` line in the `Makefile`, run

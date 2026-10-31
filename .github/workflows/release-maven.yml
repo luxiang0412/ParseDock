@@ -5,7 +5,7 @@
 #   GPG_PRIVATE_KEY                               ASCII-armored private key
 #   MAVEN_GPG_PASSPHRASE                          key passphrase
 # and a verified namespace on central.sonatype.com matching the POM groupId
-# (dev.parsedock needs a DNS TXT record for parsedock.dev; io.github.luxiang0412
+# (com.luxiangs needs a DNS TXT record for luxiangs.com; io.github.luxiang0412
 # is verified through the GitHub account instead).
 #
 # autoPublish=false: the deployment lands as a pending bundle in the Central

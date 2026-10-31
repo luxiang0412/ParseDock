@@ -4,7 +4,6 @@ parsedock.egg-info/PKG-INFO
 parsedock.egg-info/SOURCES.txt
 parsedock.egg-info/dependency_links.txt
 parsedock.egg-info/entry_points.txt
-parsedock.egg-info/requires.txt
 parsedock.egg-info/top_level.txt
 parsedock_sdk/__init__.py
 parsedock_sdk/cli.py

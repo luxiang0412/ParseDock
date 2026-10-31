@@ -1,6 +1,6 @@
 ---
 name: parsedock-java-sdk
-description: "ParseDock Java client (`dev.parsedock:parsedock-client`): upload a document with JobsApi, poll the job, download Markdown or the typed DocumentIR model, then ACK with the exact result_version to release the server copy. Use when: calling a ParseDock service from Java, Kotlin, Scala, Groovy or any JVM project; building an integration with Maven or Gradle; deserialising the Document IR (doc-ir/0.1) into generated model classes; handling ApiException codes such as rate_limited, quota_exceeded, file_too_large, encrypted_file or gpu_unavailable; or writing an end-to-end test against a running ParseDock instance. Also use when the user mentions ParseDock, JobsApi, DocumentIR, result_version, or ACK/TTL from a JVM context."
+description: "ParseDock Java client (`com.luxiangs:parsedock-client`): upload a document with JobsApi, poll the job, download Markdown or the typed DocumentIR model, then ACK with the exact result_version to release the server copy. Use when: calling a ParseDock service from Java, Kotlin, Scala, Groovy or any JVM project; building an integration with Maven or Gradle; deserialising the Document IR (doc-ir/0.1) into generated model classes; handling ApiException codes such as rate_limited, quota_exceeded, file_too_large, encrypted_file or gpu_unavailable; or writing an end-to-end test against a running ParseDock instance. Also use when the user mentions ParseDock, JobsApi, DocumentIR, result_version, or ACK/TTL from a JVM context."
 ---
 
 # ParseDock Java SDK
@@ -17,7 +17,7 @@ mvn -f sdk/java-generated/pom.xml -DskipTests install
 
 ```xml
 <dependency>
-  <groupId>dev.parsedock</groupId>
+  <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client</artifactId>
   <version>0.1.0</version>
 </dependency>

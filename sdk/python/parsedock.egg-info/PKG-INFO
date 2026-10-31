@@ -2,11 +2,20 @@ Metadata-Version: 2.4
 Name: parsedock
 Version: 0.1.0
 Summary: Python client for the ParseDock document-parsing API
+Author: ParseDock maintainers
 License: Apache-2.0
+Project-URL: Homepage, https://github.com/luxiang0412/ParseDock
+Project-URL: Documentation, https://github.com/luxiang0412/ParseDock/blob/main/docs/SDK.md
+Project-URL: Changelog, https://github.com/luxiang0412/ParseDock/blob/main/docs/CHANGELOG.md
+Project-URL: Issues, https://github.com/luxiang0412/ParseDock/issues
+Keywords: document-parsing,ocr,pdf,docx,xlsx,markdown,document-ir
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Text Processing
+Classifier: Typing :: Typed
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
-Provides-Extra: async
-Requires-Dist: httpx>=0.27; extra == "async"
 
 # ParseDock Python SDK
 
