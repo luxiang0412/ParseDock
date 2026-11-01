@@ -106,6 +106,15 @@ mvn -f sdk/java-client-test/pom.xml test \
 
 `.agents/skills/parsedock-java-sdk/` is the condensed version for agent use.
 
+### File names
+
+Both clients handle file names that are not plain printable ASCII. A name like that, or
+one that contains `"` or `\`, is sent in the RFC 6266 form with
+an ASCII fallback and an RFC 5987 extended parameter,
+`filename="__-__.pdf"; filename*=UTF-8''%E6%B5%8B...`. The coordinator's
+`mime.ParseMediaType` prefers the extended value, so `input_name` round-trips the
+original spelling. Plain names are sent unchanged.
+
 ## Agent skills
 
 `.agents/skills/parsedock-python-sdk/` and `.agents/skills/parsedock-java-sdk/` are written

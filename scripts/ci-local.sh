@@ -93,6 +93,7 @@ phase_unit() {
   step "CI merge-gate unit tests" python3 "$ROOT/tests/unit/test_ci_summary.py" || return 1
   step "CI lifecycle shard coverage" python3 "$ROOT/tests/unit/test_ci_shards.py" || return 1
   step "fixture integrity" python3 "$ROOT/tests/unit/test_fixtures.py" || return 1
+  step "SDK file-name encoding" python3 "$ROOT/tests/unit/test_sdk_encoding.py" || return 1
   step "benchmark gate unit tests" python3 "$ROOT/tests/unit/test_gate.py" || return 1
 }
 
