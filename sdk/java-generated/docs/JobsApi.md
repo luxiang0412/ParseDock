@@ -17,7 +17,7 @@ All URIs are relative to *http://localhost:8080*
 
 Accept that the client consumed the result, release storage asynchronously
 
-Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
+Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). When the body omits &#x60;result_version&#x60;, an &#x60;If-Match: \&quot;&lt;result_version&gt;\&quot;&#x60; header is used instead (quotes optional); a mismatch is still &#x60;409 conflict&#x60;, not &#x60;412&#x60;. The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
 
 ### Example
 ```java
@@ -47,7 +47,7 @@ public class Example {
     JobsApi apiInstance = new JobsApi(defaultClient);
     String id = "job_06GRQJT5HC1DDZMPWRSKSCKM24"; // String | 
     AckJobRequest ackJobRequest = new AckJobRequest(); // AckJobRequest | 
-    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
+    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner + same request returns the original job (`200`) instead of creating a second one. \"Same request\" means the same input bytes, `mode` and `device`; reusing the key for anything else is `422 idempotency_key_mismatch` (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
     try {
       AckJob202Response result = apiInstance.ackJob(id, ackJobRequest, idempotencyKey);
       System.out.println(result);
@@ -68,7 +68,7 @@ public class Example {
 |------------- | ------------- | ------------- | -------------|
 | **id** | **String**|  | |
 | **ackJobRequest** | [**AckJobRequest**](AckJobRequest.md)|  | |
-| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
+| **idempotencyKey** | **String**| Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
 
 ### Return type
 
@@ -129,7 +129,7 @@ public class Example {
 
     JobsApi apiInstance = new JobsApi(defaultClient);
     String id = "job_06GRQJT5HC1DDZMPWRSKSCKM24"; // String | 
-    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
+    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner + same request returns the original job (`200`) instead of creating a second one. \"Same request\" means the same input bytes, `mode` and `device`; reusing the key for anything else is `422 idempotency_key_mismatch` (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
     try {
       CancelJob202Response result = apiInstance.cancelJob(id, idempotencyKey);
       System.out.println(result);
@@ -149,7 +149,7 @@ public class Example {
 | Name | Type | Description  | Notes |
 |------------- | ------------- | ------------- | -------------|
 | **id** | **String**|  | |
-| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
+| **idempotencyKey** | **String**| Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
 
 ### Return type
 
@@ -213,7 +213,7 @@ public class Example {
     String device = "auto"; // String | `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device. 
     Integer ttlSeconds = 56; // Integer | Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
     Integer priority = 0; // Integer | Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`. 
-    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
+    String idempotencyKey = "idempotencyKey_example"; // String | Same key + same owner + same request returns the original job (`200`) instead of creating a second one. \"Same request\" means the same input bytes, `mode` and `device`; reusing the key for anything else is `422 idempotency_key_mismatch` (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide. 
     String mode2 = "auto"; // String | 
     String device2 = "auto"; // String | 
     Integer ttlSeconds2 = 56; // Integer | Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`. 
@@ -241,7 +241,7 @@ public class Example {
 | **device** | **String**| &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  | [optional] [default to auto] [enum: auto, cpu, gpu_preferred, gpu_required] |
 | **ttlSeconds** | **Integer**| Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] |
 | **priority** | **Integer**| Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] [default to 0] |
-| **idempotencyKey** | **String**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
+| **idempotencyKey** | **String**| Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] |
 | **mode2** | **String**|  | [optional] [default to auto] [enum: auto, fast, accurate] |
 | **device2** | **String**|  | [optional] [default to auto] [enum: auto, cpu, gpu_preferred, gpu_required] |
 | **ttlSeconds2** | **Integer**| Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] |
@@ -271,7 +271,7 @@ public class Example {
 | **409** | A GPU worker is required but none is registered, or the idempotency key conflicts. |  -  |
 | **413** | Upload exceeds the configured limit. |  -  |
 | **415** | Format not in the allow-list, or content does not match the extension. |  -  |
-| **422** | Malformed, encrypted or structurally invalid document. |  -  |
+| **422** | Malformed, encrypted or structurally invalid document, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  |  -  |
 | **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 | **507** | Storage below the safety watermark; retry later (existing results stay readable). |  -  |
 

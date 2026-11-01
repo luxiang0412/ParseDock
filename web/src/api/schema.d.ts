@@ -101,7 +101,9 @@ export interface paths {
         /**
          * Accept that the client consumed the result, release storage asynchronously
          * @description Idempotent. The first ACK must carry the `result_version` that was
-         *     downloaded (mismatch → `409`, nothing is released). The response means
+         *     downloaded (mismatch → `409`, nothing is released). When the body omits
+         *     `result_version`, an `If-Match: "<result_version>"` header is used instead
+         *     (quotes optional); a mismatch is still `409 conflict`, not `412`. The response means
          *     "release intent accepted"; poll `GET /v1/jobs/{id}` until
          *     `retention_status` is `released`.
          *
@@ -279,7 +281,7 @@ export interface components {
                  * @description Stable machine-readable code.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_type" | "malformed_file" | "file_too_large" | "encrypted_file" | "page_limit_exceeded" | "suspicious_compression" | "expanded_too_large" | "engine_out_of_memory" | "quota_exceeded" | "insufficient_storage" | "engine_unavailable" | "gpu_unavailable" | "timeout" | "cancelled" | "internal_error" | "lease_lost" | "not_found" | "gone" | "conflict" | "unauthorized" | "insufficient_scope" | "rate_limited" | "coordinator_unavailable";
+                code: "invalid_request" | "unsupported_type" | "malformed_file" | "file_too_large" | "encrypted_file" | "page_limit_exceeded" | "suspicious_compression" | "expanded_too_large" | "engine_out_of_memory" | "quota_exceeded" | "insufficient_storage" | "engine_unavailable" | "gpu_unavailable" | "timeout" | "cancelled" | "internal_error" | "lease_lost" | "not_found" | "gone" | "conflict" | "idempotency_key_mismatch" | "unauthorized" | "insufficient_scope" | "rate_limited" | "coordinator_unavailable";
                 message: string;
             };
         };
@@ -646,9 +648,12 @@ export interface components {
          */
         TtlSecondsQuery: number;
         /**
-         * @description Same key + same owner returns the original job (`200`) instead of creating a second
-         *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
-         *     never truncated, so distinct long keys cannot collide.
+         * @description Same key + same owner + same request returns the original job (`200`) instead of
+         *     creating a second one. "Same request" means the same input bytes, `mode` and
+         *     `device`; reusing the key for anything else is `422 idempotency_key_mismatch`
+         *     (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is
+         *     rejected with `400 invalid_request`; keys are never truncated, so distinct long keys
+         *     cannot collide.
          */
         IdempotencyKeyHeader: string;
     };
@@ -696,9 +701,12 @@ export interface operations {
             };
             header?: {
                 /**
-                 * @description Same key + same owner returns the original job (`200`) instead of creating a second
-                 *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
-                 *     never truncated, so distinct long keys cannot collide.
+                 * @description Same key + same owner + same request returns the original job (`200`) instead of
+                 *     creating a second one. "Same request" means the same input bytes, `mode` and
+                 *     `device`; reusing the key for anything else is `422 idempotency_key_mismatch`
+                 *     (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is
+                 *     rejected with `400 invalid_request`; keys are never truncated, so distinct long keys
+                 *     cannot collide.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
             };
@@ -779,7 +787,10 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Malformed, encrypted or structurally invalid document. */
+            /**
+             * @description Malformed, encrypted or structurally invalid document, or
+             *     `idempotency_key_mismatch` (the key was used for a different request).
+             */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -901,9 +912,12 @@ export interface operations {
             query?: never;
             header?: {
                 /**
-                 * @description Same key + same owner returns the original job (`200`) instead of creating a second
-                 *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
-                 *     never truncated, so distinct long keys cannot collide.
+                 * @description Same key + same owner + same request returns the original job (`200`) instead of
+                 *     creating a second one. "Same request" means the same input bytes, `mode` and
+                 *     `device`; reusing the key for anything else is `422 idempotency_key_mismatch`
+                 *     (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is
+                 *     rejected with `400 invalid_request`; keys are never truncated, so distinct long keys
+                 *     cannot collide.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
             };
@@ -968,9 +982,12 @@ export interface operations {
             query?: never;
             header?: {
                 /**
-                 * @description Same key + same owner returns the original job (`200`) instead of creating a second
-                 *     one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
-                 *     never truncated, so distinct long keys cannot collide.
+                 * @description Same key + same owner + same request returns the original job (`200`) instead of
+                 *     creating a second one. "Same request" means the same input bytes, `mode` and
+                 *     `device`; reusing the key for anything else is `422 idempotency_key_mismatch`
+                 *     (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is
+                 *     rejected with `400 invalid_request`; keys are never truncated, so distinct long keys
+                 *     cannot collide.
                  */
                 "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
             };
@@ -1072,9 +1089,29 @@ export interface operations {
                  *     back to CPU, and the result marks the actual device.
                  */
                 device?: components["parameters"]["DeviceQuery"];
+                /**
+                 * @description Requested result TTL, capped by the server's maximum. A non-integer or a value
+                 *     below 1 is rejected with `400 invalid_request`.
+                 */
+                ttl_seconds?: components["parameters"]["TtlSecondsQuery"];
+                /**
+                 * @description Same as on `POST /v1/jobs`. A non-integer or a value outside 0–100 is
+                 *     rejected with `400 invalid_request`.
+                 */
+                priority?: number;
                 timeout_ms?: number;
             };
-            header?: never;
+            header?: {
+                /**
+                 * @description Same key + same owner + same request returns the original job (`200`) instead of
+                 *     creating a second one. "Same request" means the same input bytes, `mode` and
+                 *     `device`; reusing the key for anything else is `422 idempotency_key_mismatch`
+                 *     (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is
+                 *     rejected with `400 invalid_request`; keys are never truncated, so distinct long keys
+                 *     cannot collide.
+                 */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKeyHeader"];
+            };
             path?: never;
             cookie?: never;
         };
@@ -1110,7 +1147,8 @@ export interface operations {
             403: components["responses"]["InsufficientScope"];
             /**
              * @description `cancelled` — the job was cancelled before it finished; `conflict` — the
-             *     idempotency key was already used (use `/v1/jobs` for async access);
+             *     idempotency key was already used for this same request (use `/v1/jobs` for
+             *     async access to that job);
              *     `gpu_unavailable` — `device=gpu_required` with no GPU worker.
              */
             409: {
@@ -1131,7 +1169,10 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Parse failed, or the document is malformed, encrypted or over a limit. */
+            /**
+             * @description Parse failed, or the document is malformed, encrypted or over a limit, or
+             *     `idempotency_key_mismatch` (the key was used for a different request).
+             */
             422: {
                 headers: {
                     [name: string]: unknown;

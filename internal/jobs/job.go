@@ -81,9 +81,12 @@ const (
 	ErrNotFound          = "not_found"
 	ErrGone              = "gone"
 	ErrConflict          = "conflict"
-	ErrUnauthorized      = "unauthorized"
-	ErrInsufficientScope = "insufficient_scope"
-	ErrRateLimited       = "rate_limited"
+	// ErrIdempotencyMismatch: an Idempotency-Key was reused for a different request
+	// (other bytes, mode or device) by the same owner.
+	ErrIdempotencyMismatch = "idempotency_key_mismatch"
+	ErrUnauthorized        = "unauthorized"
+	ErrInsufficientScope   = "insufficient_scope"
+	ErrRateLimited         = "rate_limited"
 	// ErrCoordinatorUnavailable is produced by an API replica that cannot reach the
 	// coordinator; the coordinator itself never returns it.
 	ErrCoordinatorUnavailable = "coordinator_unavailable"

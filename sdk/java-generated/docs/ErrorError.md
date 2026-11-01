@@ -36,6 +36,7 @@
 | NOT_FOUND | &quot;not_found&quot; |
 | GONE | &quot;gone&quot; |
 | CONFLICT | &quot;conflict&quot; |
+| IDEMPOTENCY_KEY_MISMATCH | &quot;idempotency_key_mismatch&quot; |
 | UNAUTHORIZED | &quot;unauthorized&quot; |
 | INSUFFICIENT_SCOPE | &quot;insufficient_scope&quot; |
 | RATE_LIMITED | &quot;rate_limited&quot; |

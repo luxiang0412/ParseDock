@@ -539,6 +539,35 @@ PASS in 30.9 s.
 **Not verified:** a real multi-host cluster-lite deployment, and GPU hardware. Out of scope: binding mTLS certificate
 roles to tokens; the worker learning the upload limit from the coordinator.
 
+## Adoption review follow-ups (`docs/trans-audit-adoption-brief`, 2026-11-01)
+
+The "do now" tier of `docs/briefs/trans-audit-adoption-changes-and-api-review-2026-11-01.md` §3.1,
+graded for a general-purpose service:
+
+* **Idempotency fingerprint:** a reused `Idempotency-Key` replays only the same input bytes,
+  `mode` and `device`; anything else is `422 idempotency_key_mismatch` (new code). Checked on
+  both replay paths (pre-check and the insert's unique violation); no migration, the input hash
+  was already stored.
+* **Spec matches the server:** `/v1/parse` declares `ttl_seconds`, `priority`,
+  `Idempotency-Key`; `ackJob` documents `If-Match`; `info.description` lists the full upload
+  allow-list.
+* **Offline OCR models:** with `--xberg-ocr-backend paddle-ocr` the worker runs one offline OCR
+  pass at startup and refuses to start when a model is missing; `--check` reports
+  `engine_models` and exits non-zero. `docs/DEPLOYMENT.md` gained an offline/Chinese checklist.
+
+**Evidence (dev host, 2026-11-01):** `make test` PASS; `go test -race` on coordinator, engines,
+storage PASS (the concurrent fingerprint test reaches the insert-race path, confirmed by
+coverage); `bash scripts/ci-local.sh lifecycle` PASS in 145.1 s; `openapi_contract.py` 47
+checks, 0 failures; both specs validate; SDK regenerated, `sync_skills.py --check` PASS,
+`scripts/sdk-check.sh --fast` PASS; generated Java client builds and `examples/java` and
+`sdk/java-client-test` compile against it; `make web-test` PASS. Model probe against real xberg
+1.3.10: empty cache → `--check` exit 1 naming `v6/rec/small/model.onnx`, standalone exits 1;
+seeded cache (652 MiB) → `"xberg": "ok"`, worker registers.
+
+**Not verified:** `govulncheck` (the pinned go1.27.3 is not installed on this host; the script
+refuses another toolchain by design); the `image`, `engines` and `container` phases; the probe
+inside the CPU worker image.
+
 ## Sequencing
 
 ```

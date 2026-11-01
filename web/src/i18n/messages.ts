@@ -214,6 +214,7 @@ export const en = {
   'error.not_found': 'That job does not exist for this API key.',
   'error.gone': 'The result was released or expired and can no longer be downloaded.',
   'error.conflict': 'The job is not in a state where that action is allowed.',
+  'error.idempotency_key_mismatch': 'This idempotency key was already used for a different file or settings.',
   'error.unauthorized': 'The API key is missing or invalid.',
   'error.insufficient_scope': 'This API key does not grant the required scope.',
   'error.rate_limited': 'Too many requests; wait a moment and retry.',

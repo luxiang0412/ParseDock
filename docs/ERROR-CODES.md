@@ -60,7 +60,8 @@ is a breaking API change.
 | `lease_lost` | job (internal: 409) | yes | The worker lost its lease (crash, network partition, expired or superseded lease); the attempt is retried and this code is final only when attempts are exhausted | coordinator lease sweep, worker protocol |
 | `not_found` | 404 | no | Job does not exist for this owner, or a download lease no longer exists | coordinator |
 | `gone` | 410 | no | Result was released (ACK) or expired and can no longer be downloaded; worker input no longer available | coordinator |
-| `conflict` | 409 | no | Action not allowed in the current state: idempotency key reuse, stale or mismatching `result_version` on ACK, cancel/ACK on the wrong lifecycle state | coordinator |
+| `conflict` | 409 | no | Action not allowed in the current state: an idempotency key replayed on `POST /v1/parse` (use `/v1/jobs` for the existing job), stale or mismatching `result_version` on ACK, cancel/ACK on the wrong lifecycle state | coordinator |
+| `idempotency_key_mismatch` | 422 | no | The `Idempotency-Key` was already used by this owner for a different request: other input bytes, `mode` or `device` (`ttl_seconds` and `priority` are not compared). Nothing is created; use a new key | coordinator (`CreateJobStaged`) |
 | `unauthorized` | 401 | no | Missing or invalid API key (public) or internal token (internal API) | API gateway, coordinator internal auth |
 | `insufficient_scope` | 403 | no | The API key is valid but lacks the scope the route needs (e.g. `jobs:ack`) | API gateway (`internal/api/server.go`) |
 | `rate_limited` | 429 (with `Retry-After`) | yes, after `Retry-After` | Per-owner request rate exceeded | API gateway rate limiter |
