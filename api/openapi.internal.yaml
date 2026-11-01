@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ParseDock Internal API
-  version: 0.1.0
+  version: 0.1.1
   summary: Worker protocol and diagnostics of the single Coordinator
   description: |
     **Private contract.** These endpoints live on the Coordinator's internal

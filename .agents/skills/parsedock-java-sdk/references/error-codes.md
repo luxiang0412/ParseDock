@@ -1,4 +1,4 @@
-<!-- Generated from ParseDock docs/ERROR-CODES.md (API 0.1.0) by scripts/sync_skills.py. Do not edit here. -->
+<!-- Generated from ParseDock docs/ERROR-CODES.md (API 0.1.1) by scripts/sync_skills.py. Do not edit here. -->
 
 # Error codes
 

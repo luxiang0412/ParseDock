@@ -40,8 +40,8 @@ import (
 // serviceVersion is the released artefact version; apiVersion is the OpenAPI document
 // version. They move together, and scripts/check_versions.py enforces that.
 const (
-	serviceVersion = "0.1.0"
-	apiVersion     = "0.1.0"
+	serviceVersion = "0.1.1"
+	apiVersion     = "0.1.1"
 )
 
 type flags struct {

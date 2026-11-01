@@ -5,8 +5,8 @@ description: "ParseDock Python SDK (`parsedock_sdk`) and the `parsedock` CLI: up
 
 # ParseDock Python SDK
 
-Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added after the 0.1.0
-release are marked; against a 0.1.0 server they are simply absent.
+Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added in 0.1.1 are
+marked; against a 0.1.0 server they are simply absent.
 
 Two things live in one package (`pip install parsedock`):
 
@@ -14,8 +14,8 @@ Two things live in one package (`pip install parsedock`):
 * `parsedock` — CLI (`parsedock parse FILE`, `parsedock status JOB_ID`).
 
 ```bash
-pip install parsedock==0.1.0
-parsedock --version               # prints "parsedock 0.1.0"
+pip install parsedock==0.1.1
+parsedock --version               # prints "parsedock 0.1.1"
 ```
 
 The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
@@ -88,10 +88,10 @@ engine). Text formats (`txt/md/csv/tsv`) always use the native engine.
   `image`, `caption`, `code`, `header`, `footer`, …
 * `text` is plain. `rich_text`, when present, is the same content with CommonMark inline
   markup (bold, italic, code, links); fall back to `text` when it is absent (always the
-  case with a 0.1.0 server, which predates the field).
+  case with a 0.1.0 server, which predates the field; added in 0.1.1).
 * Skip page furniture when you build your own text: `type` `header`/`footer`, or
   `metadata.content_layer == "furniture"`. The `markdown`/`text` downloads already do.
-* `metadata` keys with a meaning (all added after 0.1.0): `content_layer="furniture"`,
+* `metadata` keys with a meaning (all added in 0.1.1): `content_layer="furniture"`,
   `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`, `recovered="text_layer"`
   (text the engine's Markdown dropped, restored from the PDF text layer).
   Unknown keys and element types may appear later; ignore them, do not fail.

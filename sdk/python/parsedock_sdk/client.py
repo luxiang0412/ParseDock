@@ -92,7 +92,7 @@ class ParseDockClient:
         *,
         timeout: float = 120.0,
         max_retries: int = 4,
-        user_agent: str = "parsedock-python-sdk/0.1.0",
+        user_agent: str = "parsedock-python-sdk/0.1.1",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.token = token
