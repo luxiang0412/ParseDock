@@ -477,7 +477,8 @@ export interface components {
             /**
              * @description String hints. Defined keys: `content_layer=furniture` (page header/footer,
              *     skipped by the Markdown and text views), `markdown=blockquote`,
-             *     `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`.
+             *     `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`,
+             *     `recovered=text_layer` (restored from the PDF text layer).
              */
             metadata?: {
                 [key: string]: string;

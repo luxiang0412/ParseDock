@@ -128,7 +128,8 @@ try (okhttp3.Response r = call.execute()) {
   `getMetadata().get("content_layer")` equal to `"furniture"`. The `markdown`/`text`
   downloads already do.
 * Metadata keys with a meaning (all added after 0.1.0): `content_layer="furniture"`,
-  `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`. Unknown keys may appear later; ignore them.
+  `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`, `recovered="text_layer"`
+  (text the engine's Markdown dropped, restored from the PDF text layer). Unknown keys may appear later; ignore them.
 * `Table#getCells()` is a `List<TableCellsInner>`: `getRow()`, `getCol()`, `getRowSpan()`,
   `getColSpan()`, `getText()`; `Table#getHeaderRows()`.
 * `getWarnings()` codes explain degraded output; `getRouting()` says which engine ran.

@@ -63,7 +63,7 @@
         "image_ref": { "type": "string", "description": "Reserved: no adapter emits one until artifacts are downloadable (PR-06)." },
         "metadata": {
           "type": "object",
-          "description": "String hints. Defined keys: content_layer=furniture, markdown=blockquote, list_ordered=true, list_marker, code_language (docs/DOCUMENT-IR.md).",
+          "description": "String hints. Defined keys: content_layer=furniture, markdown=blockquote, list_ordered=true, list_marker, code_language, recovered=text_layer (docs/DOCUMENT-IR.md).",
           "additionalProperties": { "type": "string" }
         }
       }

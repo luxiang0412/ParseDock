@@ -76,6 +76,7 @@ passed through):
 | `list_ordered` | `true` | numbered list items (Markdown `1.`, Docling `enumerated`) | numbered item |
 | `list_marker` | e.g. `3.`, `a)` | the marker the source used, when known | that marker; without one, items are numbered per run |
 | `code_language` | e.g. `go` | Markdown ```` ```lang ```` fences | fenced block with that info string |
+| `recovered` | `text_layer` | xberg PDFs: a paragraph restored from the PDF text layer because the Markdown writer dropped it; placed after the element holding the preceding line, no inline formatting | a normal paragraph |
 
 `header` / `footer` elements are furniture too: the Markdown and text views skip them, JSON
 keeps them.
@@ -135,7 +136,10 @@ Stable codes: `ocr_not_run`, `ocr_used`, `ocr_quality_unknown`, `ocr_low_confide
 `page_limit_reached`, `partial_content`, `encrypted`, `degraded_conversion`,
 `unsupported_element`, `layout_heuristic`, `no_coordinates`, plus adapter-specific
 `sheet_name_unavailable`, `encoding_converted`, `no_page_boundaries`,
-`formula_text_unavailable`, `ocr_quality_unknown`, `legacy_format`.
+`formula_text_unavailable`, `ocr_quality_unknown`, `legacy_format`, `text_recovered`.
+
+`text_recovered` (info, xberg PDFs) says that many paragraphs were restored from the text
+layer; they carry `metadata.recovered = "text_layer"`.
 
 `legacy_format` marks OLE2 Word/Excel/PowerPoint input: text and tables are
 extracted, page numbers and coordinates are not available.

@@ -38,7 +38,7 @@ class Element(BaseModel):
     source_location: Optional[SourceLocation] = None
     table_id: Optional[StrictStr] = None
     image_ref: Optional[StrictStr] = None
-    metadata: Optional[Dict[str, StrictStr]] = Field(default=None, description="String hints. Defined keys: `content_layer=furniture` (page header/footer, skipped by the Markdown and text views), `markdown=blockquote`, `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`. ")
+    metadata: Optional[Dict[str, StrictStr]] = Field(default=None, description="String hints. Defined keys: `content_layer=furniture` (page header/footer, skipped by the Markdown and text views), `markdown=blockquote`, `list_ordered=true`, `list_marker` (e.g. `3.`), `code_language`, `recovered=text_layer` (restored from the PDF text layer). ")
     __properties: ClassVar[List[str]] = ["id", "type", "text", "rich_text", "level", "reading_order", "confidence", "source_location", "table_id", "image_ref", "metadata"]
 
     @field_validator('type')

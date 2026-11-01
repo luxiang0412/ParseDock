@@ -92,7 +92,8 @@ engine). Text formats (`txt/md/csv/tsv`) always use the native engine.
 * Skip page furniture when you build your own text: `type` `header`/`footer`, or
   `metadata.content_layer == "furniture"`. The `markdown`/`text` downloads already do.
 * `metadata` keys with a meaning (all added after 0.1.0): `content_layer="furniture"`,
-  `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`.
+  `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`, `recovered="text_layer"`
+  (text the engine's Markdown dropped, restored from the PDF text layer).
   Unknown keys and element types may appear later; ignore them, do not fail.
 * `tables[].cells[]`: `row`, `col`, `row_span`, `col_span`, `text`; `header_rows`.
 * `warnings[].code` (`ocr_used`, `ocr_low_confidence`, `no_text_layer`, …) explain

@@ -276,6 +276,10 @@ func (x *Xberg) Parse(ctx context.Context, req Request) (*documentir.Document, e
 		return nil, Errf(false, jobs.ErrMalformed, "engine produced no content")
 	}
 
+	if req.Format == "pdf" && len(out.Result.Pages) > 0 {
+		x.recoverLostText(ctx, doc, &out, req.WorkDir, local)
+	}
+
 	x.applyOCRQuality(doc, &out, ocrUsed, req.Format)
 
 	doc.PageCount = out.Result.Metadata.Format.PageCount
