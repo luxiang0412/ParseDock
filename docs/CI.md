@@ -143,3 +143,4 @@ make license-audit   # enforce mode (fails on GPL)
   `actions/cache` keyed on `images.lock.json`; a lock bump pays one cold download.
 * The Python/PyYAML pin lives in `requirements-ci.txt`; the contract phase skips
   installation when PyYAML is already importable (PEP-668 managed dev machines).
+
