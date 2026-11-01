@@ -15,7 +15,7 @@ Name | Type | Description | Notes
 **source_location** | [**SourceLocation**](SourceLocation.md) |  | [optional] 
 **table_id** | **str** |  | [optional] 
 **image_ref** | **str** |  | [optional] 
-**metadata** | **Dict[str, str]** | String hints. Defined keys: &#x60;content_layer&#x3D;furniture&#x60; (page header/footer, skipped by the Markdown and text views), &#x60;markdown&#x3D;blockquote&#x60;, &#x60;list_ordered&#x3D;true&#x60;, &#x60;list_marker&#x60; (e.g. &#x60;3.&#x60;), &#x60;code_language&#x60;.  | [optional] 
+**metadata** | **Dict[str, str]** | String hints. Defined keys: &#x60;content_layer&#x3D;furniture&#x60; (page header/footer, skipped by the Markdown and text views), &#x60;markdown&#x3D;blockquote&#x60;, &#x60;list_ordered&#x3D;true&#x60;, &#x60;list_marker&#x60; (e.g. &#x60;3.&#x60;), &#x60;code_language&#x60;, &#x60;recovered&#x3D;text_layer&#x60; (restored from the PDF text layer).  | [optional] 
 
 ## Example
 

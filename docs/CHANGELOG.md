@@ -54,6 +54,17 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ### Fixed
 
+* **xberg PDFs: text the Markdown writer dropped is restored from the text layer.**
+  Switching xberg to `--content-format markdown` lost text its plain writer keeps; on a
+  526-PDF private corpus ~0.1 % of the words, up to 18 % of a short document, mostly whole
+  or half lines next to tables. The adapter now also reads the text layer
+  (`--content-format plain --ocr false`, ~20 % of the main run's time) and re-inserts lines
+  of which at least half the words, and at least two, occur nowhere in the result, after
+  the element holding the preceding line. Running headers (lines repeated on two or more
+  pages), lines under three words and OCR pages are not touched. Restored paragraphs carry
+  `metadata.recovered = "text_layer"`; the result gets an info warning `text_recovered`.
+  Not fixed: lines that lost only one or two words in the Markdown writer (the bulk of the
+  remaining difference) - re-inserting them would duplicate the rest of the line.
 * Synchronous `POST /v1/parse` longer than 30 s returned `502` at the gateway (shared
   30 s response-header timeout); the gateway proxy now waits 150 s.
 * Malformed numeric/duration environment values are a startup error instead of a
@@ -130,7 +141,7 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
   `` `code` ``, `[text](url)`, `~~strike~~`). `text` stays plain, so the text view, search
   and scoring are unchanged. Defined metadata keys are documented in
   `docs/DOCUMENT-IR.md` (`content_layer`, `markdown`, `list_ordered`, `list_marker`,
-  `code_language`). Both SDKs and the playground types are regenerated.
+  `code_language`, `recovered`). Both SDKs and the playground types are regenerated.
 * `docs/ERROR-CODES.md`: every stable error code with HTTP status, retryability, meaning and
   origin; the contract test fails unless it, `internal/jobs` and the OpenAPI enum agree.
 * CI `static` phase: pinned `golangci-lint`, `govulncheck` (run on the pinned toolchain;

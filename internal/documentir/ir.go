@@ -106,9 +106,14 @@ const (
 	MetaListMarker = "list_marker"
 	// MetaCodeLanguage is the language of a code block ("go", "python"), when known.
 	MetaCodeLanguage = "code_language"
+	// MetaRecovered = "text_layer" marks a paragraph the adapter put back from the PDF
+	// text layer because the engine's structured output had lost it. Its position is the
+	// best the adapter could infer, and it carries no inline formatting.
+	MetaRecovered = "recovered"
 
 	ContentLayerFurniture = "furniture"
 	MarkdownBlockquote    = "blockquote"
+	RecoveredTextLayer    = "text_layer"
 )
 
 // IsFurniture reports whether an element is page furniture rather than body
@@ -194,6 +199,10 @@ const (
 	WarnNoPageBoundaries = "no_page_boundaries"
 	WarnFormulaMissing   = "formula_text_unavailable"
 	WarnOCRUsedUnknown   = "ocr_quality_unknown"
+	// WarnTextRecovered (info) says the adapter put back paragraphs from the PDF text
+	// layer that the engine's structured output had lost; they carry
+	// metadata.recovered = "text_layer".
+	WarnTextRecovered = "text_recovered"
 )
 
 // OCRQuality carries the OCR quality evidence an engine actually reported. It is
