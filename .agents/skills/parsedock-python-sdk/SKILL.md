@@ -14,8 +14,8 @@ Two things live in one package (`pip install parsedock`):
 * `parsedock` — CLI (`parsedock parse FILE`, `parsedock status JOB_ID`).
 
 ```bash
-pip install parsedock==0.1.1
-parsedock --version               # prints "parsedock 0.1.1"
+pip install parsedock==0.1.2
+parsedock --version               # prints "parsedock 0.1.2"
 ```
 
 The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
