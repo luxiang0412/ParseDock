@@ -77,6 +77,7 @@ phase_static() {
   # result does not depend on the runner image.
   step "workflow lint (actionlint)" bash -c "bash '$ROOT/scripts/install-actionlint.sh' >/dev/null && '$ROOT/runtime/bin/actionlint' -no-color -shellcheck= '$ROOT/.github/workflows/'*.yml" || return 1
   step "go mod tidy drift" bash -c "cd '$ROOT' && cp go.mod /tmp/go.mod.ci && cp go.sum /tmp/go.sum.ci && go mod tidy && (git diff --exit-code -- go.mod go.sum || (cp /tmp/go.mod.ci go.mod && cp /tmp/go.sum.ci go.sum && false))" || return 1
+  step "agent skills portable + in sync" python3 "$ROOT/scripts/sync_skills.py" --check || return 1
 }
 
 phase_unit() {

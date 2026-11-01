@@ -1,21 +1,26 @@
 ---
 name: parsedock-python-sdk
-description: "ParseDock Python SDK (`parsedock_sdk`) and the `parsedock` CLI: upload a document, wait for the parse, download Markdown / plain text / Document IR, then ACK to release the server copy. Use when: calling a ParseDock service from Python; writing a script or service that converts PDF/DOCX/XLSX/PPTX/images to Markdown or structured JSON; polling job status; streaming job events over SSE; handling ParseDock error codes such as rate_limited, quota_exceeded, encrypted_file or gpu_unavailable; or using the `parsedock` command line. Also use when the user mentions ParseDock, docparse, Document IR, doc-ir/0.1, result_version, or ACK/TTL behaviour."
+description: "ParseDock Python SDK (`parsedock_sdk`) and the `parsedock` CLI: upload a document, wait for the parse, download Markdown / plain text / Document IR, then ACK to release the server copy. Use when: calling a ParseDock service from Python; writing a script or service that converts PDF/DOCX/XLSX/PPTX/images to Markdown or structured JSON; polling job status; streaming job events over SSE; reading the Document IR (elements, rich_text, tables, furniture); handling ParseDock error codes such as rate_limited, quota_exceeded, insufficient_scope, encrypted_file or gpu_unavailable; or using the `parsedock` command line. Also use when the user mentions ParseDock, docparse, Document IR, doc-ir/0.1, result_version, or ACK/TTL behaviour."
 ---
 
 # ParseDock Python SDK
 
-Two things live in one package:
+Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added after the 0.1.0
+release are marked; against a 0.1.0 server they are simply absent.
+
+Two things live in one package (`pip install parsedock`):
 
 * `parsedock_sdk` — hand-written lifecycle wrapper, **stdlib only** (`ParseDockClient`).
-* `parsedock` — CLI (`parsedock parse FILE`).
-
-Install from PyPI:
+* `parsedock` — CLI (`parsedock parse FILE`, `parsedock status JOB_ID`).
 
 ```bash
-pip install parsedock==0.1.0      # or: pip install -e sdk/python (repo checkout)
-parsedock --version               # JSON: {"version": "...", "api": "..."}
+pip install parsedock==0.1.0
+parsedock --version               # prints "parsedock 0.1.0"
 ```
+
+The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
+(upload, sync parse), `jobs:read` (status, download, events), `jobs:ack` (ack, cancel).
+A key without an explicit scope list has all three.
 
 ## The five-step lifecycle
 
@@ -37,7 +42,8 @@ with ParseDockClient("http://localhost:8080", token=TOKEN) as c:
 ```
 
 `download_and_ack(job_id, fmt=..., sink=callable)` does download → sink → ACK and
-**propagates a sink exception**, leaving the result available for a retry.
+**propagates a sink exception**, leaving the result available for a retry. The sink must
+have *durably* stored the bytes when it returns (`with open(p, "wb") as f: f.write(b)`).
 
 ## Rules that are not optional
 
@@ -46,60 +52,97 @@ with ParseDockClient("http://localhost:8080", token=TOKEN) as c:
 * Without an ACK the result expires at `result_expires_at` (TTL).
 * After release: `410 gone` for a short tombstone window, then `404`.
 * `create_job` always sends an `Idempotency-Key` (yours or a generated one): a retried
-  upload whose response was lost replays instead of creating a second job.
-* Rows listed in `GET /v1/jobs` never include the text; download is separate.
+  upload whose response was lost replays instead of creating a second job. Reusing *your*
+  key for a different upload replays the first job.
+* There is no job listing endpoint: keep the `job_id` you got from `create_job`.
+* Status polling shares the per-owner rate budget; for long waits prefer `events()`.
 
 ## Methods
 
-| Method | Notes |
-| --- | --- |
-| `create_job(path, mode="auto", device="auto", ttl_seconds=None, idempotency_key=None, priority=None)` | 202 → `status="queued"`; the same idempotency key replays the original job |
-| `get_job(id)` | status, engine, `result_version`, `retention_status`, `error_code` |
-| `wait(id, timeout=600, interval=0.5, max_interval=5)` | polls with backoff, raises `TimeoutError` |
-| `download(id, fmt="markdown")` | `fmt` ∈ `markdown` \| `text` \| `json`; returns `(bytes, version)` |
-| `download_and_ack(id, fmt=..., sink=...)` | ACKs only after the sink returns |
-| `ack(id, result_version, action="release")` | `202` → `release_pending`; idempotent |
-| `cancel(id)` | queued/running only; a **completed** job returns `409` — releasing is ACK's job |
-| `parse_sync(path, ...)` | bounded synchronous parse (small files). The result is **not** released; it expires by TTL |
-| `events(id, last_event_id=0)` | SSE iterator; pass the last id to resume without replay |
-| `wait_released(id, timeout=60)` | until `retention_status` is `released`/`expired`; raises `TimeoutError` otherwise |
+All arguments after the first are keyword-only.
 
-`mode`: `fast` (xberg, fastest), `accurate` (docling-rs, structure), `auto` (router
-decides, may retry once on the accurate engine for a bad scan). Text formats
-(`txt/md/csv/tsv`) always use the native engine.
+| Method | Returns / notes |
+| --- | --- |
+| `create_job(path, *, mode="auto", device="auto", ttl_seconds=None, idempotency_key=None, priority=None)` | the job (`status="queued"`); `priority` 0..100 |
+| `get_job(job_id)` | job dict: `status`, `engine`, `result_version`, `retention_status`, `error_code`, `error_message` |
+| `wait(job_id, *, timeout=600, interval=0.5, max_interval=5)` | final job once `completed`/`failed`/`cancelled`; polls with backoff, raises `TimeoutError` |
+| `download(job_id, fmt="markdown")` | `(bytes, result_version)`; `fmt` ∈ `markdown` \| `text` \| `json` |
+| `download_and_ack(job_id, *, fmt="markdown", sink=None)` | the bytes; ACKs only after `sink` returns |
+| `ack(job_id, result_version, *, action="release", idempotency_key=None)` | `202` → `retention_status="release_pending"`; idempotent |
+| `cancel(job_id)` | queued/running only; a **completed** job returns `409` — releasing is ACK's job |
+| `parse_sync(path, *, mode="auto", device="auto", timeout_ms=30000)` | the Document IR, or `{"async": True, "job": {...}}` when the server answered `202` (still running: call `wait`). The result is **not** released; ACK it or let it expire |
+| `events(job_id, *, last_event_id=0)` | iterator of `{"event_id", "event_type", "data"}`; ends after `stream_end`; pass the last `event_id` to resume without replay |
+| `wait_released(job_id, *, timeout=60)` | job once `retention_status` is `released`/`expired`; raises `TimeoutError` otherwise |
+
+`mode`: `fast` (xberg, fastest), `accurate` (docling-rs, layout/structure; use it for
+multi-column PDFs), `auto` (router decides, may retry a bad scan once on the accurate
+engine). Text formats (`txt/md/csv/tsv`) always use the native engine.
 
 `device`: `auto` | `cpu` | `gpu_preferred` (may fall back) | `gpu_required` (fails
 `gpu_unavailable` unless the worker can prove GPU execution).
 
+## Reading the Document IR (`fmt="json"`)
+
+* `elements[]` is the reading order. `type`: `title`, `section` (with `level`),
+  `paragraph`, `list_item` (with `level` for nesting), `table` (`table_id` → `tables[]`),
+  `image`, `caption`, `code`, `header`, `footer`, …
+* `text` is plain. `rich_text`, when present, is the same content with CommonMark inline
+  markup (bold, italic, code, links); fall back to `text` when it is absent (always the
+  case with a 0.1.0 server, which predates the field).
+* Skip page furniture when you build your own text: `type` `header`/`footer`, or
+  `metadata.content_layer == "furniture"`. The `markdown`/`text` downloads already do.
+* `metadata` keys with a meaning (all added after 0.1.0): `content_layer="furniture"`,
+  `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`.
+  Unknown keys and element types may appear later; ignore them, do not fail.
+* `tables[].cells[]`: `row`, `col`, `row_span`, `col_span`, `text`; `header_rows`.
+* `warnings[].code` (`ocr_used`, `ocr_low_confidence`, `no_text_layer`, …) explain
+  degraded output; `routing` says which engine ran and why.
+
+Every field, the compatibility policy and the warning codes: [references/document-ir.md](references/document-ir.md).
+
 ## Errors
 
-`ParseDockError(status, code, message)`; `e.retryable` tells you whether a retry
-can help (the client already retries retryable errors with backoff, `max_retries=4`).
+`ParseDockError(status, code, message)`. `e.retryable` tells you whether a retry can help;
+the client already retries retryable errors with backoff (`max_retries=4`) and honours
+`Retry-After`. A network failure surfaces as `coordinator_unavailable`.
 
-| status | code | meaning |
-| --- | --- | --- |
-| 401 | `unauthorized` | bad or missing bearer token |
-| 404 | `not_found` | unknown job, another owner's job, or already deleted |
-| 409 | `conflict` | stale `result_version` on ACK, or ACK on a non-completed job |
-| 410 | `gone` | released/expired (tombstone window) |
-| 413 | `file_too_large` | over the deployment's upload cap |
-| 415 | `unsupported_type` | format not enabled |
-| 422 | `encrypted_file` | password-protected document |
-| 429 | `rate_limited` | retryable; back off |
-| 429 | `quota_exceeded` | **not** retryable: the owner's rolling quota is spent (`Retry-After` is still sent) |
-| 409 | `gpu_unavailable` | `gpu_required` without a proven GPU worker |
+| status | code | retryable | meaning |
+| --- | --- | --- | --- |
+| 400 | `invalid_request` | no | bad parameter or multipart body |
+| 401 | `unauthorized` | no | bad or missing bearer token |
+| 403 | `insufficient_scope` | no | key lacks `jobs:write` / `jobs:read` / `jobs:ack` |
+| 404 | `not_found` | no | unknown job, another owner's job, or already deleted |
+| 409 | `conflict` | no | stale `result_version` on ACK, ACK on a non-completed job, idempotency key reused |
+| 409 | `gpu_unavailable` | no | `gpu_required` without a proven GPU worker |
+| 410 | `gone` | no | released/expired (tombstone window) |
+| 413 | `file_too_large` | no | over the deployment's upload cap |
+| 415 | `unsupported_type` | no | format not enabled, or content does not match the extension |
+| 422 | `encrypted_file`, `malformed_file`, `page_limit_exceeded` | no | the document itself cannot be parsed |
+| 429 | `rate_limited` | yes | back off (`Retry-After`) |
+| 429 | `quota_exceeded` | **no** | the owner's rolling quota is spent (`Retry-After` is still sent) |
+| 503 | `coordinator_unavailable` | yes | the gateway cannot reach the coordinator |
+| 507 | `insufficient_storage` | yes | server disk below its watermark |
+
+A job that fails carries the same codes in `error_code` (plus `timeout`, `engine_*`,
+`expanded_too_large`, …). Every code: [references/error-codes.md](references/error-codes.md).
 
 ## CLI
 
 ```bash
-parsedock parse invoice.pdf --format markdown -o out.md \
-  --api http://localhost:8080 --token "$PARSEDOCK_TOKEN"
-parsedock parse scan.pdf --keep          # do not ACK; result stays downloadable
+export PARSEDOCK_TOKEN=…                 # or --token; --api defaults to http://127.0.0.1:8080
+parsedock parse invoice.pdf --format markdown -o out.md --api http://host:8080
+parsedock parse scan.pdf --mode accurate --keep    # do not ACK; result stays downloadable
+parsedock status job_06GRV…              # job as JSON
 ```
 
-Exit codes: `0` success, `1` server/parse error, `2` connection error.
+`parse` prints the document to stdout (or `-o`), the job id/version to stderr, and ACKs
+after writing unless `--keep`. Exit codes: `0` success, `1` the job ended
+`failed`/`cancelled`, `2` any request error (HTTP error such as 401/413, or no connection).
 
-## More
+## References (bundled with this skill)
 
-`docs/SDK.md` (contract, testing matrix), `api/openapi.yaml` (every field),
-`sdk/python/README.md` (wrapper vs generated client).
+* [references/document-ir.md](references/document-ir.md): every Document IR field.
+* [references/error-codes.md](references/error-codes.md): every error code, HTTP status and retry rule.
+* [references/openapi.yaml](references/openapi.yaml): the public HTTP API (OpenAPI 3).
+
+Project and changelog: https://github.com/luxiang0412/ParseDock. Runnable example: [Python example](https://github.com/luxiang0412/ParseDock/tree/main/examples/python).

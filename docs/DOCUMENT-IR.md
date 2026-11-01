@@ -102,7 +102,7 @@ markup-free text is identical); consumers then use `text`. It is never invented:
 from the engine's own Markdown (xberg, MinerU, native `.md` input) or from Docling's
 per-run `formatting`/`hyperlink` fields. Underline and sub/superscript have no CommonMark
 form and are dropped from `rich_text` (the words stay). `rich_text` counts against the same
-text budget as `text` (`Limits.MaxTextBytes`).
+text budget as `text`<!-- skill:omit --> (`Limits.MaxTextBytes`)<!-- /skill:omit -->.
 
 **Element metadata keys with a defined meaning** (all values are strings; unknown keys are
 passed through):
@@ -203,9 +203,11 @@ The IR is a public contract, so the rules for changing it are part of it:
   `reading_order` is a per-element copy for consumers that sort or filter, and the
   two must agree.
 
+<!-- skill:omit -->
 `internal/documentir/compat_test.go` enforces the client-side half of this: a
 document with an unknown element type, an unknown warning code and unknown fields
 must unmarshal and round-trip unchanged.
+<!-- /skill:omit -->
 
 ## 3. Rules the adapters must follow
 

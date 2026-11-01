@@ -16,7 +16,7 @@
 | 07 | Cluster-lite | **PARTIAL** | mTLS end-to-end (`pr07_tls.py` 8/8), load 8.8 jobs/s at 88 % of the parser ceiling; **two-host + real partition not measured** |
 | 08 | GPU worker | **PARTIAL** | image built and verified (`pr08_gpu.py` 4/4: MinerU on GPU, 18.8 GiB free VRAM reported, `gpu_required` completed), VRAM admission at routing **and** claim; **docling-serve CUDA unwired, external distribution blocked by L1** |
 | 09 | Observability | **DONE** (no OTel) | dependency-free Prometheus surface, RC-5 throttling aggregation, `SLO.md`, dashboard + 7 alerts |
-| 10 | SDKs | **PARTIAL** | Python package **live on PyPI** (`pip install parsedock`); Java client `com.luxiangs:parsedock-client` uploaded and validated in the Central Portal, **not yet published** (awaits the manual Publish, `autoPublish=false`); one version across artefacts; lifecycle + error-matrix + real-engine + Java integration tests; **`schemathesis` fuzzing and the async client not done** |
+| 10 | SDKs | **PARTIAL** | Python package **live on PyPI** (`pip install parsedock`); Java client `com.luxiangs:parsedock-client` **live on Maven Central** (0.1.0, 2026-10-31); one version across artefacts; lifecycle + error-matrix + real-engine + Java integration tests; **`schemathesis` fuzzing and the async client not done** |
 | 11 | Corpus & quality gate | **PARTIAL** | 110-document reproducible corpus, hash-checked, run-scoped gate (>2 % quality / >15 % latency); **no TEDS/APTED, no public licensed corpus** |
 | 12 | Runbooks | **DONE** | online backup (lease-aware, verified), measured restore drill (RTO 0.1 s, 7/7), `RUNBOOK.md` |
 

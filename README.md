@@ -132,9 +132,8 @@ pip install parsedock==0.1.0        # Python: lifecycle wrapper + `parsedock` CL
 </dependency>
 ```
 
-The Java 0.1.0 bundle is validated in the Central Portal and needs the one-click
-**Publish** before it resolves from Maven Central; until then
-`mvn -f sdk/java-generated/pom.xml install` gives you the same artifact locally.
+Both are published (PyPI, Maven Central). `mvn -f sdk/java-generated/pom.xml install`
+builds the client from the current checkout instead.
 
 Semantics that are easy to get wrong:
 
