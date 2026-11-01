@@ -50,6 +50,14 @@ class TestEvaluate(unittest.TestCase):
             self.assertFalse(ok, f"{value!r} must not count as success")
             self.assertIn("lifecycle", problems[0])
 
+    def test_docs_only_accepts_skipped_but_not_failure(self):
+        skipped = {name: "skipped" for name in ci_summary.REQUIRED}
+        self.assertTrue(ci_summary.evaluate(skipped, docs_only=True)[0])
+        self.assertFalse(ci_summary.evaluate(skipped)[0], "skipped must block without --docs-only")
+        for value in ("failure", "cancelled", ""):
+            ok, _ = ci_summary.evaluate(results(lifecycle=value), docs_only=True)
+            self.assertFalse(ok, f"{value!r} must block even for a docs-only change")
+
     def test_summary_job_is_not_self_referential(self):
         # The aggregator cannot report its own result; it must not require itself.
         self.assertNotIn("ci-summary", ci_summary.REQUIRED)
