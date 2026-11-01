@@ -5,9 +5,11 @@ description: "ParseDock Java client (`com.luxiangs:parsedock-client`): upload a 
 
 # ParseDock Java SDK
 
-Generated from `api/openapi.yaml` with OpenAPI Generator (`make sdk`; OkHttp + Gson). The
-client is checked in at `sdk/java-generated`; hand-written tests and examples live
-outside it so regeneration cannot delete them.
+Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added after the 0.1.0
+release are marked; against a 0.1.0 server they are simply absent.
+
+The client is generated from the public OpenAPI document with OpenAPI Generator
+(OkHttp + Gson): every endpoint is a method, every schema a model class.
 
 Published on Maven Central (Java 8+; CI builds and tests on JDK 17):
 
@@ -19,8 +21,7 @@ Published on Maven Central (Java 8+; CI builds and tests on JDK 17):
 </dependency>
 ```
 
-Gradle: `implementation("com.luxiangs:parsedock-client:0.1.0")`. To build the client
-from a checkout instead: `mvn -f sdk/java-generated/pom.xml -DskipTests install`.
+Gradle: `implementation("com.luxiangs:parsedock-client:0.1.0")`.
 
 The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
 (upload, sync parse), `jobs:read` (status, download, events), `jobs:ack` (ack, cancel).
@@ -132,7 +133,7 @@ try (okhttp3.Response r = call.execute()) {
   `getColSpan()`, `getText()`; `Table#getHeaderRows()`.
 * `getWarnings()` codes explain degraded output; `getRouting()` says which engine ran.
 
-Full reference: `docs/DOCUMENT-IR.md`.
+Every field, the compatibility policy and the warning codes: [references/document-ir.md](references/document-ir.md).
 
 ## Errors
 
@@ -158,7 +159,7 @@ server sent one, `e.getResponseBody()` for the stable `{"error":{"code":...}}`.
 
 The generated client has **no retry policy**: back off on the retryable rows and on
 `500`/`502`/`504` (`Retry-After` when present), never on the others. A failed job carries
-the same codes in `getErrorCode()`; the full table is `docs/ERROR-CODES.md`.
+the same codes in `getErrorCode()`. Every code: [references/error-codes.md](references/error-codes.md).
 
 ## Notes on the model
 
@@ -166,9 +167,8 @@ the same codes in `getErrorCode()`; the full table is `docs/ERROR-CODES.md`.
   `CANCELLED` (and `UNKNOWN_DEFAULT_OPEN_API` for a value this client does not know).
 * `getRetentionStatus()`: `ACTIVE`, `RELEASE_PENDING`, `EXPIRY_PENDING`, `DELETING`,
   `RELEASED`, `EXPIRED`.
-* `DocumentIR#getSchemaVersion()` is an enum (`DOC_IR_0_1`); a spec change that
-  renames it will break compilation rather than at runtime — regenerate after
-  pulling.
+* `DocumentIR#getSchemaVersion()` is an enum (`DOC_IR_0_1`): a future breaking IR version
+  fails at deserialisation instead of being misread.
 * `DocumentIRRouting#getActualDevice()` is `cpu`, `gpu` or `unknown` (string, not
   an enum) — `unknown` means the execution device could not be proven.
 * `mode`: `fast` (xberg), `accurate` (docling-rs; use it for multi-column PDFs), `auto`
@@ -177,18 +177,18 @@ the same codes in `getErrorCode()`; the full table is `docs/ERROR-CODES.md`.
 
 ## Testing your integration
 
-`sdk/java-client-test` is a Maven module with a JUnit test that runs the flow
-above against a live server; copy it as a starting point.
+Run the lifecycle above against a real ParseDock instance (the server's `mock` engine
+makes it fast and deterministic) and assert, at minimum: the job completes, both
+downloads parse, an ACK with a wrong `result_version` returns `409`, and the job returns
+`410` after a correct ACK. Do not stub the server: the ACK/TTL semantics are the part
+worth testing.
 
-```bash
-mvn -f sdk/java-client-test/pom.xml test \
-  -Dparsedock.base=http://localhost:8080 -Dparsedock.token=$PARSEDOCK_TOKEN \
-  -Dparsedock.fixture=path/to/file.pdf
-```
+## References (bundled with this skill)
 
-`examples/java` (`make run`) is a minimal runnable project.
+* [references/document-ir.md](references/document-ir.md): every Document IR field.
+* [references/error-codes.md](references/error-codes.md): every error code, HTTP status and retry rule.
+* [references/openapi.yaml](references/openapi.yaml): the public HTTP API; the generated
+  method and model names follow its `operationId`s and schema names.
 
-## More
-
-`docs/SDK.md` (contract + testing matrix), `docs/DOCUMENT-IR.md`, `docs/ERROR-CODES.md`,
-`api/openapi.yaml` (every field), `sdk/java-generated/README.md` (generated reference).
+Project and changelog: https://github.com/luxiang0412/ParseDock. Runnable example: [Java example](https://github.com/luxiang0412/ParseDock/tree/main/examples/java);
+a JUnit integration test to copy: [Java client test](https://github.com/luxiang0412/ParseDock/tree/main/sdk/java-client-test).

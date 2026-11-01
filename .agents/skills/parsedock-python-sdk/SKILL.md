@@ -5,13 +5,16 @@ description: "ParseDock Python SDK (`parsedock_sdk`) and the `parsedock` CLI: up
 
 # ParseDock Python SDK
 
+Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added after the 0.1.0
+release are marked; against a 0.1.0 server they are simply absent.
+
 Two things live in one package (`pip install parsedock`):
 
 * `parsedock_sdk` — hand-written lifecycle wrapper, **stdlib only** (`ParseDockClient`).
 * `parsedock` — CLI (`parsedock parse FILE`, `parsedock status JOB_ID`).
 
 ```bash
-pip install parsedock==0.1.0      # or: pip install -e sdk/python (repo checkout)
+pip install parsedock==0.1.0
 parsedock --version               # prints "parsedock 0.1.0"
 ```
 
@@ -95,7 +98,7 @@ engine). Text formats (`txt/md/csv/tsv`) always use the native engine.
 * `warnings[].code` (`ocr_used`, `ocr_low_confidence`, `no_text_layer`, …) explain
   degraded output; `routing` says which engine ran and why.
 
-Full reference: `docs/DOCUMENT-IR.md`.
+Every field, the compatibility policy and the warning codes: [references/document-ir.md](references/document-ir.md).
 
 ## Errors
 
@@ -121,7 +124,7 @@ the client already retries retryable errors with backoff (`max_retries=4`) and h
 | 507 | `insufficient_storage` | yes | server disk below its watermark |
 
 A job that fails carries the same codes in `error_code` (plus `timeout`, `engine_*`,
-`expanded_too_large`, …). The full table is `docs/ERROR-CODES.md`.
+`expanded_too_large`, …). Every code: [references/error-codes.md](references/error-codes.md).
 
 ## CLI
 
@@ -136,7 +139,10 @@ parsedock status job_06GRV…              # job as JSON
 after writing unless `--keep`. Exit codes: `0` success, `1` the job ended
 `failed`/`cancelled`, `2` any request error (HTTP error such as 401/413, or no connection).
 
-## More
+## References (bundled with this skill)
 
-`docs/SDK.md` (contract, testing matrix), `docs/DOCUMENT-IR.md` (every IR field),
-`docs/ERROR-CODES.md`, `api/openapi.yaml`, `examples/python` (`make run`).
+* [references/document-ir.md](references/document-ir.md): every Document IR field.
+* [references/error-codes.md](references/error-codes.md): every error code, HTTP status and retry rule.
+* [references/openapi.yaml](references/openapi.yaml): the public HTTP API (OpenAPI 3).
+
+Project and changelog: https://github.com/luxiang0412/ParseDock. Runnable example: [Python example](https://github.com/luxiang0412/ParseDock/tree/main/examples/python).

@@ -47,8 +47,8 @@ job. `wait_released` raises `TimeoutError` rather than reporting a release that
 has not happened, and `download_and_ack(sink=...)` requires the sink to have
 *durably* stored the bytes when it returns (a buffered write that is never closed
 does not qualify).
-`docs/SDK.md` §Errors lists the codes, `.agents/skills/parsedock-python-sdk/SKILL.md` is a
-condensed version for agent use.
+`docs/ERROR-CODES.md` lists the codes; `.agents/skills/parsedock-python-sdk/` is a
+condensed version for agent use (see "Agent skills" below).
 
 ### Java
 
@@ -95,7 +95,36 @@ and should treat any status other than `COMPLETED` (including `UNKNOWN_DEFAULT_O
 a status this client version does not know) as "no result". `downloadResult` holds the
 whole body in a `String`; stream large results with `downloadResultCall(...).execute()`
 (the skill has the snippet). `sdk/java-client-test` is a worked example (JUnit, runs against a
-live server); `.agents/skills/parsedock-java-sdk/SKILL.md` is the condensed version.
+live server):
+
+```bash
+mvn -f sdk/java-client-test/pom.xml test \
+  -Dparsedock.base=http://localhost:8080 -Dparsedock.token=$PARSEDOCK_TOKEN \
+  -Dparsedock.fixture=path/to/file.pdf
+```
+
+`.agents/skills/parsedock-java-sdk/` is the condensed version for agent use.
+
+## Agent skills
+
+`.agents/skills/parsedock-python-sdk/` and `.agents/skills/parsedock-java-sdk/` are written
+for projects that *call* a deployed ParseDock, and each directory is self-contained: copy
+it into another repository's skills folder (for example `.claude/skills/`) and it works
+offline. `SKILL.md` links only into its own `references/`:
+
+| File | Generated from |
+| --- | --- |
+| `references/error-codes.md` | `docs/ERROR-CODES.md` (the code table, without the internal "Origin" column) |
+| `references/document-ir.md` | `docs/DOCUMENT-IR.md` §2 and §2a |
+| `references/openapi.yaml` | `api/openapi.yaml` |
+
+`python3 scripts/sync_skills.py` regenerates them; `--check` (static CI phase) fails when
+they are stale, when a `SKILL.md` names a repository path or make target, or when its
+"Applies to ParseDock API `X.Y`" line disagrees with `api/openapi.yaml`. Text in the
+source documents between `<!-- skill:omit -->` and `<!-- /skill:omit -->` is
+repository-internal and stays out of the copies. Building or testing the SDKs from this
+checkout (`make sdk`, `mvn -f sdk/java-generated/pom.xml install`, `sdk/java-client-test`)
+is documented here, not in the skills.
 
 ## Runnable examples
 
