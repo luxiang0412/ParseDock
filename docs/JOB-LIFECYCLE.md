@@ -179,6 +179,8 @@ lease, so a transient outage costs one attempt at most instead of failing the jo
 | ACK and TTL together | single final state via compare-and-set | T07 |
 | repeated download before ACK | allowed (each gets a lease) | T03/T05 |
 | repeated ACK | 202, idempotent | T06 |
+| upload retried after a lost response (same `Idempotency-Key`) | `200` with the original job; nothing new is created | `TestIdempotencyKey`, SDK lifecycle test |
+| `Idempotency-Key` reused for another file, `mode` or `device` | `422 idempotency_key_mismatch`; nothing is created (also when the requests race) | `TestIdempotencyKeyFingerprint`, `TestIdempotencyKeyFingerprintConcurrent` |
 | Coordinator `SIGKILL` during cleanup | restart resumes `deleting`, files removed | T08 (3 jobs, 6 files left at kill, all gone after restart) |
 | Worker `SIGKILL` mid-task | lease expires, job requeued, attempt 2 succeeds; stale token rejected | T09 (attempts: expired → succeeded; stale result/heartbeat `409`) |
 | Client cancels a **running** job | attempt marked `cancelled`; the worker's next heartbeat returns `409 cancelled`, it aborts the engine and stops without reporting; the job stays `cancelled`; a result produced after the cancel is discarded | `TestCancelledAttemptFinalisation`, `TestCancelRecordsRequestTime`, T17 |

@@ -149,6 +149,13 @@ curl -sS --cacert ca.crt --cert worker.crt --key worker.key \
 Adopting or rotating the worker token: `docs/DEPLOYMENT.md` §4 "Internal and worker
 tokens" (coordinator first; the worker routes accept both tokens during the roll).
 
+A worker that exits right after start with `paddle-ocr models are not available offline`
+never registers. It runs with `--xberg-ocr-backend paddle-ocr` and its `HF_HUB_CACHE` lacks a
+model (the message names the file). Point `HF_HUB_CACHE`/`HF_HOME` at a seeded cache (the CPU
+worker image ships `/opt/xberg-models`), or seed one with
+`xberg cache seed-classic-ocr --cache-dir "$HF_HUB_CACHE"`; `docparse --check --role worker …`
+must report `"engine_models": {"xberg": "ok"}` before the restart.
+
 ### 3.4 Cleanup failing (`ParseDockCleanupFailing`)
 
 ```bash

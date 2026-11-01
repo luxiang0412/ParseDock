@@ -43,7 +43,8 @@ status with `rate_limited` but is **not** retryable — the quota only resets wh
 its rolling window passes — and the server's `Retry-After` is honoured.
 `create_job` always sends an `Idempotency-Key` (yours, or a generated one), so a
 retried upload whose first response was lost replays instead of creating a second
-job. `wait_released` raises `TimeoutError` rather than reporting a release that
+job. A key reused for a different file, `mode` or `device` is refused with
+`422 idempotency_key_mismatch` instead of replaying another document's job. `wait_released` raises `TimeoutError` rather than reporting a release that
 has not happened, and `download_and_ack(sink=...)` requires the sink to have
 *durably* stored the bytes when it returns (a buffered write that is never closed
 does not qualify).

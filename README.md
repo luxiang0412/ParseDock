@@ -80,7 +80,8 @@ how to install them):
 ```
 
 `./runtime/bin/docparse --check` prints host facts, the effective config and the
-engine routing table as JSON.
+engine routing table as JSON; for a worker it also verifies engine model files offline
+(`engine_models`) and exits non-zero when one is missing.
 
 ## Quickstart (Docker Compose, CPU only)
 
