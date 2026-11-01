@@ -548,6 +548,11 @@ func runWorker(ctx context.Context, f *flags, log *slog.Logger) error {
 			log.Info("engine ready", "engine", e.Name(), "version", e.Version(), "device", e.Device())
 		}
 	}
+	// Missing OCR models are fatal, unlike a failed version probe: the worker would claim
+	// scanned documents and fail every one of them (or try to download on an offline host).
+	if err := probeModels(ctx, reg.All(), func(name string) { log.Info("engine models ready", "engine", name) }); err != nil {
+		return err
+	}
 	gpus, _ := sysinfo.DetectGPU(ctx)
 	cfg := worker.Config{
 		CoordinatorURL:    f.coordinatorBaseURL(),
@@ -827,9 +832,51 @@ func printCheck(f *flags, cfg coordinator.Config) error {
 		},
 		"routing_table": cfg.Engines,
 	}
+	// Model files are checked only where the role runs engines; a failure is printed and
+	// also makes --check exit non-zero, so a deployment script can gate on it.
+	var modelErr error
+	if f.role == "worker" || f.role == "standalone" {
+		models := map[string]string{}
+		for _, e := range buildRegistry(f, f.deviceType).All() {
+			p, ok := e.(engines.ModelProber)
+			if !ok {
+				continue
+			}
+			checked, err := p.ProbeModels(context.Background())
+			switch {
+			case err != nil:
+				models[e.Name()] = err.Error()
+				modelErr = fmt.Errorf("engine %s: %w", e.Name(), err)
+			case checked:
+				models[e.Name()] = "ok"
+			}
+		}
+		out["engine_models"] = models
+	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	return enc.Encode(out)
+	if err := enc.Encode(out); err != nil {
+		return err
+	}
+	return modelErr
+}
+
+// probeModels runs ProbeModels on every engine that has model files to check.
+func probeModels(ctx context.Context, all []engines.Engine, ready func(name string)) error {
+	for _, e := range all {
+		p, ok := e.(engines.ModelProber)
+		if !ok {
+			continue
+		}
+		checked, err := p.ProbeModels(ctx)
+		if err != nil {
+			return fmt.Errorf("engine %s: %w", e.Name(), err)
+		}
+		if checked {
+			ready(e.Name())
+		}
+	}
+	return nil
 }
 
 func serve(ctx context.Context, srv *http.Server, log *slog.Logger) error {

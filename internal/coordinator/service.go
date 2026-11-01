@@ -167,7 +167,10 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 	}
 	if idemKey != "" {
 		if existing, err := s.findByIdemKey(ctx, p.OwnerID, idemKey); err == nil && existing != nil {
-			writer.Abort() // the staged bytes are a duplicate
+			writer.Abort() // the staged bytes are a duplicate, or the request is refused below
+			if err := sameIdemRequest(existing, writer.SHA256(), mode, device); err != nil {
+				return nil, false, err
+			}
 			return existing, false, nil
 		}
 	}
@@ -284,6 +287,9 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		_ = s.Store.DeleteJob(jobID)
 		if isUniqueViolation(err) && job.IdempotencyKey != "" {
 			if existing, ferr := s.findByIdemKey(ctx, p.OwnerID, job.IdempotencyKey); ferr == nil && existing != nil {
+				if err := sameIdemRequest(existing, job.InputSHA256, job.RequestedMode, job.RequestedDevice); err != nil {
+					return nil, false, err
+				}
 				return existing, false, nil
 			}
 		}
@@ -480,6 +486,18 @@ func (s *Service) countGPUWorkers(ctx context.Context, engine string, minVRAMMB 
 		}
 	}
 	return n, rows.Err()
+}
+
+// sameIdemRequest decides whether a request that reuses an idempotency key is a replay of
+// the job that owns the key. Only what changes the result counts: the input bytes, mode and
+// device. ttl_seconds and priority do not, so a retry that adjusts them still replays.
+// Without this check a mistyped key silently answered with another document's job.
+func sameIdemRequest(existing *jobs.Job, inputSHA256 string, mode, device string) error {
+	if existing.InputSHA256 == inputSHA256 && existing.RequestedMode == mode && existing.RequestedDevice == device {
+		return nil
+	}
+	return NewError(422, jobs.ErrIdempotencyMismatch,
+		"idempotency key already used for a different request (input, mode or device differ)")
 }
 
 func (s *Service) findByIdemKey(ctx context.Context, owner, key string) (*jobs.Job, error) {

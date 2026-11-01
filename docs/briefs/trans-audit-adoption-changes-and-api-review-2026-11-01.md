@@ -66,6 +66,7 @@ trans-audit 时，这件事是否仍值得做**；能用现有机制解决的，
 - `/v1/parse` 与 `/v1/jobs` 共用 `stageUpload`，实现已接受 `Idempotency-Key`、`ttl_seconds`、`priority`；
   spec 里只有 `mode`、`device`、`timeout_ms`。
 - `POST /v1/jobs/{id}/ack` 已接受 `If-Match` 作为 `result_version`（`internal/coordinator/http.go:281`），spec 未声明。
+  只在 `ackJob` 的描述里说明，不加成 header 参数：加参数会改变生成 Java SDK 的 `ackJob` 方法签名，打破现有调用。
 - `info.description` 的格式列表缺少 doc/xls/ppt/html（以及 dot/xlt/pot/xlsm），应与 `internal/storage/sniff.go` 的白名单同步。
 
 改完需跑 `make sdk`、`python3 scripts/sync_skills.py`、`npm run api:types`。
@@ -74,8 +75,9 @@ trans-audit 时，这件事是否仍值得做**；能用现有机制解决的，
 
 - 在部署文档里给一份推荐配置：`--xberg-ocr-backend=paddle-ocr`（已存在，`cmd/docparse/main.go:202`）、
   模型预置路径、`PARSEDOCK_MAX_UPLOAD_MB` / `PARSEDOCK_MAX_PAGES` 的建议值。
-- `--check` 与 `readyz`：启用 paddle-ocr 时，检查所选后端实际需要的模型文件是否存在（不只检查目录），
-  不把「网络可达」当作就绪条件。目前只校验后端名（`internal/engines/xberg.go:79`）。具体模型布局未核实。
+- `--check` 与 worker 启动：启用 paddle-ocr 时，以 `HF_HUB_OFFLINE=1` 对内置图片跑一次真实 OCR，
+  模型缺失则报出缺的文件；不按文件路径猜测（xberg 模型清单有 165 个文件，paddle-ocr 只用其中一部分），
+  也不把「网络可达」当作就绪条件。worker 没有 `readyz`，所以改为启动即失败。
 
 ### 3.2 接着做
 
@@ -161,7 +163,8 @@ worker 镜像带有 `libx265`（GPL-2.0），`docs/LICENSE-REVIEW.md` 标为 BLO
 
 版本号按实际的契约影响来定，不按事先分好的组打包。
 
-- **补丁版本（0.1.x）**：只放不改变契约的修正，即 3.1 中的 spec 补全和部署文档。
+- **补丁版本（0.1.x）**：只放不改变契约的修正，例如部署文档。注意：给 `/v1/parse` 补 spec 参数会让
+  生成 SDK 的 `parseSync` 多出参数，Java 调用方需要改代码，所以 3.1 的 spec 补全不是纯补丁级改动。
 - **下一个小版本（0.2.0）**：
   - 幂等键指纹（行为变化：`200` 改为 `422`，CHANGELOG 写明）；
   - 编号 / 备注修复（3.2）；
@@ -170,7 +173,7 @@ worker 镜像带有 `libx265`（GPL-2.0），`docs/LICENSE-REVIEW.md` 标为 BLO
 - **破坏性清理**（原 4.2-4 删除 query 参数）：先在一个版本中标记废弃并写明迁移方式，再在之后的小版本删除。
 - **许可证 L1**：与版本号无关，首次以交付包形式部署到客户环境之前必须解决（见 3.5）。
 
-第 3–5 节按通用服务的定位修订过（2026-11-01），修订依据为对照代码的复核，以及另一位评审者（Codex）的独立评审与讨论。
+3.1 的三项已在同一分支实现（见 `docs/CHANGELOG.md` Unreleased）。第 3–5 节按通用服务的定位修订过（2026-11-01），修订依据为对照代码的复核，以及另一位评审者（Codex）的独立评审与讨论。
 
 ## 6. 附录：复现第 2 节
 

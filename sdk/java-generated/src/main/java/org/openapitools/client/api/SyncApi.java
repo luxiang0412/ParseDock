@@ -1,6 +1,6 @@
 /*
  * ParseDock
- * ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown, PNG/JPEG/WebP) into a structured Document IR plus derived Markdown/Text.  Lifecycle in one paragraph: `POST /v1/jobs` uploads and queues a job and returns `202`; a worker parses it; the result is downloadable while `retention_status=active`. `POST /v1/jobs/{id}/ack` records the client's intent to release the result and returns `202` (`release_pending`); deletion is asynchronous. Without an ACK the result expires at `result_expires_at`. After release/expiry, downloads return `410 Gone` for a short tombstone window and `404` afterwards.  **Never auto-ACK.** A `200` on a download means the bytes left the server, not that the client consumed them.  Ownership: every job belongs to the owner derived from the bearer token. A job that belongs to somebody else is indistinguishable from a missing job (`404`) to avoid existence leaks. 
+ * ParseDock converts documents (PDF; DOCX, XLSX/XLSM, PPTX; legacy DOC/DOT, XLS/XLT, PPT/POT; HTML; CSV/TSV, TXT/Markdown; PNG/JPEG/WebP) into a structured Document IR plus derived Markdown/Text. Which formats a deployment accepts depends on the engines it runs.  Lifecycle in one paragraph: `POST /v1/jobs` uploads and queues a job and returns `202`; a worker parses it; the result is downloadable while `retention_status=active`. `POST /v1/jobs/{id}/ack` records the client's intent to release the result and returns `202` (`release_pending`); deletion is asynchronous. Without an ACK the result expires at `result_expires_at`. After release/expiry, downloads return `410 Gone` for a short tombstone window and `404` afterwards.  **Never auto-ACK.** A `200` on a download means the bytes left the server, not that the client consumed them.  Ownership: every job belongs to the owner derived from the bearer token. A job that belongs to somebody else is indistinguishable from a missing job (`404`) to avoid existence leaks. 
  *
  * The version of the OpenAPI document: 0.1.1
  * 
@@ -80,6 +80,9 @@ public class SyncApi {
      * @param _file  (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Same as on &#x60;POST /v1/jobs&#x60;. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param timeoutMs  (optional, default to 30000)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
@@ -93,15 +96,15 @@ public class SyncApi {
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used (use &#x60;/v1/jobs&#x60; for async access); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used for this same request (use &#x60;/v1/jobs&#x60; for async access to that job); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later. </td><td>  -  </td></tr>
      </table>
      */
-    public okhttp3.Call parseSyncCall(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer timeoutMs, final ApiCallback _callback) throws ApiException {
+    public okhttp3.Call parseSyncCall(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer ttlSeconds, @javax.annotation.Nullable Integer priority, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable Integer timeoutMs, final ApiCallback _callback) throws ApiException {
         String basePath = null;
         // Operation Servers
         String[] localBasePaths = new String[] {  };
@@ -138,6 +141,14 @@ public class SyncApi {
             localVarQueryParams.addAll(localVarApiClient.parameterToPair("device", device));
         }
 
+        if (ttlSeconds != null) {
+            localVarQueryParams.addAll(localVarApiClient.parameterToPair("ttl_seconds", ttlSeconds));
+        }
+
+        if (priority != null) {
+            localVarQueryParams.addAll(localVarApiClient.parameterToPair("priority", priority));
+        }
+
         if (timeoutMs != null) {
             localVarQueryParams.addAll(localVarApiClient.parameterToPair("timeout_ms", timeoutMs));
         }
@@ -158,18 +169,23 @@ public class SyncApi {
             localVarHeaderParams.put("Content-Type", localVarContentType);
         }
 
+        if (idempotencyKey != null) {
+            localVarHeaderParams.put("Idempotency-Key", localVarApiClient.parameterToString(idempotencyKey));
+        }
+
+
         String[] localVarAuthNames = new String[] { "apiKeyAuth", "bearerAuth" };
         return localVarApiClient.buildCall(basePath, localVarPath, "POST", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarCookieParams, localVarFormParams, localVarAuthNames, _callback);
     }
 
     @SuppressWarnings("rawtypes")
-    private okhttp3.Call parseSyncValidateBeforeCall(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer timeoutMs, final ApiCallback _callback) throws ApiException {
+    private okhttp3.Call parseSyncValidateBeforeCall(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer ttlSeconds, @javax.annotation.Nullable Integer priority, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable Integer timeoutMs, final ApiCallback _callback) throws ApiException {
         // verify the required parameter '_file' is set
         if (_file == null) {
             throw new ApiException("Missing the required parameter '_file' when calling parseSync(Async)");
         }
 
-        return parseSyncCall(_file, mode, device, timeoutMs, _callback);
+        return parseSyncCall(_file, mode, device, ttlSeconds, priority, idempotencyKey, timeoutMs, _callback);
 
     }
 
@@ -179,6 +195,9 @@ public class SyncApi {
      * @param _file  (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Same as on &#x60;POST /v1/jobs&#x60;. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param timeoutMs  (optional, default to 30000)
      * @return DocumentIR
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
@@ -191,16 +210,16 @@ public class SyncApi {
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used (use &#x60;/v1/jobs&#x60; for async access); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used for this same request (use &#x60;/v1/jobs&#x60; for async access to that job); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later. </td><td>  -  </td></tr>
      </table>
      */
-    public DocumentIR parseSync(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer timeoutMs) throws ApiException {
-        ApiResponse<DocumentIR> localVarResp = parseSyncWithHttpInfo(_file, mode, device, timeoutMs);
+    public DocumentIR parseSync(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer ttlSeconds, @javax.annotation.Nullable Integer priority, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable Integer timeoutMs) throws ApiException {
+        ApiResponse<DocumentIR> localVarResp = parseSyncWithHttpInfo(_file, mode, device, ttlSeconds, priority, idempotencyKey, timeoutMs);
         return localVarResp.getData();
     }
 
@@ -210,6 +229,9 @@ public class SyncApi {
      * @param _file  (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Same as on &#x60;POST /v1/jobs&#x60;. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param timeoutMs  (optional, default to 30000)
      * @return ApiResponse&lt;DocumentIR&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
@@ -222,16 +244,16 @@ public class SyncApi {
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used (use &#x60;/v1/jobs&#x60; for async access); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used for this same request (use &#x60;/v1/jobs&#x60; for async access to that job); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later. </td><td>  -  </td></tr>
      </table>
      */
-    public ApiResponse<DocumentIR> parseSyncWithHttpInfo(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer timeoutMs) throws ApiException {
-        okhttp3.Call localVarCall = parseSyncValidateBeforeCall(_file, mode, device, timeoutMs, null);
+    public ApiResponse<DocumentIR> parseSyncWithHttpInfo(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer ttlSeconds, @javax.annotation.Nullable Integer priority, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable Integer timeoutMs) throws ApiException {
+        okhttp3.Call localVarCall = parseSyncValidateBeforeCall(_file, mode, device, ttlSeconds, priority, idempotencyKey, timeoutMs, null);
         Type localVarReturnType = new TypeToken<DocumentIR>(){}.getType();
         return localVarApiClient.execute(localVarCall, localVarReturnType);
     }
@@ -242,6 +264,9 @@ public class SyncApi {
      * @param _file  (required)
      * @param mode A **policy preference, not a per-document accuracy guarantee**:  * &#x60;fast&#x60; — fastest engine that can read the format (xberg for PDF/Office). * &#x60;accurate&#x60; — requires an engine that declares structured output   (docling-rs: reading order, bbox, table spans, sheet names). * &#x60;auto&#x60; — router picks by priority and records why.  Text formats (&#x60;txt&#x60;, &#x60;md&#x60;, &#x60;csv&#x60;, &#x60;tsv&#x60;) always use the native engine in every mode: it is orders of magnitude faster and decodes GB18030/UTF-16 correctly, which the ML engines do not. Measured counter-examples where &#x60;accurate&#x60; is *not* more accurate (OCR-heavy scans, DOCX/XLSX text) are documented in &#x60;docs/ENGINE-BENCHMARK.md&#x60;; the engine, version and reason are always recorded in the job and the IR.  (optional, default to auto)
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
+     * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
+     * @param priority Same as on &#x60;POST /v1/jobs&#x60;. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param timeoutMs  (optional, default to 30000)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
@@ -255,17 +280,17 @@ public class SyncApi {
         <tr><td> 400 </td><td> Invalid parameters. </td><td>  -  </td></tr>
         <tr><td> 401 </td><td> Missing/invalid token. </td><td>  -  </td></tr>
         <tr><td> 403 </td><td> The API key is valid but does not grant the scope this operation needs. </td><td>  -  </td></tr>
-        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used (use &#x60;/v1/jobs&#x60; for async access); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
+        <tr><td> 409 </td><td> &#x60;cancelled&#x60; — the job was cancelled before it finished; &#x60;conflict&#x60; — the idempotency key was already used for this same request (use &#x60;/v1/jobs&#x60; for async access to that job); &#x60;gpu_unavailable&#x60; — &#x60;device&#x3D;gpu_required&#x60; with no GPU worker.  </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Parse failed, or the document is malformed, encrypted or over a limit, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later. </td><td>  -  </td></tr>
      </table>
      */
-    public okhttp3.Call parseSyncAsync(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer timeoutMs, final ApiCallback<DocumentIR> _callback) throws ApiException {
+    public okhttp3.Call parseSyncAsync(@javax.annotation.Nonnull File _file, @javax.annotation.Nullable String mode, @javax.annotation.Nullable String device, @javax.annotation.Nullable Integer ttlSeconds, @javax.annotation.Nullable Integer priority, @javax.annotation.Nullable String idempotencyKey, @javax.annotation.Nullable Integer timeoutMs, final ApiCallback<DocumentIR> _callback) throws ApiException {
 
-        okhttp3.Call localVarCall = parseSyncValidateBeforeCall(_file, mode, device, timeoutMs, _callback);
+        okhttp3.Call localVarCall = parseSyncValidateBeforeCall(_file, mode, device, ttlSeconds, priority, idempotencyKey, timeoutMs, _callback);
         Type localVarReturnType = new TypeToken<DocumentIR>(){}.getType();
         localVarApiClient.executeAsync(localVarCall, localVarReturnType, _callback);
         return localVarCall;

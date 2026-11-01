@@ -186,7 +186,7 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | `--xberg-ocr-backend` (worker image) | `PARSEDOCK_XBERG_OCR_BACKEND` | ` ` (unset → tesseract) | OCR backend for xberg: leave unset for today's behaviour, or set `paddle-ocr` (PP-OCRv6 small, in-process, no extra dependency) on a Chinese corpus. Measured on 300 dpi scans: `paddle-ocr` reads Chinese at CER 0.000 and English at 0.000, where tesseract is 0.075/0.453 with the wrong language, at ~3x the latency (1.25 s vs 0.41 s per 2-page scan) and ~3.4x the memory. `eng`, `en`, `chi_sim`, `zh` and `ch` all map to the right recognition family; an unknown name fails at startup rather than on the first document. `--ocr-backend-options` is deliberately **not** exposed: xberg 1.3.10 silently ignores unknown option keys, so it cannot be verified. |
 | `--xberg-ocr-lang` | `PARSEDOCK_XBERG_OCR_LANG` | `eng` | OCR language passed to the engine. **Match the corpus**: on the scanned Chinese fixture `eng` produced garbage while `zh` reproduced the page exactly ("采购订单 / 供应商：华北物流有限公司 / 金额：人民币128,400元"), and `zh` degrades English scans ("Supler. Nwn Lic"). A combined value (`chi_sim+eng`) is rejected by xberg 1.3.10. Run one worker per language, or point the whole deployment at the one that dominates. A wrong language is only *partly* detected: a Chinese page read with `eng` loses OCR confidence (0.38–0.51) and `mode=auto` retries it once on the accurate engine, but an English page read with `chi_sim` stays confident (0.87) and is not retried (measured 3 % CER loss). With `--xberg-ocr-backend paddle-ocr` the language choice stops mattering for Chinese/English. |
-| `HF_HUB_CACHE` (worker image) | – | `/opt/xberg-models` | where the worker image seeds xberg's PaddleOCR/Sceptre models at build time (652 MiB). `paddle-ocr` is the only backend that needs model files beyond the tesseract tessdata; without the seed it would download them at run time, which fails on an internal worker network. |
+| `HF_HUB_CACHE` (worker image) | – | `/opt/xberg-models` | where the worker image seeds xberg's PaddleOCR/Sceptre models at build time (652 MiB). `paddle-ocr` is the only backend that needs model files beyond the tesseract tessdata; without the seed it would download them at run time, which fails on an internal worker network. With `paddle-ocr` selected, the worker runs one OCR pass over a built-in image with `HF_HUB_OFFLINE=1` at startup and **refuses to start** when a model is missing (the error names the file); seed a host install with `xberg cache seed-classic-ocr --cache-dir "$HF_HUB_CACHE"` (652 MiB) and export the same `HF_HUB_CACHE`/`HF_HOME` for the worker. |
 | `--xberg-timeout` / `--docling-rs-timeout` / `--mineru-timeout` | `PARSEDOCK_*_TIMEOUT` | `10m` / `15m` / `30m` | per-document engine ceiling, capped by `--max-parse-minutes` and the job deadline |
 | `--engine-max-rss-mb` | `PARSEDOCK_ENGINE_MAX_RSS_MB` | `0` (off) | kill an engine process above this RSS and fail the task with retryable `engine_out_of_memory`; cgroups remain the deployment-level limit |
 | `--device-type` | `PARSEDOCK_DEVICE_TYPE` | `cpu` | advertised device (`cpu`/`gpu`/`cuda`/`mps`); a GPU worker is capped to one task at a time. The label is an operator statement: since PR-D1 a `gpu_required` job additionally needs **per-task proof** that the GPU was used, otherwise it fails with `gpu_unavailable` (see `docs/RUNBOOK.md` → "GPU jobs: reading the evidence"). Registration reports `gpu_inference_verified: false`, so a visible device is never presented as a verified capability. |
@@ -213,11 +213,29 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--version` | – | – | print the service and API versions as JSON and exit |
 
 `docparse --check` prints host facts, the effective config and the routing table as
-JSON — useful as a deployment smoke test and for support tickets.
+JSON — useful as a deployment smoke test and for support tickets. For the `worker` and
+`standalone` roles it also reports `engine_models`: engines whose configuration needs model
+files run one offline pass and report `ok` or the missing file, and a failure makes
+`--check` exit non-zero. Today that is xberg with `--xberg-ocr-backend paddle-ocr`; with
+tesseract (the default) nothing is checked and the map is empty.
 
 A malformed numeric or duration environment value (`PARSEDOCK_MAX_UPLOAD_MB=64M`,
 `PARSEDOCK_HEARTBEAT=10`) is a startup error naming the variable (exit code 2); it used
 to fall back to the default silently.
+
+### Offline and Chinese-language deployments
+
+Checklist for an internal network without Internet access and a mostly Chinese corpus.
+Every item uses an existing setting; nothing here changes the defaults.
+
+| Concern | Setting | Notes |
+| --- | --- | --- |
+| Chinese scans | `PARSEDOCK_XBERG_OCR_BACKEND=paddle-ocr` on the workers | reads Chinese and English without a language switch (see `--xberg-ocr-backend` above; `docs/OCR-GPU-DECISIONS.md` §2.1) |
+| OCR models offline | `HF_HUB_CACHE`/`HF_HOME` pointing at a seeded cache | the CPU worker image ships one at `/opt/xberg-models`; on a host install seed it once (above). Verify with `docparse --check --role worker …` → `"engine_models": {"xberg": "ok"}` before going live; the worker refuses to start otherwise |
+| accurate engine models | `--docling-rs-models` | local directory, never downloaded at run time |
+| large scans | `--max-upload-mb` (default 64) and `--max-pages` (default 2000) | 500+ page PDFs fit the page default; raise the upload cap for large scans on **coordinator, API replicas and workers** alike |
+| batch clients | `--rate-limit` / `--rate-burst` | status polling counts against the per-owner, per-replica budget; prefer SSE or raise the limit for a batch tenant (row above) |
+| no egress | nothing to change | ParseDock itself fetches no URLs and sends no webhooks; MinerU remote tiers are disabled |
 
 ### Layout-sensitive PDFs
 

@@ -197,6 +197,7 @@ export const zhCN: Messages = {
   'error.not_found': '该 API Key 下不存在这个任务。',
   'error.gone': '结果已释放或过期，无法再下载。',
   'error.conflict': '任务当前状态不允许该操作。',
+  'error.idempotency_key_mismatch': '该幂等键已用于另一份文件或另一组参数。',
   'error.unauthorized': 'API Key 缺失或无效。',
   'error.insufficient_scope': '该 API Key 没有所需权限。',
   'error.rate_limited': '请求过于频繁，请稍后重试。',

@@ -85,7 +85,8 @@ api.ackJob(done.getJobId(),
   `409` and never releases the result.
 * After release: `410` during the tombstone window, then `404`.
 * There is no job listing endpoint: keep the job id from `createJob`.
-* Reusing an `idempotencyKey` replays the first job instead of creating a new one.
+* Reusing an `idempotencyKey` with the same file, `mode` and `device` replays the first job;
+  with a different one it fails with `422 idempotency_key_mismatch`.
 
 ## Large results: stream to disk
 
@@ -147,11 +148,12 @@ server sent one, `e.getResponseBody()` for the stable `{"error":{"code":...}}`.
 | 401 | `unauthorized` | no | bad or missing bearer token |
 | 403 | `insufficient_scope` | no | key lacks `jobs:write` / `jobs:read` / `jobs:ack` |
 | 404 | `not_found` | no | unknown job, another owner's job, or already deleted |
-| 409 | `conflict` | no | stale `result_version` on ACK, ACK on a non-completed job, idempotency key reused |
+| 409 | `conflict` | no | stale `result_version` on ACK, ACK on a non-completed job, idempotency key replayed on `/v1/parse` |
 | 409 | `gpu_unavailable` | no | `gpu_required` without a proven GPU worker |
 | 410 | `gone` | no | released/expired (tombstone window) |
 | 413 | `file_too_large` | no | over the deployment's upload cap |
 | 415 | `unsupported_type` | no | format not enabled, or content does not match the extension |
+| 422 | `idempotency_key_mismatch` | no | idempotency key already used for another file, `mode` or `device`; use a new key |
 | 422 | `encrypted_file`, `malformed_file`, `page_limit_exceeded` | no | the document itself cannot be parsed |
 | 429 | `rate_limited` | yes | honour `Retry-After` |
 | 429 | `quota_exceeded` | **no** | the owner's rolling quota is spent |

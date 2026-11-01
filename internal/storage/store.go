@@ -234,6 +234,9 @@ func (w *InputWriter) Abort() {
 // Size returns bytes written so far.
 func (w *InputWriter) Size() int64 { return w.n }
 
+// SHA256 returns the hex digest of the bytes written so far, without ending the upload.
+func (w *InputWriter) SHA256() string { return hex.EncodeToString(w.h.Sum(nil)) }
+
 // Path is the staging file the upload is being written to (valid until Commit/Abort).
 func (w *InputWriter) Path() string { return w.part }
 

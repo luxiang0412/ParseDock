@@ -1,6 +1,8 @@
 # parsedock
-ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown,
-PNG/JPEG/WebP) into a structured Document IR plus derived Markdown/Text.
+ParseDock converts documents (PDF; DOCX, XLSX/XLSM, PPTX; legacy DOC/DOT,
+XLS/XLT, PPT/POT; HTML; CSV/TSV, TXT/Markdown; PNG/JPEG/WebP) into a
+structured Document IR plus derived Markdown/Text. Which formats a deployment
+accepts depends on the engines it runs.
 
 Lifecycle in one paragraph: `POST /v1/jobs` uploads and queues a job and
 returns `202`; a worker parses it; the result is downloadable while

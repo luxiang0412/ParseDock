@@ -129,6 +129,86 @@ func TestIdempotencyKey(t *testing.T) {
 	}
 }
 
+// A reused idempotency key replays only the same request. Other bytes, mode or device are a
+// 422 (a mistyped key used to answer with another document's job); ttl and priority are not
+// part of the fingerprint, so a retry that adjusts them still replays.
+func TestIdempotencyKeyFingerprint(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	first := create(t, s, "a.txt", []byte("hello"), CreateParams{IdempotencyKey: "k1", Mode: "fast"})
+	for name, p := range map[string]CreateParams{
+		"other bytes":  {InputName: "a.txt", Mode: "fast", Body: stringsReader("hello, world")},
+		"other mode":   {InputName: "a.txt", Mode: "accurate", Body: stringsReader("hello")},
+		"other device": {InputName: "a.txt", Mode: "fast", Device: "cpu", Body: stringsReader("hello")},
+	} {
+		p.OwnerID, p.IdempotencyKey = "owner-1", "k1"
+		job, fresh, err := s.CreateJob(ctx, p)
+		if e := AsError(err); e == nil || e.Status != 422 || e.Code != jobs.ErrIdempotencyMismatch || job != nil || fresh {
+			t.Fatalf("%s: got job=%v fresh=%v err=%v; want 422 %s", name, job, fresh, err, jobs.ErrIdempotencyMismatch)
+		}
+	}
+	// Same bytes and mode, other name/ttl/priority, mode spelled differently: a replay.
+	again, fresh, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "b.txt", Mode: " FAST ",
+		TTLSeconds: 60, Priority: 5, IdempotencyKey: "k1", Body: stringsReader("hello")})
+	if err != nil || fresh || again.ID != first.ID {
+		t.Fatalf("replay with other ttl/priority: job=%v fresh=%v err=%v", again, fresh, err)
+	}
+	var n int
+	if err := s.DB.QueryRow(`SELECT COUNT(*) FROM jobs WHERE owner_id = 'owner-1'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("jobs for owner-1 = %d (%v), want 1", n, err)
+	}
+}
+
+// Concurrent requests with one key race to the insert; the losers reach the unique-violation
+// path, which must apply the same fingerprint check as the pre-check.
+func TestIdempotencyKeyFingerprintConcurrent(t *testing.T) {
+	s := testService(t, nil)
+	ctx := context.Background()
+	const n = 8
+	type out struct {
+		id   string
+		body string
+		err  error
+	}
+	res := make(chan out, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		body := "alpha"
+		if i%2 == 1 {
+			body = "bravo"
+		}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			job, _, err := s.CreateJob(ctx, CreateParams{OwnerID: "owner-1", InputName: "a.txt",
+				IdempotencyKey: "race", Body: stringsReader(body)})
+			o := out{body: body, err: err}
+			if job != nil {
+				o.id = job.ID
+			}
+			res <- o
+		}()
+	}
+	wg.Wait()
+	close(res)
+	ids := map[string]string{} // job id -> body that produced it
+	for o := range res {
+		if o.err != nil {
+			if AsError(o.err).Code != jobs.ErrIdempotencyMismatch {
+				t.Fatalf("unexpected error: %v", o.err)
+			}
+			continue
+		}
+		if prev, ok := ids[o.id]; ok && prev != o.body {
+			t.Fatalf("job %s returned for both %q and %q", o.id, prev, o.body)
+		}
+		ids[o.id] = o.body
+	}
+	if len(ids) != 1 {
+		t.Fatalf("one key produced %d jobs: %v", len(ids), ids)
+	}
+}
+
 func TestClaimHeartbeatCompleteFencing(t *testing.T) {
 	s := testService(t, nil)
 	ctx := context.Background()

@@ -17,7 +17,9 @@ Method | HTTP request | Description
 Accept that the client consumed the result, release storage asynchronously
 
 Idempotent. The first ACK must carry the `result_version` that was
-downloaded (mismatch → `409`, nothing is released). The response means
+downloaded (mismatch → `409`, nothing is released). When the body omits
+`result_version`, an `If-Match: "<result_version>"` header is used instead
+(quotes optional); a mismatch is still `409 conflict`, not `412`. The response means
 "release intent accepted"; poll `GET /v1/jobs/{id}` until
 `retention_status` is `released`.
 
@@ -66,7 +68,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
     api_instance = parsedock_client.JobsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
     ack_job_request = parsedock_client.AckJobRequest() # AckJobRequest | 
-    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner + same request returns the original job (`200`) instead of creating a second one. \"Same request\" means the same input bytes, `mode` and `device`; reusing the key for anything else is `422 idempotency_key_mismatch` (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
 
     try:
         # Accept that the client consumed the result, release storage asynchronously
@@ -86,7 +88,7 @@ Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
  **ack_job_request** | [**AckJobRequest**](AckJobRequest.md)|  | 
- **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
+ **idempotency_key** | **str**| Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
 
 ### Return type
 
@@ -171,7 +173,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
     # Create an instance of the API class
     api_instance = parsedock_client.JobsApi(api_client)
     id = 'job_06GRQJT5HC1DDZMPWRSKSCKM24' # str | 
-    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner + same request returns the original job (`200`) instead of creating a second one. \"Same request\" means the same input bytes, `mode` and `device`; reusing the key for anything else is `422 idempotency_key_mismatch` (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
 
     try:
         # Stop a queued/running job (completed results must be ACKed)
@@ -190,7 +192,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
 Name | Type | Description  | Notes
 ------------- | ------------- | ------------- | -------------
  **id** | **str**|  | 
- **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
+ **idempotency_key** | **str**| Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
 
 ### Return type
 
@@ -279,7 +281,7 @@ with parsedock_client.ApiClient(configuration) as api_client:
     device = 'auto' # str | `gpu_required` is rejected with `409 gpu_unavailable` when no GPU worker is registered — it never silently runs on CPU. `gpu_preferred` may fall back to CPU, and the result marks the actual device.  (optional) (default to 'auto')
     ttl_seconds = 56 # int | Requested result TTL, capped by the server's maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`.  (optional)
     priority = 0 # int | Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with `400 invalid_request`.  (optional) (default to 0)
-    idempotency_key = 'idempotency_key_example' # str | Same key + same owner returns the original job (`200`) instead of creating a second one. Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
+    idempotency_key = 'idempotency_key_example' # str | Same key + same owner + same request returns the original job (`200`) instead of creating a second one. \"Same request\" means the same input bytes, `mode` and `device`; reusing the key for anything else is `422 idempotency_key_mismatch` (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is rejected with `400 invalid_request`; keys are never truncated, so distinct long keys cannot collide.  (optional)
     mode2 = 'auto' # str |  (optional) (default to 'auto')
     device2 = 'auto' # str |  (optional) (default to 'auto')
     ttl_seconds2 = 56 # int | Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with `400 invalid_request`.  (optional)
@@ -306,7 +308,7 @@ Name | Type | Description  | Notes
  **device** | **str**| &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  | [optional] [default to &#39;auto&#39;]
  **ttl_seconds** | **int**| Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] 
  **priority** | **int**| Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] [default to 0]
- **idempotency_key** | **str**| Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
+ **idempotency_key** | **str**| Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  | [optional] 
  **mode2** | **str**|  | [optional] [default to &#39;auto&#39;]
  **device2** | **str**|  | [optional] [default to &#39;auto&#39;]
  **ttl_seconds2** | **int**| Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  | [optional] 
@@ -337,7 +339,7 @@ Name | Type | Description  | Notes
 **409** | A GPU worker is required but none is registered, or the idempotency key conflicts. |  -  |
 **413** | Upload exceeds the configured limit. |  -  |
 **415** | Format not in the allow-list, or content does not match the extension. |  -  |
-**422** | Malformed, encrypted or structurally invalid document. |  -  |
+**422** | Malformed, encrypted or structurally invalid document, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  |  -  |
 **429** | Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  |  * Retry-After -  <br>  |
 **507** | Storage below the safety watermark; retry later (existing results stay readable). |  -  |
 

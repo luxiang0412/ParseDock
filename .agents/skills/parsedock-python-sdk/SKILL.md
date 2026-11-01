@@ -53,7 +53,7 @@ have *durably* stored the bytes when it returns (`with open(p, "wb") as f: f.wri
 * After release: `410 gone` for a short tombstone window, then `404`.
 * `create_job` always sends an `Idempotency-Key` (yours or a generated one): a retried
   upload whose response was lost replays instead of creating a second job. Reusing *your*
-  key for a different upload replays the first job.
+  key for a different file, `mode` or `device` fails with `422 idempotency_key_mismatch`.
 * There is no job listing endpoint: keep the `job_id` you got from `create_job`.
 * Status polling shares the per-owner rate budget; for long waits prefer `events()`.
 
@@ -113,11 +113,12 @@ the client already retries retryable errors with backoff (`max_retries=4`) and h
 | 401 | `unauthorized` | no | bad or missing bearer token |
 | 403 | `insufficient_scope` | no | key lacks `jobs:write` / `jobs:read` / `jobs:ack` |
 | 404 | `not_found` | no | unknown job, another owner's job, or already deleted |
-| 409 | `conflict` | no | stale `result_version` on ACK, ACK on a non-completed job, idempotency key reused |
+| 409 | `conflict` | no | stale `result_version` on ACK, ACK on a non-completed job, idempotency key replayed on `/v1/parse` |
 | 409 | `gpu_unavailable` | no | `gpu_required` without a proven GPU worker |
 | 410 | `gone` | no | released/expired (tombstone window) |
 | 413 | `file_too_large` | no | over the deployment's upload cap |
 | 415 | `unsupported_type` | no | format not enabled, or content does not match the extension |
+| 422 | `idempotency_key_mismatch` | no | idempotency key already used for another file, `mode` or `device`; use a new key |
 | 422 | `encrypted_file`, `malformed_file`, `page_limit_exceeded` | no | the document itself cannot be parsed |
 | 429 | `rate_limited` | yes | back off (`Retry-After`) |
 | 429 | `quota_exceeded` | **no** | the owner's rolling quota is spent (`Retry-After` is still sent) |

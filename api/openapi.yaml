@@ -4,8 +4,10 @@ info:
   version: 0.1.1
   summary: Stateless document parsing service with explicit ACK/TTL lifecycle
   description: |
-    ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown,
-    PNG/JPEG/WebP) into a structured Document IR plus derived Markdown/Text.
+    ParseDock converts documents (PDF; DOCX, XLSX/XLSM, PPTX; legacy DOC/DOT,
+    XLS/XLT, PPT/POT; HTML; CSV/TSV, TXT/Markdown; PNG/JPEG/WebP) into a
+    structured Document IR plus derived Markdown/Text. Which formats a deployment
+    accepts depends on the engines it runs.
 
     Lifecycle in one paragraph: `POST /v1/jobs` uploads and queues a job and
     returns `202`; a worker parses it; the result is downloadable while
@@ -133,7 +135,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '422':
-          description: Malformed, encrypted or structurally invalid document.
+          description: |
+            Malformed, encrypted or structurally invalid document, or
+            `idempotency_key_mismatch` (the key was used for a different request).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -245,7 +249,9 @@ paths:
       summary: Accept that the client consumed the result, release storage asynchronously
       description: |
         Idempotent. The first ACK must carry the `result_version` that was
-        downloaded (mismatch → `409`, nothing is released). The response means
+        downloaded (mismatch → `409`, nothing is released). When the body omits
+        `result_version`, an `If-Match: "<result_version>"` header is used instead
+        (quotes optional); a mismatch is still `409 conflict`, not `412`. The response means
         "release intent accepted"; poll `GET /v1/jobs/{id}` until
         `retention_status` is `released`.
 
@@ -416,6 +422,14 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ModeQuery'
         - $ref: '#/components/parameters/DeviceQuery'
+        - $ref: '#/components/parameters/TtlSecondsQuery'
+        - name: priority
+          in: query
+          schema: { type: integer, minimum: 0, maximum: 100, default: 0 }
+          description: |
+            Same as on `POST /v1/jobs`. A non-integer or a value outside 0–100 is
+            rejected with `400 invalid_request`.
+        - $ref: '#/components/parameters/IdempotencyKeyHeader'
         - name: timeout_ms
           in: query
           schema: { type: integer, minimum: 100, maximum: 120000, default: 30000 }
@@ -445,7 +459,8 @@ paths:
         '409':
           description: |
             `cancelled` — the job was cancelled before it finished; `conflict` — the
-            idempotency key was already used (use `/v1/jobs` for async access);
+            idempotency key was already used for this same request (use `/v1/jobs` for
+            async access to that job);
             `gpu_unavailable` — `device=gpu_required` with no GPU worker.
           content:
             application/json:
@@ -457,7 +472,9 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
         '422':
-          description: Parse failed, or the document is malformed, encrypted or over a limit.
+          description: |
+            Parse failed, or the document is malformed, encrypted or over a limit, or
+            `idempotency_key_mismatch` (the key was used for a different request).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -583,9 +600,12 @@ components:
       in: header
       schema: { type: string, maxLength: 200 }
       description: |
-        Same key + same owner returns the original job (`200`) instead of creating a second
-        one. Longer than 200 characters is rejected with `400 invalid_request`; keys are
-        never truncated, so distinct long keys cannot collide.
+        Same key + same owner + same request returns the original job (`200`) instead of
+        creating a second one. "Same request" means the same input bytes, `mode` and
+        `device`; reusing the key for anything else is `422 idempotency_key_mismatch`
+        (`ttl_seconds` and `priority` are not compared). Longer than 200 characters is
+        rejected with `400 invalid_request`; keys are never truncated, so distinct long keys
+        cannot collide.
 
   responses:
     RateLimited:
@@ -665,6 +685,7 @@ components:
                 - not_found
                 - gone
                 - conflict
+                - idempotency_key_mismatch
                 - unauthorized
                 - insufficient_scope
                 - rate_limited

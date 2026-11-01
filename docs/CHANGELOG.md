@@ -6,6 +6,26 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ## Unreleased
 
+### Upgrade notes (read first)
+
+* **A reused `Idempotency-Key` must belong to the same request.** Reusing a key for other
+  input bytes, `mode` or `device` now answers `422 idempotency_key_mismatch` and creates
+  nothing; it used to return the first job (`200`), so a mistyped key silently answered with
+  another document's result. `ttl_seconds` and `priority` are not compared. Applies to
+  `POST /v1/jobs` and `POST /v1/parse`.
+* **A worker with `--xberg-ocr-backend paddle-ocr` refuses to start without its models.** It
+  runs one offline OCR pass at startup; seed `HF_HUB_CACHE` first (the CPU worker image already
+  does). `docparse --check` reports the same under `engine_models` and exits non-zero on failure.
+* **Generated SDKs: `parseSync` gained parameters** (`ttl_seconds`, `priority`,
+  `Idempotency-Key`), so Java callers of `SyncApi.parseSync` must add arguments. The
+  hand-written Python SDK is unchanged.
+
+### Added
+
+* Error code `idempotency_key_mismatch` (`422`).
+* `docparse --check` → `engine_models`; offline/Chinese deployment checklist in
+  `docs/DEPLOYMENT.md`.
+
 ### Fixed
 
 * **docling-rs / docling-serve: text inside a figure stays with its figure.** The mapper
@@ -15,6 +35,13 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
   order going backwards (116 times in total) while the raw docling order had none; with
   the fix all 27 have none, with identical element and character counts. (Before v0.1.1
   those texts were appended at the end of the document.)
+
+### Fixed (documentation and spec)
+
+* `api/openapi.yaml` now declares what the server already accepted: `ttl_seconds`,
+  `priority` and `Idempotency-Key` on `POST /v1/parse`, and `If-Match` as the ACK version
+  (described on `ackJob`; a mismatch stays `409`). The format list in `info.description`
+  now matches the upload allow-list (legacy DOC/XLS/PPT, HTML, templates, XLSM).
 
 ## v0.1.1 — 2026-11-01
 

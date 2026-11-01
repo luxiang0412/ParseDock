@@ -1,6 +1,6 @@
 /*
  * ParseDock
- * ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown, PNG/JPEG/WebP) into a structured Document IR plus derived Markdown/Text.  Lifecycle in one paragraph: `POST /v1/jobs` uploads and queues a job and returns `202`; a worker parses it; the result is downloadable while `retention_status=active`. `POST /v1/jobs/{id}/ack` records the client's intent to release the result and returns `202` (`release_pending`); deletion is asynchronous. Without an ACK the result expires at `result_expires_at`. After release/expiry, downloads return `410 Gone` for a short tombstone window and `404` afterwards.  **Never auto-ACK.** A `200` on a download means the bytes left the server, not that the client consumed them.  Ownership: every job belongs to the owner derived from the bearer token. A job that belongs to somebody else is indistinguishable from a missing job (`404`) to avoid existence leaks. 
+ * ParseDock converts documents (PDF; DOCX, XLSX/XLSM, PPTX; legacy DOC/DOT, XLS/XLT, PPT/POT; HTML; CSV/TSV, TXT/Markdown; PNG/JPEG/WebP) into a structured Document IR plus derived Markdown/Text. Which formats a deployment accepts depends on the engines it runs.  Lifecycle in one paragraph: `POST /v1/jobs` uploads and queues a job and returns `202`; a worker parses it; the result is downloadable while `retention_status=active`. `POST /v1/jobs/{id}/ack` records the client's intent to release the result and returns `202` (`release_pending`); deletion is asynchronous. Without an ACK the result expires at `result_expires_at`. After release/expiry, downloads return `410 Gone` for a short tombstone window and `404` afterwards.  **Never auto-ACK.** A `200` on a download means the bytes left the server, not that the client consumed them.  Ownership: every job belongs to the owner derived from the bearer token. A job that belongs to somebody else is indistinguishable from a missing job (`404`) to avoid existence leaks. 
  *
  * The version of the OpenAPI document: 0.1.1
  * 
@@ -82,7 +82,7 @@ public class JobsApi {
      * Build call for ackJob
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
@@ -168,10 +168,10 @@ public class JobsApi {
 
     /**
      * Accept that the client consumed the result, release storage asynchronously
-     * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
+     * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). When the body omits &#x60;result_version&#x60;, an &#x60;If-Match: \&quot;&lt;result_version&gt;\&quot;&#x60; header is used instead (quotes optional); a mismatch is still &#x60;409 conflict&#x60;, not &#x60;412&#x60;. The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return AckJob202Response
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -194,10 +194,10 @@ public class JobsApi {
 
     /**
      * Accept that the client consumed the result, release storage asynchronously
-     * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
+     * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). When the body omits &#x60;result_version&#x60;, an &#x60;If-Match: \&quot;&lt;result_version&gt;\&quot;&#x60; header is used instead (quotes optional); a mismatch is still &#x60;409 conflict&#x60;, not &#x60;412&#x60;. The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return ApiResponse&lt;AckJob202Response&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -221,10 +221,10 @@ public class JobsApi {
 
     /**
      * Accept that the client consumed the result, release storage asynchronously (asynchronously)
-     * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
+     * Idempotent. The first ACK must carry the &#x60;result_version&#x60; that was downloaded (mismatch → &#x60;409&#x60;, nothing is released). When the body omits &#x60;result_version&#x60;, an &#x60;If-Match: \&quot;&lt;result_version&gt;\&quot;&#x60; header is used instead (quotes optional); a mismatch is still &#x60;409 conflict&#x60;, not &#x60;412&#x60;. The response means \&quot;release intent accepted\&quot;; poll &#x60;GET /v1/jobs/{id}&#x60; until &#x60;retention_status&#x60; is &#x60;released&#x60;.  After a successful ACK, new downloads return &#x60;410&#x60; while in-flight downloads keep their lease. Repeat ACKs return &#x60;202&#x60; again and affect nothing else. 
      * @param id  (required)
      * @param ackJobRequest  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -251,7 +251,7 @@ public class JobsApi {
     /**
      * Build call for cancelJob
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback Callback for upload/download progress
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
@@ -332,7 +332,7 @@ public class JobsApi {
      * Stop a queued/running job (completed results must be ACKed)
      * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return CancelJob202Response
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -356,7 +356,7 @@ public class JobsApi {
      * Stop a queued/running job (completed results must be ACKed)
      * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @return ApiResponse&lt;CancelJob202Response&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      * @http.response.details
@@ -381,7 +381,7 @@ public class JobsApi {
      * Stop a queued/running job (completed results must be ACKed) (asynchronously)
      * Best effort and idempotent for &#x60;queued&#x60;/&#x60;running&#x60; jobs: the job becomes &#x60;cancelled&#x60; immediately and &#x60;cancel_requested_at&#x60; is recorded; the worker sees &#x60;cancelled&#x60; on its next heartbeat (default 10 s), aborts the engine process and finalises cleanly. Files are removed by the normal retention path. A cancelled job never publishes a result, even if the engine finished in the meantime.  A **completed** job cannot be cancelled: the call returns &#x60;409&#x60; and nothing is released. Releasing a result is ACK&#39;s job and only ACK carries the \&quot;I stored these bytes\&quot; claim - a second release path made the outcome depend on a race between cancel and ACK. 
      * @param id  (required)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param _callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -411,7 +411,7 @@ public class JobsApi {
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
      * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
      * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
      * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
@@ -431,7 +431,7 @@ public class JobsApi {
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
@@ -541,7 +541,7 @@ public class JobsApi {
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
      * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
      * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
      * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
@@ -560,7 +560,7 @@ public class JobsApi {
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
@@ -578,7 +578,7 @@ public class JobsApi {
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
      * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
      * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
      * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
@@ -597,7 +597,7 @@ public class JobsApi {
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
@@ -616,7 +616,7 @@ public class JobsApi {
      * @param device &#x60;gpu_required&#x60; is rejected with &#x60;409 gpu_unavailable&#x60; when no GPU worker is registered — it never silently runs on CPU. &#x60;gpu_preferred&#x60; may fall back to CPU, and the result marks the actual device.  (optional, default to auto)
      * @param ttlSeconds Requested result TTL, capped by the server&#39;s maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
      * @param priority Higher runs first within the same queue. A non-integer or a value outside 0–100 is rejected with &#x60;400 invalid_request&#x60;.  (optional, default to 0)
-     * @param idempotencyKey Same key + same owner returns the original job (&#x60;200&#x60;) instead of creating a second one. Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
+     * @param idempotencyKey Same key + same owner + same request returns the original job (&#x60;200&#x60;) instead of creating a second one. \&quot;Same request\&quot; means the same input bytes, &#x60;mode&#x60; and &#x60;device&#x60;; reusing the key for anything else is &#x60;422 idempotency_key_mismatch&#x60; (&#x60;ttl_seconds&#x60; and &#x60;priority&#x60; are not compared). Longer than 200 characters is rejected with &#x60;400 invalid_request&#x60;; keys are never truncated, so distinct long keys cannot collide.  (optional)
      * @param mode2  (optional, default to auto)
      * @param device2  (optional, default to auto)
      * @param ttlSeconds2 Requested result TTL; capped by the server maximum. A non-integer or a value below 1 is rejected with &#x60;400 invalid_request&#x60;.  (optional)
@@ -636,7 +636,7 @@ public class JobsApi {
         <tr><td> 409 </td><td> A GPU worker is required but none is registered, or the idempotency key conflicts. </td><td>  -  </td></tr>
         <tr><td> 413 </td><td> Upload exceeds the configured limit. </td><td>  -  </td></tr>
         <tr><td> 415 </td><td> Format not in the allow-list, or content does not match the extension. </td><td>  -  </td></tr>
-        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document. </td><td>  -  </td></tr>
+        <tr><td> 422 </td><td> Malformed, encrypted or structurally invalid document, or &#x60;idempotency_key_mismatch&#x60; (the key was used for a different request).  </td><td>  -  </td></tr>
         <tr><td> 429 </td><td> Per-owner limits. &#x60;rate_limited&#x60; &#x3D; request-rate budget (all requests, including status polling and event streams); &#x60;quota_exceeded&#x60; &#x3D; concurrent jobs, jobs/day or bytes/day for this owner. Both carry &#x60;Retry-After&#x60; in seconds. Retrying &#x60;rate_limited&#x60; after that delay is expected; retrying &#x60;quota_exceeded&#x60; is not - the quota only resets when its window passes.  </td><td>  * Retry-After -  <br>  </td></tr>
         <tr><td> 507 </td><td> Storage below the safety watermark; retry later (existing results stay readable). </td><td>  -  </td></tr>
      </table>
