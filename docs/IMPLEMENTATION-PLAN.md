@@ -44,6 +44,9 @@ later gained the `web` and `sdk` jobs, see `docs/CI.md`), phase logic in `script
 by `scripts/repro-check.sh`, SDK drift checked, licence audit split into control
 plane PASS / worker BLOCK. Measured on GitHub-hosted runners: 3 m 53 s – 3 m 58 s
 per PR run; nightly 1 m 56 s. Details and residual risks: `docs/history/PR01-REPORT.md`.
+Nov 2026 (#63): Go toolchain/build caches written on main only, lifecycle in four shards,
+duplicate checks removed, documentation-only PRs skip build/test — PR wall time 226 s → ~90 s
+(median of 50 runs vs warm-cache runs), see `docs/CI.md` §Speed.
 Residual (out of PR-01 scope): GPU runner (PR-08), two-host cluster test (PR-07),
 registry publish step (PR-08/PR-12) which must depend on `release-gate`.
 

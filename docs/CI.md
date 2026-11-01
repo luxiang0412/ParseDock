@@ -19,7 +19,7 @@ commands above as well before claiming CI parity.
 
 | File | Trigger | Jobs | Blocking |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | every PR, push to `main`, manual | `static`, `unit`, `contract`, `lifecycle`, `image`, `web`, `sdk`, `ci-summary` | yes — see "Merge gate" |
+| `.github/workflows/ci.yml` | every PR, push to `main`, manual | `changes`, `static`, `unit`, `contract`, `lifecycle (1/4)`…`(4/4)`, `image`, `web`, `sdk`, `ci-summary`, `cache-prune` (main only) | yes — require `ci-summary` only, see "Merge gate" |
 | `.github/workflows/engine-changes.yml` | every PR (path-classified inside) | `detect`, `real-engines`, `container` | recommended for engine/docker changes |
 | `.github/workflows/nightly.yml` | schedule 18:30 UTC, manual | `real-engines`, `sdks` (check name `sdk-check`: Python lifecycle + error matrix + **real engines** + Java build **and integration test** + version consistency), `playground` (check name `playground-e2e`: Playwright against a real backend), `container` (check name `container-smoke`: includes SBOM + licence classification) | no (evidence) |
 | `.github/workflows/release-python.yml` | tag `v*`, manual | build sdist/wheel, `twine check`, install the wheel, publish to PyPI over OIDC | no (publishing) |
@@ -34,12 +34,12 @@ safe to include in branch protection.
 
 | Phase | Steps (the script is authoritative) | Why |
 | --- | --- | --- |
-| `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `golangci-lint` (pinned, `.golangci.yml`), `govulncheck` (pinned, with the pinned toolchain), `ruff` (pinned, `ruff.toml`), `go build`, `actionlint` (pinned), `go mod tidy` drift | no unpinned inputs, no unformatted code, no lint findings, no reachable known vulnerability, workflows valid |
-| `unit` | `go test ./cmd/... ./internal/... ./migrations/...` (never `./...`: it would pick up Go code under `web/node_modules`; `go.mod` also `ignore`s that directory), `test_score.py`, `test_ci_summary.py`, `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
+| `static` | `verify_pins.py`, `gofmt -l`, `go vet`, `golangci-lint` (pinned, `.golangci.yml`), `govulncheck` (pinned, with the pinned toolchain), `ruff` (pinned, `ruff.toml`), `actionlint` (pinned), `go mod tidy` drift, agent-skill sync | no unpinned inputs, no unformatted code, no lint findings, no reachable known vulnerability, workflows valid |
+| `unit` | `go test ./cmd/... ./internal/... ./migrations/...` (never `./...`: it would pick up Go code under `web/node_modules`; `go.mod` also `ignore`s that directory), `test_score.py`, `test_ci_summary.py`, `test_ci_shards.py` (the lifecycle shards cover every T-case once), `test_fixtures.py` (corpus hashes), `test_gate.py` | behaviour, corpus and gate correctness |
 | `sdk` | `scripts/sdk-check.sh --fast` — Python lifecycle + error matrix, one version across artefacts | the SDK contract: ACK rule, error codes/retry policy, SSE resume; catches an OpenAPI/IR change that would break a client |
 | `web` (inline in `ci.yml`) | `npm ci`, `npm run api:types:check` (`schema.d.ts` vs `api/openapi.yaml`), lint, typecheck, `npm test`, `npm run build`, `check-dist-secrets.mjs` | the playground builds, its API types match the spec, no API key reaches `dist/` |
-| `contract` | OpenAPI 3.1 validation (public + internal, pinned generator), `openapi_contract.py`, SDK regeneration drift (`sdk/python-generated`, `sdk/java-generated`), Document IR schema drift | specs, router, generated SDKs and the published schema cannot drift |
-| `lifecycle` | `make acceptance` (T03–T17 except T11, which needs real engines), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
+| `contract` | OpenAPI 3.1 validation (internal; the public spec is validated by the SDK regeneration),  `openapi_contract.py`, SDK regeneration drift (`sdk/python-generated`, `sdk/java-generated`), Document IR schema drift | specs, router, generated SDKs and the published schema cannot drift |
+| `lifecycle` (CI: four shards `lifecycle-1`…`lifecycle-4`, see `LIFECYCLE_SHARD_CASES` in the script) | `make acceptance` (T03–T17 except T11, which needs real engines), `pr00_contract.py`, `backup_restore.py`, `pr02_contract.py` (keys/scopes/quota/audit), `pr07_tls.py` (mTLS), `pr09_metrics.py` (metrics + RC-5 + no content leak), `pr12_drill.py` (online backup + restore + RTO) | job lifecycle, ACK/TTL/lease/fencing/cancel, security edge, TLS, observability and backup regressions |
 | `image` | control-plane image build, `--check`, image id/digest, `repro-check.sh`, licence audit (report + classification) | reproducible artefact + clean control plane |
 | `engines` | install xberg + docling-rs at locked versions, `acceptance-real`, quality **and** perf bench on a fixed fixture scope, `summarize.py` + `score.py` into a run-scoped directory (`build/ci/bench-*`), `gate.py` | real parsers and the quality/latency gate (nightly / engine changes) |
 | `container` | build both images, `container-smoke.sh` (xberg + docling-rs through the API), SBOM + PASS/BLOCK classification | container parity with real engines |
@@ -72,15 +72,29 @@ safe to include in branch protection.
 ## Merge gate
 
 `ci-summary` aggregates the seven job results (`static`, `unit`, `contract`,
-`lifecycle`, `image`, `web`, `sdk`) through `scripts/ci_summary.py`
-(unit-tested in `tests/unit/test_ci_summary.py`). A missing, cancelled, skipped or
-failed job makes the summary fail, which fails the workflow run. The previous
+`lifecycle` — the aggregate of its four shards —, `image`, `web`, `sdk`) through
+`scripts/ci_summary.py` (unit-tested in `tests/unit/test_ci_summary.py`). A missing,
+cancelled, skipped or failed job makes the summary fail, which fails the workflow run.
+`ci-summary` is the only check to require: it always runs (`if: always()`), and the
+individual job names (the lifecycle shards, a skipped matrix job's unexpanded name) are
+free to change.
+
+**Documentation-only pull requests.** The `changes` job reads the pull request's file
+list; when every file is Markdown, under `docs/` or `LICENSE*` — except
+`docs/ERROR-CODES.md`, `docs/DOCUMENT-IR.md`, `.agents/**` and `sdk/**`, which checks
+read — the build and test jobs are skipped and `ci-summary` is called with
+`--docs-only`, which accepts `skipped` (never `failure` or `cancelled`). This is
+deliberately not a workflow-level `paths-ignore`: a workflow that does not start never
+reports, and a required check would stay pending forever. Pushes to `main` always run
+everything. Probe: PR #64 (README-style change) finished in 15 s with `ci-summary`
+green. The previous
 inline `grep` implementation passed while `contract` was failing (substring match) —
 that regression is covered by a test, and a negative-control PR proved the fix
 (run `41041186706`: `contract` and `ci-summary` both red).
 
-**Enforcement caveat:** this repository is private on a free GitHub plan, where
-branch protection and rulesets return `HTTP 403`. The check names and the
+**Enforcement caveat:** no branch protection or ruleset is configured on `main` today
+(when this was written the repository was private on a free plan, where both returned
+`HTTP 403`). The check names and the
 enablement command are documented in `docs/history/PR01-REPORT.md` §6b; until the owner
 upgrades the plan (or makes the repo public), a red pipeline is visible but not
 technically unmergeable.
@@ -122,11 +136,43 @@ make container-smoke # needs parsedock:smoke + parsedock-worker-cpu:smoke
 make license-audit   # enforce mode (fails on GPL)
 ```
 
+## Speed
+
+PR wall time went from 226 s (median of 50 runs, Oct 2026) to under 90 s with warm caches.
+What makes it fast, and what to keep when editing the workflows:
+
+* **Concurrency.** A pull request cancels its own superseded runs. A push to `main` is
+  grouped by its commit SHA, so every main commit runs to completion (a ref-wide group
+  with `cancel-in-progress` used to cancel main runs).
+* **Caches, written on main only.** `.github/actions/go` restores the pinned Go toolchain
+  (the runner image does not ship it), `~/.cache/go-build` and `~/go/pkg/mod` as one entry
+  per kind, then runs setup-go (which finds the toolchain locally). Three kinds, each
+  saved by exactly one job on pushes to `main`: `static` (also golangci-lint's cache and
+  the pinned tool binaries in `runtime/bin`, so govulncheck is not compiled per run),
+  `unit` (also read by `contract`), `bin` (saved by `sdk`, read by lifecycle, image,
+  nightly and engine-changes). Pull requests only restore — a PR-scoped entry is
+  readable by no other PR — and `cache-prune` deletes superseded entries after main
+  saves new ones. setup-go's own cache is off: it is saved by whichever job finishes
+  first, which was `contract`, so every job used to restore 26 MB and compile from scratch.
+* **The 729 MB engine cache** is saved by nightly on `main` and only restored by
+  engine-changes; saving it per pull request had filled the 10 GB repository cache.
+* **lifecycle is sharded.** Shard 1 (T09 + T17) is the floor: T09 waits ~51 s for a worker
+  lease to expire. `tests/unit/test_ci_shards.py` fails if a T-case is in no shard.
+* **No duplicate work.** `unit` does not run sdk-check (that is the `sdk` job); `static`
+  does not build the binary; `contract` does not validate the public spec twice.
+* **Image layers are not cached** (no buildx/GHA cache): the image job is not on the
+  critical path, its Go build changes with every Go PR, and setup-buildx plus `--load`
+  would cost about what the apt layer saves.
+* The `changes` gate costs ~7 s per run (one extra job start); it buys a 15 s run for a
+  documentation-only pull request instead of a full one.
+
 ## Known limitations
 
-* Runners are GitHub-hosted `ubuntu-24.04` (2 vCPU); the mock lifecycle phase is
-  the critical path (~4m10s) and dominates the PR pipeline. It grew with PR-02/07/09/12
-  runtime contracts; splitting it is a candidate if the wall time becomes painful.
+* Runners are GitHub-hosted `ubuntu-24.04` (2 vCPU). The lifecycle shards are the critical
+  path (~70 s per job, ~56 s of it tests); shortening T09 would mean a shorter worker lease
+  in the test stack, which is a test-design decision, not a CI one.
+* A pull request opened right after a `go.mod`/`go.sum` change on `main`, or before the
+  first main run after this layout landed, finds no cache and compiles cold (~140 s wall).
 * No self-hosted GPU runner: GPU workers are verified manually (`make gpu-check`,
   `docs/history/GPU-REPORT.md`), not in CI. `tests/integration/pr08_gpu.py` SKIPs cleanly without a
   GPU, so it is safe to run anywhere but proves nothing there.

@@ -43,6 +43,14 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
   (described on `ackJob`; a mismatch stays `409`). The format list in `info.description`
   now matches the upload allow-list (legacy DOC/XLS/PPT, HTML, templates, XLSM).
 
+### CI
+
+* PR pipeline wall time 226 s → ~90 s (warm caches): Go toolchain and build caches saved on
+  `main` only, lifecycle split into four shards, duplicate sdk-check/build/spec validation
+  removed. Every push to `main` now runs to completion (it could be cancelled before), and
+  documentation-only pull requests skip the build and test jobs. Require `ci-summary` only
+  (`docs/CI.md` §Merge gate).
+
 ## v0.1.1 — 2026-11-01
 
 ### Upgrade notes (read first)
