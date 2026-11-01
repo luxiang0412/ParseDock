@@ -33,6 +33,7 @@ import os
 import random
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from dataclasses import dataclass
@@ -40,6 +41,17 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 
 __all__ = ["ParseDockClient", "ParseDockError", "Job", "TERMINAL", "RETENTION_DONE"]
+
+
+def _plain_header_value(value: str) -> bool:
+    """True when ``value`` can go into a quoted header parameter verbatim.
+
+    OkHttp (the Java client) rejects everything outside 0x20-0x7e, and a double
+    quote or backslash changes the meaning of a quoted-string. Escaping the same
+    characters in both SDKs keeps one filename rule instead of two.
+    """
+    return all(0x20 <= ord(c) <= 0x7e and c not in '"\\' for c in value)
+
 
 TERMINAL = {"completed", "failed", "cancelled"}
 RETENTION_DONE = {"released", "expired"}
@@ -170,13 +182,26 @@ class ParseDockClient:
 
     @staticmethod
     def _multipart(fields: dict[str, str], path: str) -> tuple[bytes, str]:
+        """Build the upload body.
+
+        File names travel in ``Content-Disposition``. Raw UTF-8 happens to work
+        against the coordinator, but a ``"`` would end the parameter and the server
+        would then see no file part, so anything that is not plain printable ASCII
+        is sent as RFC 6266 with an RFC 5987 extended parameter: an ASCII fallback
+        plus ``filename*=UTF-8''...``, which ``mime.ParseMediaType`` prefers.
+        """
         boundary = "----parsedock" + uuid.uuid4().hex
         name = Path(path).name
         ctype = mimetypes.guess_type(name)[0] or "application/octet-stream"
         out = bytearray()
         for k, v in fields.items():
             out += f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode()
-        out += (f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{name}\"\r\n"
+        disposition = f'form-data; name="file"; filename="{name}"'
+        if not _plain_header_value(name):
+            fallback = "".join(c if _plain_header_value(c) else "_" for c in name)
+            disposition = (f'form-data; name="file"; filename="{fallback}"; '
+                           f"filename*=UTF-8''{urllib.parse.quote(name, safe='')}")
+        out += (f"--{boundary}\r\nContent-Disposition: {disposition}\r\n"
                 f"Content-Type: {ctype}\r\n\r\n").encode()
         with open(path, "rb") as f:
             out += f.read()

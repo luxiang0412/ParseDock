@@ -108,6 +108,9 @@ sdk: ## regenerate Python/Java SDKs from api/openapi.yaml (deterministic)
 	# Central needs metadata, sources/javadoc and a release profile the generator
 	# does not emit; the patch is idempotent and rerun after every regeneration.
 	python3 scripts/patch_java_pom.py sdk/java-generated/pom.xml
+	# The okhttp-gson template interpolates file names into Content-Disposition raw,
+	# which OkHttp rejects for non-ASCII names (issue #66).
+	python3 scripts/patch_java_client.py sdk/java-generated/src/main/java/org/openapitools/client/ApiClient.java
 
 sdk-test: ## run the Python SDK lifecycle test against a local stack
 	python3 sdk/python/test_sdk.py

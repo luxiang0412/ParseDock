@@ -7,6 +7,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeAll;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.junit.jupiter.api.io.TempDir;
 import org.openapitools.client.ApiClient;
 import org.openapitools.client.ApiException;
 import org.openapitools.client.JSON;
@@ -173,6 +177,38 @@ class ParseDockClientIT {
         assertNotNull(api.downloadResult(done.getJobId(), "markdown"));
         api.ackJob(done.getJobId(),
                 new AckJobRequest().resultVersion(done.getResultVersion()), null);
+    }
+
+    @Test
+    @Order(7)
+    void uploadsNonAsciiAndQuotedFileNames(@TempDir Path tmp) throws Exception {
+        // Issue #66: OkHttp rejects non-ASCII header values, and a '"' used to end the
+        // filename parameter. Both must round-trip as input_name, or CJK/Portuguese
+        // document names are unusable from this client.
+        String[] names = {"plain name.pdf", "café.pdf", "测试-合同.pdf", "a\"b.pdf"};
+        for (String name : names) {
+            Path target = tmp.resolve(name);
+            Files.copy(fixture.toPath(), target, StandardCopyOption.REPLACE_EXISTING);
+
+            Job created = api.createJob(target.toFile(), "fast", "auto",
+                    null, null, null, null, null, null, null);
+            assertEquals(name, created.getInputName(), "input_name changed for " + name);
+
+            Job job = created;
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+            while (job.getStatus().getValue().equals("queued")
+                    || job.getStatus().getValue().equals("running")) {
+                assertTrue(System.nanoTime() < deadline,
+                        "job for " + name + " did not finish in 120s");
+                Thread.sleep(300);
+                job = api.getJob(job.getJobId());
+            }
+            assertEquals("completed", job.getStatus().getValue(),
+                    "job for " + name + " failed: " + job.getErrorCode() + " "
+                            + job.getErrorMessage());
+            api.ackJob(job.getJobId(),
+                    new AckJobRequest().resultVersion(job.getResultVersion()), null);
+        }
     }
 
     @Test

@@ -28,6 +28,15 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ### Fixed
 
+* **SDKs: file names that are not plain ASCII, and names containing `"`.** The Java
+  client interpolated `file.getName()` into `Content-Disposition` raw, so OkHttp threw
+  `IllegalArgumentException` for `测试-合同.pdf` / `café.pdf` before sending anything, and
+  `a"b.pdf` reached the server as a body with no file part (`400 invalid_request`). The
+  Python client had the same quoting bug (it only survived UTF-8 by accident). Both now
+  send RFC 6266 with an RFC 5987 `filename*=UTF-8''...` parameter, so `input_name`
+  round-trips unchanged (issue #66). `scripts/patch_java_client.py` applies this to the
+  generated client on every `make sdk` and fails loudly if the generator anchor changes.
+
 * **docling-rs / docling-serve: text inside a figure stays with its figure.** The mapper
   did not walk a picture's children (chart labels, OCR of a scanned figure), so they were
   placed by the texts array before the next *text* - after any picture that followed, a

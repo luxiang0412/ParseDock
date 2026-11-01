@@ -235,6 +235,33 @@ def test_generated_idempotency_key(stack: Stack) -> None:
     print("[ok] generated idempotency key is sent and a replay returns the same job")
 
 
+def test_encoded_file_names(stack: Stack) -> None:
+    """File names survive the multipart hop byte for byte (issue #66).
+
+    The client sends non-plain names with an RFC 5987 filename* parameter. A quote
+    used to end the Content-Disposition parameter, so the coordinator answered
+    ``400 multipart body contains no file part`` even though the bytes were fine.
+    """
+    names = ["plain name.pdf", "café.pdf", "测试-合同.pdf", 'a"b.pdf', "back\\slash.pdf"]
+    with tempfile.TemporaryDirectory(prefix="sdk-names-") as tmp:
+        with ParseDockClient(stack.base, token=TOKEN) as c:
+            for name in names:
+                target = Path(tmp) / name
+                shutil.copyfile(FIXTURE, target)
+                created = c.create_job(target, mode="fast")
+                if created.get("input_name") != name:
+                    failures.append(
+                        f"input_name for {name!r} became {created.get('input_name')!r}")
+                    continue
+                done = c.wait(created["job_id"], timeout=60)
+                if done["status"] != "completed":
+                    failures.append(f"upload named {name!r} did not complete: {done}")
+                    continue
+                c.ack(done["job_id"], done["result_version"])
+                c.wait_released(done["job_id"], timeout=30)
+                print(f"[ok] file name {name!r} round-tripped through the upload")
+
+
 def main() -> int:
     if not BIN.exists():
         raise SystemExit("build the binary first: make build")
@@ -251,6 +278,7 @@ def main() -> int:
     stack = Stack("--rate-limit", "100", "--rate-burst", "50")
     try:
         test_validation_errors(stack)
+        test_encoded_file_names(stack)
         test_sse_resume(stack)
         test_generated_idempotency_key(stack)
     finally:

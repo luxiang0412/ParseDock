@@ -55,8 +55,8 @@ deployment waits for a human in the Central Portal).
 | `io.github.luxiang0412` | verified through the GitHub account, no DNS needed |
 
 To switch, change `groupId=` in the `make sdk` line in the `Makefile`, run
-`make sdk` (regeneration + `scripts/patch_java_pom.py`), and re-check
-`docs/SDK.md`.
+`make sdk` (regeneration + `scripts/patch_java_pom.py` and
+`scripts/patch_java_client.py`), and re-check `docs/SDK.md`.
 
 **Repository secrets** (*Settings → Secrets and variables → Actions*):
 
@@ -89,6 +89,7 @@ is distributable; **the worker image is not** until licence item L1
 | Upload fails with `Invalid request. Status: 401`, log line `namecode: ${env.MAVEN_CENTRAL_USERNAME}` | `setup-java` writes `${env.MAVEN_CENTRAL_USERNAME}` into `settings.xml`; Maven resolves it from the **process environment**, and an environment secret is not an env var | the job maps both secrets at job level (`env:`) |
 | `Deployment … failed` + `common: - Bundle has content that does NOT have a .pom file: com/luxiangs/parsedock-client` | Maven **3.10** changes the archive layout handed to `central-publishing-maven-plugin`; the Portal's validator then sees content without a POM ([upstream #78](https://github.com/mavenplugins/central-publishing-maven-plugin/issues/78)) | the workflow installs Maven **3.9.9** from archive.apache.org with a pinned SHA-512 and prepends it to `PATH` |
 | A tests classifier jar in the bundle | the generator attaches `test-jar`; consumers do not need our test classes | `scripts/patch_java_pom.py` removes that execution on every `make sdk` |
+| `IllegalArgumentException: Unexpected char … in Content-Disposition value` for a CJK/Latin-1 file name | the `okhttp-gson` template interpolates `file.getName()` raw and OkHttp only accepts ASCII header values | `scripts/patch_java_client.py` rewrites the method to send an RFC 5987 `filename*` parameter on every `make sdk` (issue #66) |
 
 The validation message from the Portal is printed in the workflow log as a `common:` block —
 read it before changing anything, it names the exact path or file that failed.
