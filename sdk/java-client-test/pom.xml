@@ -18,7 +18,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client-test</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
   <packaging>jar</packaging>
   <name>parsedock client integration test</name>
 
@@ -33,7 +33,7 @@
     <dependency>
       <groupId>com.luxiangs</groupId>
       <artifactId>parsedock-client</artifactId>
-      <version>0.1.1</version>
+      <version>0.1.2</version>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>

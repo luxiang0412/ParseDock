@@ -5,14 +5,14 @@
     <artifactId>parsedock-client</artifactId>
     <packaging>jar</packaging>
     <name>parsedock-client</name>
-    <version>0.1.1</version>
+    <version>0.1.2</version>
     <url>https://github.com/luxiang0412/ParseDock</url>
     <description>ParseDock API client for Java: upload documents, poll jobs, download Markdown or the Document IR, and release storage explicitly (ACK).</description>
     <scm>
         <connection>scm:git:https://github.com/luxiang0412/ParseDock.git</connection>
         <developerConnection>scm:git:git@github.com:luxiang0412/ParseDock.git</developerConnection>
         <url>https://github.com/luxiang0412/ParseDock</url>
-        <tag>v0.1.1</tag>
+        <tag>v0.1.2</tag>
     </scm>
 
     <licenses>

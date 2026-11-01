@@ -24,7 +24,7 @@ info:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
   title: ParseDock
-  version: 0.1.1
+  version: 0.1.2
 servers:
 - description: Local API replica (any replica is equivalent)
   url: http://localhost:8080

@@ -6,7 +6,15 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.2 — 2026-11-01
+
 ### Upgrade notes (read first)
+
+* **Image tags are unchanged.** `make images` / `scripts/build-images.sh` still tag the
+  local images `:0.1.0`, which is what the compose files default to; rebuild them from
+  this release and redeploy. The images are not pushed to a registry.
 
 * **A reused `Idempotency-Key` must belong to the same request.** Reusing a key for other
   input bytes, `mode` or `device` now answers `422 idempotency_key_mismatch` and creates

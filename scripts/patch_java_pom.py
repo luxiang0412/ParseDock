@@ -33,7 +33,7 @@ METADATA = f"""    <url>{PROJECT_URL}</url>
         <connection>scm:git:{REPO}.git</connection>
         <developerConnection>scm:git:git@github.com:luxiang0412/ParseDock.git</developerConnection>
         <url>{REPO}</url>
-        <tag>v0.1.1</tag>
+        <tag>v0.1.2</tag>
     </scm>
 
     <licenses>

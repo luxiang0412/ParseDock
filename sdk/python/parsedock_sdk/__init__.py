@@ -2,4 +2,4 @@
 from .client import ParseDockClient, ParseDockError
 
 __all__ = ["ParseDockClient", "ParseDockError"]
-__version__ = "0.1.1"
+__version__ = "0.1.2"

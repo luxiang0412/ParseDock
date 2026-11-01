@@ -17,11 +17,11 @@ Published on Maven Central (Java 8+; CI builds and tests on JDK 17):
 <dependency>
   <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client</artifactId>
-  <version>0.1.1</version>
+  <version>0.1.2</version>
 </dependency>
 ```
 
-Gradle: `implementation("com.luxiangs:parsedock-client:0.1.1")`.
+Gradle: `implementation("com.luxiangs:parsedock-client:0.1.2")`.
 
 The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
 (upload, sync parse), `jobs:read` (status, download, events), `jobs:ack` (ack, cancel).

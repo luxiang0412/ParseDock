@@ -1,6 +1,6 @@
 # ARCHITECTURE — ParseDock v0.1
 
-> Living document: describes the current code (v0.1.1 + the unreleased changes in
+> Living document: describes the current code (v0.1.2 + the unreleased changes in
 > `docs/CHANGELOG.md`). It started in Phase 0; dated reports are in `docs/history/`.
 
 ## 1. Goals that shape the design
