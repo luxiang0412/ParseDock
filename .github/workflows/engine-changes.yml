@@ -30,30 +30,24 @@ jobs:
     name: engine-changes/detect
     runs-on: ubuntu-24.04
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     outputs:
       engines: ${{ steps.changed.outputs.engines }}
       containers: ${{ steps.changed.outputs.containers }}
-      base_sha: ${{ steps.changed.outputs.base_sha }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # Full history so the three-dot diff below has a merge base even for
-          # long-lived branches. The repository is small; this is cheaper and far
-          # more reliable than a shallow fetch.
-          fetch-depth: 0
-          persist-credentials: false
+      # The pull request's file list from the API (the same set as a three-dot diff against
+      # the base), so this job needs no checkout at all.
       - id: changed
         name: classify changed paths
         env:
-          BASE_REF: ${{ github.base_ref }}
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
         run: |
           set -euo pipefail
-          base="origin/${BASE_REF}"
-          git diff --name-only "${base}...HEAD" > /dev/null || {
-            echo "cannot diff against ${base}; falling back to the PR base SHA" >&2
-            git fetch --no-tags origin "${BASE_REF}"
-          }
-          files="$(git diff --name-only "${base}...HEAD")"
+          files="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
           echo "$files" | sed 's/^/changed: /'
           engines=false
           containers=false
@@ -65,7 +59,6 @@ jobs:
           fi
           echo "engines=$engines" >> "$GITHUB_OUTPUT"
           echo "containers=$containers" >> "$GITHUB_OUTPUT"
-          echo "base_sha=$(git rev-parse "${base}")" >> "$GITHUB_OUTPUT"
 
   real-engines:
     name: engine-changes/real-engines
@@ -77,12 +70,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Go toolchain + build cache (read-only; written by CI on main)
+        uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: cache engine binaries and models
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+          kind: bin
+      # Read-only: the nightly run on main saves the 729 MB engine cache. A pull request
+      # saving its own copy (scoped to that PR, unreadable by any other) filled the 10 GB
+      # repository cache with a dozen identical entries.
+      - name: restore engine binaries and models (read-only)
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             runtime/engines/xberg-cli

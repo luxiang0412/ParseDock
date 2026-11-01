@@ -1,0 +1,64 @@
+name: Go toolchain and caches
+description: >-
+  Restore (or save) the pinned Go toolchain together with the Go build and module caches,
+  then set up Go. One cache entry per kind holds all three, so a warm job neither downloads
+  the toolchain (~8 s; the runner image does not ship the pinned version) nor recompiles.
+  Pull requests only restore; ci.yml saves on pushes to main (see the SAVE_CACHE env).
+
+inputs:
+  kind:
+    description: cache family — static, unit or bin (each saved by exactly one job on main)
+    required: true
+  mode:
+    description: restore (default; also runs setup-go) or save
+    default: restore
+  extra-paths:
+    description: additional cache paths, one per line (must be identical for restore and save)
+    default: ""
+  extra-key-files:
+    description: additional files (shell globs, space-separated) hashed into the key
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - id: key
+      shell: bash
+      env:
+        KIND: ${{ inputs.kind }}
+        EXTRA: ${{ inputs.extra-key-files }}
+      run: |
+        set -euo pipefail
+        ver="$(sed -n 's/^go //p' go.mod)"
+        # shellcheck disable=SC2086 # EXTRA holds globs on purpose
+        hash="$(cat go.mod go.sum $EXTRA | sha256sum | cut -c1-16)"
+        prefix="go-$KIND-$RUNNER_OS-$ver-$hash-"
+        {
+          echo "prefix=$prefix"
+          echo "key=$prefix$GITHUB_SHA"
+          echo "toolchain=$RUNNER_TOOL_CACHE/go/$ver"
+        } >> "$GITHUB_OUTPUT"
+    - if: inputs.mode == 'restore'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.key.outputs.toolchain }}
+          ~/.cache/go-build
+          ~/go/pkg/mod
+          ${{ inputs.extra-paths }}
+        key: ${{ steps.key.outputs.key }}
+        restore-keys: ${{ steps.key.outputs.prefix }}
+    - if: inputs.mode == 'restore'
+      uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      with:
+        go-version-file: go.mod
+        cache: false
+    - if: inputs.mode == 'save'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ${{ steps.key.outputs.toolchain }}
+          ~/.cache/go-build
+          ~/go/pkg/mod
+          ${{ inputs.extra-paths }}
+        key: ${{ steps.key.outputs.key }}

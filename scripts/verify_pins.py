@@ -181,8 +181,10 @@ def verify(root: Path) -> list[str]:
         elif m.group(1) != tools["ruff"]:
             problems.append(f"requirements-ci.txt ruff=={m.group(1)} != lock {tools['ruff']}")
 
-    # Actions must be pinned by commit SHA (no floating vX tags).
-    for wf in sorted((root / ".github" / "workflows").glob("*.yml")):
+    # Actions must be pinned by commit SHA (no floating vX tags), in workflows and in the
+    # local composite actions they call.
+    for wf in sorted([*(root / ".github" / "workflows").glob("*.yml"),
+                      *(root / ".github" / "actions").glob("*/action.yml")]):
         text = read(wf)
         for m in re.finditer(r"uses:\s*(\S+)@(\S+)", text):
             action, ref = m.group(1), m.group(2)

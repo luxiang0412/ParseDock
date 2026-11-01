@@ -6,11 +6,15 @@
 # Phases (one per CI job, so the workflow and a local run execute the *same*
 # commands):
 #   static      pinned-input verification, gofmt, go vet, golangci-lint, govulncheck,
-#               ruff, build, actionlint, go mod tidy drift
-#   unit        go test (cmd, internal, migrations) + scoring unit tests
+#               ruff, actionlint, go mod tidy drift, agent skills sync
+#   unit        go test (cmd, internal, migrations) + scoring/gate/fixture unit tests
+#               (the SDK checks are the CI `sdk` job: scripts/sdk-check.sh --fast)
 #   contract    OpenAPI validation, spec/SDK/router drift, SDK regeneration drift
 #   lifecycle   mock acceptance (T03-T17 except T11), PR-00/02/07/09/12 runtime contracts,
 #               backup/restore
+#   lifecycle-1 … lifecycle-4
+#               the same checks split into four shards (CI runs them on four runners in
+#               parallel); together they run exactly what `lifecycle` runs
 #   image       control-plane image build, smoke, digest, licence audit (report)
 #   engines     install real engines, real-engine acceptance, bench + score
 #   container   worker image build, container smoke with real engines, SBOM
@@ -72,7 +76,8 @@ phase_static() {
   # would scan a different standard library and can report a false clean result.
   step "govulncheck (pinned toolchain)" bash "$ROOT/scripts/govulncheck.sh" || return 1
   step "python lint (ruff, pinned)" bash -c "bash '$ROOT/scripts/install-ruff.sh' >/dev/null && cd '$ROOT' && runtime/ci-venv/bin/ruff check tests scripts benchmark sdk/python examples" || return 1
-  step "go build" make -C "$ROOT" build || return 1
+  # No separate `go build` here: go vet compiles every package, and the lifecycle, sdk and
+  # image jobs build the binary itself.
   # Workflow linting uses the pinned actionlint and no external shellcheck so the
   # result does not depend on the runner image.
   step "workflow lint (actionlint)" bash -c "bash '$ROOT/scripts/install-actionlint.sh' >/dev/null && '$ROOT/runtime/bin/actionlint' -no-color -shellcheck= '$ROOT/.github/workflows/'*.yml" || return 1
@@ -81,10 +86,12 @@ phase_static() {
 }
 
 phase_unit() {
-  step "SDK and version consistency (python)" bash -c "bash '$ROOT/scripts/sdk-check.sh' --no-java" || return 1
+  # The SDK lifecycle/matrix/version checks are the CI `sdk` job (scripts/sdk-check.sh
+  # --fast); running them here too doubled 60 s of work on every PR.
   step "go test" bash -c "cd '$ROOT' && go test $GO_PKGS -count=1 -timeout 300s" || return 1
   step "scoring unit tests" python3 "$ROOT/tests/unit/test_score.py" || return 1
   step "CI merge-gate unit tests" python3 "$ROOT/tests/unit/test_ci_summary.py" || return 1
+  step "CI lifecycle shard coverage" python3 "$ROOT/tests/unit/test_ci_shards.py" || return 1
   step "fixture integrity" python3 "$ROOT/tests/unit/test_fixtures.py" || return 1
   step "benchmark gate unit tests" python3 "$ROOT/tests/unit/test_gate.py" || return 1
 }
@@ -93,8 +100,7 @@ phase_contract() {
   # CI runners start without PyYAML; local/dev machines may already have it (and
   # some are PEP-668 managed), so only install when the import fails.
   step "install CI python deps" bash -c "python3 -c 'import yaml' 2>/dev/null || python3 -m pip install --disable-pip-version-check -q -r '$ROOT/requirements-ci.txt'" || return 1
-  step "openapi validate (public)" docker run --rm -v "$ROOT:/local" "$OPENAPI_GENERATOR_IMAGE" \
-    validate -i /local/api/openapi.yaml || return 1
+  # The public spec is validated by `make sdk` (sdk regeneration drift, below).
   step "openapi validate (internal)" docker run --rm -v "$ROOT:/local" "$OPENAPI_GENERATOR_IMAGE" \
     validate -i /local/api/openapi.internal.yaml || return 1
   step "contract (specs, SDK, router drift)" python3 "$ROOT/tests/contract/openapi_contract.py" || return 1
@@ -102,15 +108,51 @@ phase_contract() {
   step "IR schema drift" bash -c "cd '$ROOT' && make schema >/dev/null && git diff --exit-code -- api/document-ir-0.1.schema.json" || return 1
 }
 
+# Lifecycle shards. Shard 1 is the floor: T09 waits for a worker lease to expire (51 s on a
+# CI runner) and T17 shares its `kill` stack. The others are packed to finish before it.
+# Measured test time per shard on a CI runner with a warm Go cache (Nov 2026):
+#   1: T09 + T17                                                    (~56 s)
+#   2: T04 (27 s, TTL wait) T05 T07 T03 T06                         (~51 s)
+#   3: T08 T10 T12–T16, PR-00 runtime contract (32 s), PR-12 drill  (~52 s)
+#   4: PR-02 security, backup/restore, PR-07 mTLS, PR-09 metrics    (~25 s)
+LIFECYCLE_SHARD_CASES=(
+  ""
+  "T09,T17"
+  "T04,T05,T07,T03,T06"
+  "T08,T10,T12,T13,T14,T15,T16"
+  ""
+)
+
+lifecycle_extra() { # shard number; the non-acceptance integration suites of that shard
+  case "$1" in
+    3)
+      step "PR-00 runtime contract" python3 "$ROOT/tests/integration/pr00_contract.py" || return 1
+      step "PR-12 backup/restore drill" python3 "$ROOT/tests/integration/pr12_drill.py" || return 1
+      ;;
+    4)
+      step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
+      step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
+      step "PR-07 mutual TLS" python3 "$ROOT/tests/integration/pr07_tls.py" || return 1
+      step "PR-09 metrics contract" python3 "$ROOT/tests/integration/pr09_metrics.py" || return 1
+      ;;
+  esac
+}
+
+phase_lifecycle_shard() { # shard number
+  local n="$1" cases="${LIFECYCLE_SHARD_CASES[$1]}"
+  step "build binary" make -C "$ROOT" build || return 1
+  if [[ -n "$cases" ]]; then
+    step "acceptance lifecycle ($cases)" python3 "$ROOT/tests/integration/acceptance.py" \
+      --profile lifecycle --only "$cases" || return 1
+  fi
+  lifecycle_extra "$n" || return 1
+}
+
 phase_lifecycle() {
   step "build binary" make -C "$ROOT" build || return 1
   step "acceptance lifecycle (T03-T17 except T11)" python3 "$ROOT/tests/integration/acceptance.py" --profile lifecycle || return 1
-  step "PR-00 runtime contract" python3 "$ROOT/tests/integration/pr00_contract.py" || return 1
-  step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
-  step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
-  step "PR-07 mutual TLS" python3 "$ROOT/tests/integration/pr07_tls.py" || return 1
-  step "PR-09 metrics contract" python3 "$ROOT/tests/integration/pr09_metrics.py" || return 1
-  step "PR-12 backup/restore drill" python3 "$ROOT/tests/integration/pr12_drill.py" || return 1
+  lifecycle_extra 3 || return 1
+  lifecycle_extra 4 || return 1
 }
 
 phase_image() {
@@ -180,6 +222,7 @@ run_phase() {
     unit) phase_unit ;;
     contract) phase_contract ;;
     lifecycle) phase_lifecycle ;;
+    lifecycle-[1-4]) phase_lifecycle_shard "${1#lifecycle-}" ;;
     image) phase_image ;;
     engines) phase_engines ;;
     container) phase_container ;;
@@ -224,9 +267,9 @@ collect_new() {
     fi
   done
 }
-if [[ "$PHASE" == "lifecycle" || "$PHASE" == "all" ]]; then
+if [[ "$PHASE" == lifecycle* || "$PHASE" == "all" ]]; then
   collect_new "$ROOT"/benchmark/results/raw/acceptance-lifecycle-*.json \
-              "$ROOT"/benchmark/results/raw/pr00-*.json \
+              "$ROOT"/benchmark/results/raw/pr*-*.json \
               "$ROOT"/runtime/logs/acceptance/*.log
 fi
 if [[ "$PHASE" == "engines" || "$PHASE" == "all" ]]; then

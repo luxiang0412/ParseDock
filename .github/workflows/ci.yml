@@ -5,9 +5,22 @@ name: CI
 # `web` has inline npm steps (local: `make web-test`) and `sdk` runs
 # `scripts/sdk-check.sh --fast`.
 #
-# Required checks (branch protection): static, unit, contract, lifecycle, image,
-# web, sdk, ci-summary. Real-engine acceptance lives in nightly.yml + engine-changes.yml so
-# the PR path stays under the 8 minute budget.
+# Merge gate: `ci-summary` aggregates every job, so it is the one check to require in
+# branch protection. Individual job names may change (lifecycle is a matrix) without
+# touching the protection rule.
+#
+# Speed (docs/CI.md §"Speed"):
+#   * a pull request cancels its own superseded runs; every push to main runs to the end
+#     (the concurrency group of a main push is its commit SHA, so nothing queues or cancels);
+#   * a documentation-only pull request skips the build and test jobs. This is decided by
+#     the `changes` job, not by a workflow-level `paths` filter: a filtered workflow never
+#     reports, which would leave a required check pending forever. `ci-summary` then accepts
+#     the skipped jobs (scripts/ci_summary.py --docs-only). Pushes to main always run in full;
+#   * the pinned Go toolchain and the Go build caches (.github/actions/go) are written only by
+#     pushes to main (one entry per job kind) and only read by pull requests, so pull requests cannot churn the 10 GB repository cache;
+#   * lifecycle runs as four shards on four runners (scripts/ci-local.sh lifecycle-N).
+#
+# Real-engine acceptance lives in nightly.yml + engine-changes.yml.
 
 on:
   pull_request:
@@ -16,8 +29,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -30,22 +43,77 @@ env:
   # Pinned tool image; scripts/verify_pins.py fails if this drifts from
   # images.lock.json.
   OPENAPI_GENERATOR_IMAGE: openapitools/openapi-generator-cli@sha256:dbc745d3a93f7bbc4289155001ef8eba1474d9e34a0733e7baf32d78e8bb02d7
+  SAVE_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
 jobs:
+  changes:
+    name: changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      docs_only: ${{ steps.classify.outputs.docs_only }}
+    steps:
+      - id: classify
+        name: classify the change (documentation-only?)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" != "pull_request" ]]; then
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"; echo "not a pull request: full run"; exit 0
+          fi
+          files="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"
+          echo "$files" | sed 's/^/changed: /'
+          # Markdown and docs/ are documentation, except the files that checks read:
+          # docs/ERROR-CODES.md (contract test, skills sync), docs/DOCUMENT-IR.md (skills sync),
+          # the agent skills and the SDK trees (generated-code drift).
+          code="$(echo "$files" | grep -vE '(\.md$|^docs/|^LICENSE)' || true)"
+          checked="$(echo "$files" | grep -E '^(docs/ERROR-CODES\.md|docs/DOCUMENT-IR\.md|\.agents/|sdk/)' || true)"
+          if [[ -n "$files" && -z "$code" && -z "$checked" ]]; then
+            echo "docs_only=true" >> "$GITHUB_OUTPUT"; echo "documentation-only change: build and test jobs are skipped"
+          else
+            echo "docs_only=false" >> "$GITHUB_OUTPUT"; echo "code change: full run"
+          fi
+
   static:
     name: static
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # Go build/vet cache, golangci-lint cache and the pinned tool binaries (govulncheck has
+      # no prebuilt release and would otherwise be compiled with `go install` on every run).
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: static phase (pins, fmt, vet, golangci-lint, govulncheck, ruff, build, tidy drift)
+          kind: static
+          extra-paths: |
+            ~/.cache/golangci-lint
+            runtime/bin
+            runtime/ci-venv
+          extra-key-files: scripts/install-*.sh requirements-ci.txt
+      - name: static phase (pins, fmt, vet, golangci-lint, govulncheck, ruff, actionlint, tidy drift)
         run: bash scripts/ci-local.sh static
+      - name: save caches (main only)
+        if: always() && env.SAVE_CACHE == 'true'
+        uses: ./.github/actions/go
+        with:
+          kind: static
+          mode: save
+          extra-paths: |
+            ~/.cache/golangci-lint
+            runtime/bin
+            runtime/ci-venv
+          extra-key-files: scripts/install-*.sh requirements-ci.txt
       - name: upload
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -56,18 +124,25 @@ jobs:
 
   unit:
     name: unit
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: unit phase (go test + scoring rubric)
+          kind: unit
+      - name: unit phase (go test + scoring rubric + CI gate tests)
         run: bash scripts/ci-local.sh unit
+      - name: save Go cache (main only)
+        if: always() && env.SAVE_CACHE == 'true'
+        uses: ./.github/actions/go
+        with:
+          kind: unit
+          mode: save
       - name: upload
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -78,16 +153,19 @@ jobs:
 
   contract:
     name: contract
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # Go is needed for one check (NeededScope vs the spec, a go test in internal/api);
+      # it reads the unit job's cache and never writes one.
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
+          kind: unit
       - name: contract phase (specs, router/SDK drift, SDK regeneration)
         run: bash scripts/ci-local.sh contract
       - name: upload
@@ -99,39 +177,46 @@ jobs:
           if-no-files-found: warn
 
   lifecycle:
-    name: lifecycle
+    name: lifecycle (${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 15
+    strategy:
+      # Every shard reports: one failing shard must not hide the result of the others.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
-      - name: lifecycle phase (T03-T17 except T11, PR-00 runtime, backup/restore)
-        run: bash scripts/ci-local.sh lifecycle
+          kind: bin
+      - name: lifecycle shard ${{ matrix.shard }} (see scripts/ci-local.sh LIFECYCLE_SHARD_CASES)
+        run: bash scripts/ci-local.sh lifecycle-${{ matrix.shard }}
       - name: upload evidence (acceptance + PR-00 JSON, stack logs)
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ci-lifecycle
+          name: ci-lifecycle-${{ matrix.shard }}
           path: build/ci/
           if-no-files-found: warn
 
   image:
     name: image
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
+          kind: bin
       - name: image phase (build, self-check, reproducibility, licence report)
         run: bash scripts/ci-local.sh image
       - name: upload build summary (digest, repro hashes, SBOM)
@@ -144,6 +229,8 @@ jobs:
 
   web:
     name: web
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -187,33 +274,45 @@ jobs:
   # real-engine and Java layers run in nightly.yml (engines + JDK download cost).
   sdk:
     name: sdk
+    needs: changes
+    if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      # The binary build cache (go-bin) is shared with lifecycle and image, which only read it.
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: true
+          kind: bin
       - name: sdk-check --fast (python lifecycle, error matrix, version consistency)
         run: bash scripts/sdk-check.sh --fast
+      - name: save Go cache (main only)
+        if: always() && env.SAVE_CACHE == 'true'
+        uses: ./.github/actions/go
+        with:
+          kind: bin
+          mode: save
 
   ci-summary:
     name: ci-summary
     if: always()
-    needs: [static, unit, contract, lifecycle, image, web, sdk]
+    needs: [changes, static, unit, contract, lifecycle, image, web, sdk]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      # The gate logic lives in scripts/ci_summary.py, so this job needs the tree.
+      # The gate logic lives in scripts/ci_summary.py; a sparse checkout is enough.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          sparse-checkout: scripts/ci_summary.py
+          sparse-checkout-cone-mode: false
       - name: aggregate results (merge gate)
         # scripts/ci_summary.py is unit-tested; a substring grep here once let a
         # failing contract job pass the summary (see docs/history/PR01-REPORT.md §6).
+        # --docs-only is passed only when the changes job itself succeeded and classified
+        # the change as documentation-only; otherwise a skipped job blocks.
         env:
           RESULTS: >-
             static=${{ needs.static.result }}
@@ -223,4 +322,36 @@ jobs:
             image=${{ needs.image.result }}
             web=${{ needs.web.result }}
             sdk=${{ needs.sdk.result }}
-        run: python3 scripts/ci_summary.py "$RESULTS" --github-summary "$GITHUB_STEP_SUMMARY"
+          DOCS_ONLY: ${{ needs.changes.result == 'success' && needs.changes.outputs.docs_only == 'true' }}
+        run: |
+          flag=""
+          if [[ "$DOCS_ONLY" == "true" ]]; then flag="--docs-only"; fi
+          python3 scripts/ci_summary.py "$RESULTS" $flag --github-summary "$GITHUB_STEP_SUMMARY"
+
+  # Keeps the 10 GB repository cache lean: after a push to main has written fresh Go caches,
+  # delete the older entries of the same kinds and the retired setup-go entries.
+  cache-prune:
+    name: cache-prune
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [static, unit, sdk]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: delete superseded Go caches
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          # Only entries created before this run started: a concurrent, newer main run may
+          # already have saved its caches, and those must survive this prune.
+          started="$(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .run_started_at)"
+          gh api --paginate "repos/$REPO/actions/caches?per_page=100" \
+            --jq ".actions_caches[] | select((.key | startswith(\"go-\")) or (.key | startswith(\"setup-go-\"))) | select(.created_at < \"$started\") | \"\\(.id) \\(.key)\"" |
+          while read -r id key; do
+            echo "delete $key"
+            gh api -X DELETE "repos/$REPO/actions/caches/$id" >/dev/null || true
+          done

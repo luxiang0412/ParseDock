@@ -8,6 +8,10 @@ Prints a markdown table and exits:
     0  every required job succeeded
     1  at least one job did not succeed (failure, cancelled, skipped, empty)
 
+With --docs-only (set by the workflow only when its `changes` job classified the pull
+request as documentation-only) a required job may also be `skipped`, because the workflow
+skips the build and test jobs for such a change. Failure and cancellation still block.
+
 Why a script: the first implementation used
 `echo "$RESULTS" | grep -qv '=success'`, which is a substring match — the line
 "contract=failure" also contains "=success" (from another pair), so the summary
@@ -38,18 +42,22 @@ def parse(pairs: list[str]) -> dict[str, str]:
     return out
 
 
-def evaluate(results: dict[str, str]) -> tuple[bool, list[str]]:
+def evaluate(results: dict[str, str], docs_only: bool = False) -> tuple[bool, list[str]]:
+    accepted = {"success", "skipped"} if docs_only else {"success"}
     problems: list[str] = []
     for name in REQUIRED:
         if name not in results:
             problems.append(f"{name}: missing result (job did not report)")
-        elif results[name] != "success":
+        elif results[name] not in accepted:
             problems.append(f"{name}: {results[name]}")
     return not problems, problems
 
 
-def render(results: dict[str, str], problems: list[str]) -> str:
-    lines = ["## PR-01 CI summary", "", "| job | result |", "| --- | --- |"]
+def render(results: dict[str, str], problems: list[str], docs_only: bool = False) -> str:
+    lines = ["## PR-01 CI summary", ""]
+    if docs_only:
+        lines += ["Documentation-only change: build and test jobs were skipped.", ""]
+    lines += ["| job | result |", "| --- | --- |"]
     for name in REQUIRED:
         lines.append(f"| {name} | {results.get(name, 'missing')} |")
     if problems:
@@ -64,11 +72,13 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("results", nargs="*")
     ap.add_argument("--github-summary", default="")
+    ap.add_argument("--docs-only", action="store_true",
+                    help="accept skipped jobs (documentation-only pull request)")
     args = ap.parse_args()
 
     results = parse(args.results)
-    ok, problems = evaluate(results)
-    text = render(results, problems)
+    ok, problems = evaluate(results, args.docs_only)
+    text = render(results, problems, args.docs_only)
     print(text)
     if args.github_summary:
         with open(args.github_summary, "a", encoding="utf-8") as f:
