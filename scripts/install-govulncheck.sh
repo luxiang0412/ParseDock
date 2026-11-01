@@ -19,7 +19,11 @@ DEST="$ROOT/runtime/bin"
 BIN="$DEST/govulncheck"
 export GOTOOLCHAIN=local
 
-if [[ -x "$BIN" ]] && "$BIN" -version 2>/dev/null | grep -q "govulncheck@${VERSION}"; then
+# Read `-version` to the end before matching: it prints its last line only after fetching
+# the DB timestamp from vuln.go.dev, so a reader that exits early (`grep -q`, `head -3`)
+# kills it with SIGPIPE, and under pipefail that is a failure (exit 141) with no message.
+version_of() { "$BIN" -version 2>&1 || true; }
+if [[ -x "$BIN" ]] && [[ "$(version_of)" == *"govulncheck@${VERSION}"* ]]; then
   echo "govulncheck $VERSION already installed"
   exit 0
 fi
@@ -35,4 +39,4 @@ if [[ "$sum" != "$H1" ]]; then
 fi
 mkdir -p "$DEST"
 GOBIN="$DEST" go install "golang.org/x/vuln/cmd/govulncheck@${VERSION}"
-"$BIN" -version | head -3
+version_of
