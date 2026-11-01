@@ -70,18 +70,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - name: Go toolchain + build cache (read-only; written by CI on main)
+        uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: false
-      - name: restore Go cache (read-only; written by CI on main)
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-          restore-keys: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          kind: bin
       # Read-only: the nightly run on main saves the 729 MB engine cache. A pull request
       # saving its own copy (scoped to that PR, unreadable by any other) filled the 10 GB
       # repository cache with a dozen identical entries.

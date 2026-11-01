@@ -12,9 +12,9 @@
 #   contract    OpenAPI validation, spec/SDK/router drift, SDK regeneration drift
 #   lifecycle   mock acceptance (T03-T17 except T11), PR-00/02/07/09/12 runtime contracts,
 #               backup/restore
-#   lifecycle-1 … lifecycle-3
-#               the same checks split into three shards of similar wall time (CI runs them
-#               on three runners in parallel); together they run exactly what `lifecycle` runs
+#   lifecycle-1 … lifecycle-4
+#               the same checks split into four shards (CI runs them on four runners in
+#               parallel); together they run exactly what `lifecycle` runs
 #   image       control-plane image build, smoke, digest, licence audit (report)
 #   engines     install real engines, real-engine acceptance, bench + score
 #   container   worker image build, container smoke with real engines, SBOM
@@ -108,33 +108,31 @@ phase_contract() {
   step "IR schema drift" bash -c "cd '$ROOT' && make schema >/dev/null && git diff --exit-code -- api/document-ir-0.1.schema.json" || return 1
 }
 
-# Lifecycle shards, balanced on measured wall time (Nov 2026). Shard 1 is the floor: T09
-# waits for a worker lease to expire (51 s on a CI runner), so more shards would not help.
-# Measured test time per shard on a CI runner (excluding the binary build):
-#   1: T09 + T17 (`kill` stack, kept together), backup/restore, PR-07 mTLS   (~64 s)
-#   2: T04 T05 T07 T03 T06, PR-02 security, PR-12 drill                       (~66 s)
-#   3: T08 T10 T12–T16, PR-00 runtime contract (37 s), PR-09 metrics          (~58 s)
-# LIFECYCLE_SHARD_CASES must cover LIFECYCLE_CASES in tests/integration/acceptance.py exactly;
-# tests/unit/test_ci_shards.py fails otherwise, so a new T-case cannot silently drop out of CI.
+# Lifecycle shards. Shard 1 is the floor: T09 waits for a worker lease to expire (51 s on a
+# CI runner) and T17 shares its `kill` stack. The others are packed to finish before it.
+# Measured test time per shard on a CI runner with a warm Go cache (Nov 2026):
+#   1: T09 + T17                                                    (~56 s)
+#   2: T04 (27 s, TTL wait) T05 T07 T03 T06                         (~51 s)
+#   3: T08 T10 T12–T16, PR-00 runtime contract (32 s), PR-12 drill  (~52 s)
+#   4: PR-02 security, backup/restore, PR-07 mTLS, PR-09 metrics    (~25 s)
 LIFECYCLE_SHARD_CASES=(
   ""
   "T09,T17"
   "T04,T05,T07,T03,T06"
   "T08,T10,T12,T13,T14,T15,T16"
+  ""
 )
 
 lifecycle_extra() { # shard number; the non-acceptance integration suites of that shard
   case "$1" in
-    1)
-      step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
-      step "PR-07 mutual TLS" python3 "$ROOT/tests/integration/pr07_tls.py" || return 1
-      ;;
-    2)
-      step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
-      step "PR-12 backup/restore drill" python3 "$ROOT/tests/integration/pr12_drill.py" || return 1
-      ;;
     3)
       step "PR-00 runtime contract" python3 "$ROOT/tests/integration/pr00_contract.py" || return 1
+      step "PR-12 backup/restore drill" python3 "$ROOT/tests/integration/pr12_drill.py" || return 1
+      ;;
+    4)
+      step "PR-02 security contract" python3 "$ROOT/tests/integration/pr02_contract.py" || return 1
+      step "backup/restore" python3 "$ROOT/tests/integration/backup_restore.py" || return 1
+      step "PR-07 mutual TLS" python3 "$ROOT/tests/integration/pr07_tls.py" || return 1
       step "PR-09 metrics contract" python3 "$ROOT/tests/integration/pr09_metrics.py" || return 1
       ;;
   esac
@@ -154,8 +152,7 @@ phase_lifecycle() {
   step "build binary" make -C "$ROOT" build || return 1
   step "acceptance lifecycle (T03-T17 except T11)" python3 "$ROOT/tests/integration/acceptance.py" --profile lifecycle || return 1
   lifecycle_extra 3 || return 1
-  lifecycle_extra 1 || return 1
-  lifecycle_extra 2 || return 1
+  lifecycle_extra 4 || return 1
 }
 
 phase_image() {
@@ -225,7 +222,7 @@ run_phase() {
     unit) phase_unit ;;
     contract) phase_contract ;;
     lifecycle) phase_lifecycle ;;
-    lifecycle-[1-3]) phase_lifecycle_shard "${1#lifecycle-}" ;;
+    lifecycle-[1-4]) phase_lifecycle_shard "${1#lifecycle-}" ;;
     image) phase_image ;;
     engines) phase_engines ;;
     container) phase_container ;;

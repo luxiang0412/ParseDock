@@ -16,9 +16,9 @@ name: CI
 #     the `changes` job, not by a workflow-level `paths` filter: a filtered workflow never
 #     reports, which would leave a required check pending forever. `ci-summary` then accepts
 #     the skipped jobs (scripts/ci_summary.py --docs-only). Pushes to main always run in full;
-#   * Go build caches are written only by pushes to main (one per job kind) and only read
-#     by pull requests, so pull requests cannot churn the 10 GB repository cache;
-#   * lifecycle runs as three shards on three runners (scripts/ci-local.sh lifecycle-N).
+#   * the pinned Go toolchain and the Go build caches (.github/actions/go) are written only by
+#     pushes to main (one entry per job kind) and only read by pull requests, so pull requests cannot churn the 10 GB repository cache;
+#   * lifecycle runs as four shards on four runners (scripts/ci-local.sh lifecycle-N).
 #
 # Real-engine acceptance lives in nightly.yml + engine-changes.yml.
 
@@ -91,36 +91,29 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
       # Go build/vet cache, golangci-lint cache and the pinned tool binaries (govulncheck has
       # no prebuilt release and would otherwise be compiled with `go install` on every run).
-      - name: restore caches
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/go
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
+          kind: static
+          extra-paths: |
             ~/.cache/golangci-lint
             runtime/bin
             runtime/ci-venv
-          key: go-static-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', 'scripts/install-*.sh', 'requirements-ci.txt') }}-${{ github.sha }}
-          restore-keys: go-static-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', 'scripts/install-*.sh', 'requirements-ci.txt') }}-
+          extra-key-files: scripts/install-*.sh requirements-ci.txt
       - name: static phase (pins, fmt, vet, golangci-lint, govulncheck, ruff, actionlint, tidy drift)
         run: bash scripts/ci-local.sh static
       - name: save caches (main only)
         if: always() && env.SAVE_CACHE == 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/go
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
+          kind: static
+          mode: save
+          extra-paths: |
             ~/.cache/golangci-lint
             runtime/bin
             runtime/ci-venv
-          key: go-static-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum', 'scripts/install-*.sh', 'requirements-ci.txt') }}-${{ github.sha }}
+          extra-key-files: scripts/install-*.sh requirements-ci.txt
       - name: upload
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -139,28 +132,17 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: false
-      - name: restore Go cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-unit-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-          restore-keys: go-unit-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          kind: unit
       - name: unit phase (go test + scoring rubric + CI gate tests)
         run: bash scripts/ci-local.sh unit
       - name: save Go cache (main only)
         if: always() && env.SAVE_CACHE == 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/go
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-unit-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          kind: unit
+          mode: save
       - name: upload
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -181,18 +163,9 @@ jobs:
           persist-credentials: false
       # Go is needed for one check (NeededScope vs the spec, a go test in internal/api);
       # it reads the unit job's cache and never writes one.
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: false
-      - name: restore Go cache (read-only)
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-unit-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-          restore-keys: go-unit-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          kind: unit
       - name: contract phase (specs, router/SDK drift, SDK regeneration)
         run: bash scripts/ci-local.sh contract
       - name: upload
@@ -204,7 +177,7 @@ jobs:
           if-no-files-found: warn
 
   lifecycle:
-    name: lifecycle (${{ matrix.shard }}/3)
+    name: lifecycle (${{ matrix.shard }}/4)
     needs: changes
     if: needs.changes.outputs.docs_only != 'true'
     runs-on: ubuntu-24.04
@@ -213,23 +186,14 @@ jobs:
       # Every shard reports: one failing shard must not hide the result of the others.
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: false
-      - name: restore Go cache (read-only; written by the sdk job on main)
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-          restore-keys: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          kind: bin
       - name: lifecycle shard ${{ matrix.shard }} (see scripts/ci-local.sh LIFECYCLE_SHARD_CASES)
         run: bash scripts/ci-local.sh lifecycle-${{ matrix.shard }}
       - name: upload evidence (acceptance + PR-00 JSON, stack logs)
@@ -250,18 +214,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: ./.github/actions/go
         with:
-          go-version-file: go.mod
-          cache: false
-      - name: restore Go cache (read-only)
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-          restore-keys: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          kind: bin
       - name: image phase (build, self-check, reproducibility, licence report)
         run: bash scripts/ci-local.sh image
       - name: upload build summary (digest, repro hashes, SBOM)
@@ -327,29 +282,18 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          cache: false
       # The binary build cache (go-bin) is shared with lifecycle and image, which only read it.
-      - name: restore Go cache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: ./.github/actions/go
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
-          restore-keys: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-
+          kind: bin
       - name: sdk-check --fast (python lifecycle, error matrix, version consistency)
         run: bash scripts/sdk-check.sh --fast
       - name: save Go cache (main only)
         if: always() && env.SAVE_CACHE == 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        uses: ./.github/actions/go
         with:
-          path: |
-            ~/.cache/go-build
-            ~/go/pkg/mod
-          key: go-bin-${{ runner.os }}-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.sha }}
+          kind: bin
+          mode: save
 
   ci-summary:
     name: ci-summary
