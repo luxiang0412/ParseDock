@@ -12,7 +12,7 @@ make run FILE=~/docs/report.pdf MODE=accurate
 Or without make:
 
 ```bash
-pip install parsedock==0.1.0        # or: pip install -e ../../sdk/python
+pip install parsedock==0.1.1        # or: pip install -e ../../sdk/python
 PARSEDOCK_TOKEN=... python parse.py ~/docs/report.pdf --mode accurate -o report.md
 ```
 

@@ -1,8 +1,8 @@
-# Generated from ParseDock api/openapi.yaml (API 0.1.0) by scripts/sync_skills.py. Do not edit here.
+# Generated from ParseDock api/openapi.yaml (API 0.1.1) by scripts/sync_skills.py. Do not edit here.
 openapi: 3.1.0
 info:
   title: ParseDock
-  version: 0.1.0
+  version: 0.1.1
   summary: Stateless document parsing service with explicit ACK/TTL lifecycle
   description: |
     ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown,

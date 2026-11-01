@@ -5,8 +5,8 @@ description: "ParseDock Java client (`com.luxiangs:parsedock-client`): upload a 
 
 # ParseDock Java SDK
 
-Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added after the 0.1.0
-release are marked; against a 0.1.0 server they are simply absent.
+Applies to ParseDock API `0.1` (server and SDK 0.1.x). Fields added in 0.1.1 are
+marked; against a 0.1.0 server they are simply absent.
 
 The client is generated from the public OpenAPI document with OpenAPI Generator
 (OkHttp + Gson): every endpoint is a method, every schema a model class.
@@ -17,11 +17,11 @@ Published on Maven Central (Java 8+; CI builds and tests on JDK 17):
 <dependency>
   <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 
-Gradle: `implementation("com.luxiangs:parsedock-client:0.1.0")`.
+Gradle: `implementation("com.luxiangs:parsedock-client:0.1.1")`.
 
 The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
 (upload, sync parse), `jobs:read` (status, download, events), `jobs:ack` (ack, cancel).
@@ -121,13 +121,13 @@ try (okhttp3.Response r = call.execute()) {
   `paragraph`, `list_item` (`getLevel()` = nesting), `table` (`getTableId()` →
   `getTables()`), `image`, `caption`, `code`, `header`, `footer`, …
 * `getText()` is plain; `getRichText()`, when not null, is the same content with
-  CommonMark inline markup (bold, italic, code, links). `rich_text` was added after 0.1.0:
+  CommonMark inline markup (bold, italic, code, links). `rich_text` was added in 0.1.1:
   the 0.1.0 artifact has no `getRichText()` (Gson ignores the field), and a 0.1.0 server
   never sends it. Use `getText()` when you need to work with both.
 * Skip page furniture when you build your own text: type `header`/`footer`, or
   `getMetadata().get("content_layer")` equal to `"furniture"`. The `markdown`/`text`
   downloads already do.
-* Metadata keys with a meaning (all added after 0.1.0): `content_layer="furniture"`,
+* Metadata keys with a meaning (all added in 0.1.1): `content_layer="furniture"`,
   `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`, `recovered="text_layer"`
   (text the engine's Markdown dropped, restored from the PDF text layer). Unknown keys may appear later; ignore them.
 * `Table#getCells()` is a `List<TableCellsInner>`: `getRow()`, `getCol()`, `getRowSpan()`,

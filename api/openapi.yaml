@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ParseDock
-  version: 0.1.0
+  version: 0.1.1
   summary: Stateless document parsing service with explicit ACK/TTL lifecycle
   description: |
     ParseDock converts documents (PDF, DOCX, XLSX, PPTX, CSV/TSV, TXT/Markdown,

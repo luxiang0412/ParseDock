@@ -104,7 +104,7 @@ sdk: ## regenerate Python/Java SDKs from api/openapi.yaml (deterministic)
 	docker run --rm -v $$PWD:/local $(GEN_IMAGE) validate -i /local/api/openapi.yaml
 	rm -rf sdk/python-generated sdk/java-generated
 	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local $(GEN_IMAGE) generate -i /local/api/openapi.yaml -g python -o /local/sdk/python-generated --package-name parsedock_client --additional-properties=library=urllib3,projectName=parsedock,hideGenerationTimestamp=true,enumUnknownDefaultCase=true
-	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local $(GEN_IMAGE) generate -i /local/api/openapi.yaml -g java -o /local/sdk/java-generated --additional-properties=groupId=com.luxiangs,artifactId=parsedock-client,artifactVersion=0.1.0,library=okhttp-gson,hideGenerationTimestamp=true,enumUnknownDefaultCase=true
+	docker run --rm -u $$(id -u):$$(id -g) -v $$PWD:/local $(GEN_IMAGE) generate -i /local/api/openapi.yaml -g java -o /local/sdk/java-generated --additional-properties=groupId=com.luxiangs,artifactId=parsedock-client,artifactVersion=0.1.1,library=okhttp-gson,hideGenerationTimestamp=true,enumUnknownDefaultCase=true
 	# Central needs metadata, sources/javadoc and a release profile the generator
 	# does not emit; the patch is idempotent and rerun after every regeneration.
 	python3 scripts/patch_java_pom.py sdk/java-generated/pom.xml

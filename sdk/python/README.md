@@ -1,7 +1,7 @@
 # ParseDock Python SDK
 
 ```bash
-pip install parsedock==0.1.0      # from a checkout: pip install -e sdk/python
+pip install parsedock==0.1.1      # from a checkout: pip install -e sdk/python
 ```
 
 One package, two entry points, no dependencies (stdlib only):

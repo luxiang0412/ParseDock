@@ -3,7 +3,7 @@
 Self-hosted document parsing service: upload a document, get structured text with
 provenance, released on your terms.
 
-**Current release: `v0.1.0`** — see [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for what
+**Current release: `v0.1.1`** — see [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for what
 is in it and what is deliberately not.
 
 ```
@@ -121,14 +121,14 @@ your sink function returns successfully.
 Clients (both are published from this tree):
 
 ```bash
-pip install parsedock==0.1.0        # Python: lifecycle wrapper + `parsedock` CLI
+pip install parsedock==0.1.1        # Python: lifecycle wrapper + `parsedock` CLI
 ```
 
 ```xml
 <dependency>                          <!-- Java: generated client -->
   <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client</artifactId>
-  <version>0.1.0</version>
+  <version>0.1.1</version>
 </dependency>
 ```
 

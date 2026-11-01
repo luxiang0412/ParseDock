@@ -1,4 +1,4 @@
-<!-- Generated from ParseDock docs/DOCUMENT-IR.md (API 0.1.0) by scripts/sync_skills.py. Do not edit here. -->
+<!-- Generated from ParseDock docs/DOCUMENT-IR.md (API 0.1.1) by scripts/sync_skills.py. Do not edit here. -->
 
 # Document IR `doc-ir/0.1`
 
