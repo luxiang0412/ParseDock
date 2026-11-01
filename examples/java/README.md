@@ -9,8 +9,8 @@ make run                              # bundled fixture → …/pdf_text_en_3p.p
 make run FILE=~/docs/report.pdf MODE=accurate
 ```
 
-Or without make (the client resolves from Maven Central once 0.1.0 is published;
-otherwise install it locally first):
+Or without make (the client resolves from Maven Central; install it from the checkout
+first when you need a client newer than the published one):
 
 ```bash
 mvn -f ../../sdk/java-generated/pom.xml -DskipTests install   # local fallback

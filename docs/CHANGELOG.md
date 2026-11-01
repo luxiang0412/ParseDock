@@ -83,6 +83,14 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ### Changed
 
+* **SDK docs and agent skills corrected against the code.** `parsedock --version` prints
+  `parsedock 0.1.0` (not JSON); CLI exit code `2` covers HTTP errors too; there is no job
+  listing endpoint; the Java client is on Maven Central; there is no `parsedock[async]`
+  extra. Both skills gained the missing error codes (`insufficient_scope`,
+  `coordinator_unavailable`, `insufficient_storage`, …), API-key scopes, how to read the
+  Document IR (and which fields are newer than 0.1.0), a bounded Java poll loop and
+  streaming download; the Java snippets were compiled against the generated client.
+
 * **Markdown view fidelity.** Numbered lists keep their numbers (`list_marker`, or
   numbered per run), nested items are indented to their parent's content column, quotes
   render as `>`, code fences carry their language, pipe-table cells keep line breaks as

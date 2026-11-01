@@ -1,21 +1,15 @@
 ---
 name: parsedock-java-sdk
-description: "ParseDock Java client (`com.luxiangs:parsedock-client`): upload a document with JobsApi, poll the job, download Markdown or the typed DocumentIR model, then ACK with the exact result_version to release the server copy. Use when: calling a ParseDock service from Java, Kotlin, Scala, Groovy or any JVM project; building an integration with Maven or Gradle; deserialising the Document IR (doc-ir/0.1) into generated model classes; handling ApiException codes such as rate_limited, quota_exceeded, file_too_large, encrypted_file or gpu_unavailable; or writing an end-to-end test against a running ParseDock instance. Also use when the user mentions ParseDock, JobsApi, DocumentIR, result_version, or ACK/TTL from a JVM context."
+description: "ParseDock Java client (`com.luxiangs:parsedock-client`): upload a document with JobsApi, poll the job, download Markdown or the typed DocumentIR model, then ACK with the exact result_version to release the server copy. Use when: calling a ParseDock service from Java, Kotlin, Scala, Groovy or any JVM project; building an integration with Maven or Gradle; deserialising the Document IR (doc-ir/0.1) into generated model classes; streaming a large result to disk; handling ApiException codes such as rate_limited, quota_exceeded, insufficient_scope, file_too_large, encrypted_file or gpu_unavailable; or writing an end-to-end test against a running ParseDock instance. Also use when the user mentions ParseDock, JobsApi, DocumentIR, result_version, or ACK/TTL from a JVM context."
 ---
 
 # ParseDock Java SDK
 
-Generated from `api/openapi.yaml` with OpenAPI Generator (`make sdk`). The client
-is checked in at `sdk/java-generated`; hand-written tests and examples live
+Generated from `api/openapi.yaml` with OpenAPI Generator (`make sdk`; OkHttp + Gson). The
+client is checked in at `sdk/java-generated`; hand-written tests and examples live
 outside it so regeneration cannot delete them.
 
-From Maven Central (0.1.0 is uploaded and validated; if it does not resolve yet the
-first release still needs the manual *Publish* in the Central Portal) or from the
-repository checkout:
-
-```bash
-mvn -f sdk/java-generated/pom.xml -DskipTests install   # local fallback
-```
+Published on Maven Central (Java 8+; CI builds and tests on JDK 17):
 
 ```xml
 <dependency>
@@ -25,7 +19,12 @@ mvn -f sdk/java-generated/pom.xml -DskipTests install   # local fallback
 </dependency>
 ```
 
-Java 8+ compatible (CI builds and tests it on JDK 17).
+Gradle: `implementation("com.luxiangs:parsedock-client:0.1.0")`. To build the client
+from a checkout instead: `mvn -f sdk/java-generated/pom.xml -DskipTests install`.
+
+The API key is a bearer token. It needs the scopes for what you call: `jobs:write`
+(upload, sync parse), `jobs:read` (status, download, events), `jobs:ack` (ack, cancel).
+A key without an explicit scope list has all three.
 
 ## The five-step lifecycle
 
@@ -41,6 +40,7 @@ import org.openapitools.client.model.Job;
 ApiClient client = new ApiClient();
 client.setBasePath("http://localhost:8080");
 client.setBearerToken(System.getenv("PARSEDOCK_TOKEN"));
+client.setReadTimeout(600_000);               // ms; large results take a while
 JobsApi api = new JobsApi(client);
 
 // createJob(File, mode, device, ttlSeconds, priority, idempotencyKey,
@@ -49,13 +49,19 @@ JobsApi api = new JobsApi(client);
 Job job = api.createJob(new File("invoice.pdf"), "auto", "auto",
         null, null, null, null, null, null, null);
 
-Job done;
-do {
-    Thread.sleep(300);
+long deadline = System.currentTimeMillis() + 600_000;
+Job done = api.getJob(job.getJobId());
+long delay = 300;
+while (done.getStatus() == Job.StatusEnum.QUEUED || done.getStatus() == Job.StatusEnum.RUNNING) {
+    if (System.currentTimeMillis() > deadline) {
+        throw new IllegalStateException("job " + job.getJobId() + " still " + done.getStatus());
+    }
+    Thread.sleep(delay);
+    delay = Math.min(delay * 3 / 2, 5_000);   // polling shares the per-owner rate budget
     done = api.getJob(job.getJobId());
-} while (done.getStatus() == Job.StatusEnum.QUEUED
-        || done.getStatus() == Job.StatusEnum.RUNNING);
-
+}
+// COMPLETED, FAILED, CANCELLED - or UNKNOWN_DEFAULT_OPEN_API for a status this client
+// version does not know: treat anything but COMPLETED as "no result".
 if (done.getStatus() != Job.StatusEnum.COMPLETED) {
     throw new IllegalStateException(done.getErrorCode() + ": " + done.getErrorMessage());
 }
@@ -72,47 +78,101 @@ api.ackJob(done.getJobId(),
 
 * **Never auto-ACK.** `ackJob` is a delete request. It must carry the exact
   `result_version` you downloaded (`Job#getResultVersion()`, or the
-  `X-Result-Version` header). A stale value → `409`, nothing released.
+  `X-Result-Version` response header). A stale value → `409`, nothing released.
 * Without an ACK the result expires at `result_expires_at` (TTL).
 * `cancelJob(id, null)` only stops queued/running work: on a completed job it returns
   `409` and never releases the result.
 * After release: `410` during the tombstone window, then `404`.
-* `downloadResult` returns the body as a `String`; for large documents write it
-  through `downloadResultWithHttpInfo`/streams rather than holding it in memory.
+* There is no job listing endpoint: keep the job id from `createJob`.
+* Reusing an `idempotencyKey` replays the first job instead of creating a new one.
+
+## Large results: stream to disk
+
+`downloadResult` and `downloadResultWithHttpInfo` both return the whole body as a
+`String`. To stream, execute the raw OkHttp call:
+
+```java
+okhttp3.Call call = api.downloadResultCall(jobId, "json", null);
+try (okhttp3.Response r = call.execute()) {
+    if (!r.isSuccessful()) throw new IllegalStateException("download " + r.code());
+    String version = r.header("X-Result-Version");          // the ACK token
+    java.nio.file.Files.copy(r.body().byteStream(), out,
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING);  // out: a java.nio.file.Path
+    api.ackJob(jobId, new AckJobRequest().resultVersion(version), null);  // after the copy
+}
+```
+
+## Other endpoints
+
+* `SyncApi#parseSync(file, mode, device, timeoutMs)`: bounded synchronous parse for small
+  files; the result is **not** released (ACK it or let it expire). When the parse outlives
+  `timeoutMs` the server answers `202` with a Job, which this typed method cannot carry:
+  check `parseSyncWithHttpInfo(...).getStatusCode()`, or use `createJob` for anything
+  that may be slow.
+* `EventsApi#jobEvents(id, scope, lastEventID, lastEventId)`: the SSE stream, returned as
+  one `String` when the server closes it (`scope=processing` ends after the terminal
+  status). For live events use an SSE client against `GET /v1/jobs/{id}/events`.
+* `ProbesApi#healthz()` / `readyz()`.
+
+## Reading the DocumentIR
+
+* `getElements()` is the reading order. `getType()`: `title`, `section` (`getLevel()`),
+  `paragraph`, `list_item` (`getLevel()` = nesting), `table` (`getTableId()` →
+  `getTables()`), `image`, `caption`, `code`, `header`, `footer`, …
+* `getText()` is plain; `getRichText()`, when not null, is the same content with
+  CommonMark inline markup (bold, italic, code, links). `rich_text` was added after 0.1.0:
+  the 0.1.0 artifact has no `getRichText()` (Gson ignores the field), and a 0.1.0 server
+  never sends it. Use `getText()` when you need to work with both.
+* Skip page furniture when you build your own text: type `header`/`footer`, or
+  `getMetadata().get("content_layer")` equal to `"furniture"`. The `markdown`/`text`
+  downloads already do.
+* Metadata keys with a meaning (all added after 0.1.0): `content_layer="furniture"`,
+  `markdown="blockquote"`, `list_ordered="true"`, `list_marker`, `code_language`. Unknown keys may appear later; ignore them.
+* `Table#getCells()` is a `List<TableCellsInner>`: `getRow()`, `getCol()`, `getRowSpan()`,
+  `getColSpan()`, `getText()`; `Table#getHeaderRows()`.
+* `getWarnings()` codes explain degraded output; `getRouting()` says which engine ran.
+
+Full reference: `docs/DOCUMENT-IR.md`.
 
 ## Errors
 
 Failures throw `ApiException`; read `e.getCode()` (HTTP status) and, when the
 server sent one, `e.getResponseBody()` for the stable `{"error":{"code":...}}`.
 
-| status | code | meaning |
-| --- | --- | --- |
-| 401 | `unauthorized` | bad or missing bearer token |
-| 404 | `not_found` | unknown job, another owner's job, or already deleted |
-| 409 | `conflict` | stale `result_version` on ACK, or ACK on a non-completed job |
-| 410 | `gone` | released/expired (tombstone window) |
-| 413 | `file_too_large` | over the deployment's upload cap |
-| 415 | `unsupported_type` | format not enabled |
-| 422 | `encrypted_file` | password-protected document |
-| 429 | `rate_limited` | retry with backoff; honour `Retry-After` |
-| 429 | `quota_exceeded` | do **not** retry: the owner's rolling quota is spent |
-| 409 | `gpu_unavailable` | `gpu_required` without a proven GPU worker |
+| status | code | retry | meaning |
+| --- | --- | --- | --- |
+| 400 | `invalid_request` | no | bad parameter or multipart body |
+| 401 | `unauthorized` | no | bad or missing bearer token |
+| 403 | `insufficient_scope` | no | key lacks `jobs:write` / `jobs:read` / `jobs:ack` |
+| 404 | `not_found` | no | unknown job, another owner's job, or already deleted |
+| 409 | `conflict` | no | stale `result_version` on ACK, ACK on a non-completed job, idempotency key reused |
+| 409 | `gpu_unavailable` | no | `gpu_required` without a proven GPU worker |
+| 410 | `gone` | no | released/expired (tombstone window) |
+| 413 | `file_too_large` | no | over the deployment's upload cap |
+| 415 | `unsupported_type` | no | format not enabled, or content does not match the extension |
+| 422 | `encrypted_file`, `malformed_file`, `page_limit_exceeded` | no | the document itself cannot be parsed |
+| 429 | `rate_limited` | yes | honour `Retry-After` |
+| 429 | `quota_exceeded` | **no** | the owner's rolling quota is spent |
+| 503 | `coordinator_unavailable` | yes | the gateway cannot reach the coordinator |
+| 507 | `insufficient_storage` | yes | server disk below its watermark |
 
-The generated client has no retry policy of its own: implement backoff for
-`429 rate_limited`, `500`, `502`, `503`, `504` (`Retry-After` when present) and
-never for the 4xx codes above.
+The generated client has **no retry policy**: back off on the retryable rows and on
+`500`/`502`/`504` (`Retry-After` when present), never on the others. A failed job carries
+the same codes in `getErrorCode()`; the full table is `docs/ERROR-CODES.md`.
 
 ## Notes on the model
 
-* `Job.getStatus()` is `Job.StatusEnum` (`QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`,
-  `CANCELLED`); `getRetentionStatus()` is `ACTIVE` / `RELEASE_PENDING` / `RELEASED` / `EXPIRED`.
+* `Job.getStatus()` is `Job.StatusEnum`: `QUEUED`, `RUNNING`, `COMPLETED`, `FAILED`,
+  `CANCELLED` (and `UNKNOWN_DEFAULT_OPEN_API` for a value this client does not know).
+* `getRetentionStatus()`: `ACTIVE`, `RELEASE_PENDING`, `EXPIRY_PENDING`, `DELETING`,
+  `RELEASED`, `EXPIRED`.
 * `DocumentIR#getSchemaVersion()` is an enum (`DOC_IR_0_1`); a spec change that
   renames it will break compilation rather than at runtime — regenerate after
   pulling.
 * `DocumentIRRouting#getActualDevice()` is `cpu`, `gpu` or `unknown` (string, not
   an enum) — `unknown` means the execution device could not be proven.
-* `mode`: `fast` (xberg), `accurate` (docling-rs), `auto` (router decides, may
-  retry once). Text formats always use the native engine.
+* `mode`: `fast` (xberg), `accurate` (docling-rs; use it for multi-column PDFs), `auto`
+  (router decides, may retry a bad scan once). Text formats always use the native engine.
 * `device`: `auto` | `cpu` | `gpu_preferred` | `gpu_required`.
 
 ## Testing your integration
@@ -126,7 +186,9 @@ mvn -f sdk/java-client-test/pom.xml test \
   -Dparsedock.fixture=path/to/file.pdf
 ```
 
+`examples/java` (`make run`) is a minimal runnable project.
+
 ## More
 
-`docs/SDK.md` (contract + testing matrix), `api/openapi.yaml` (every field),
-`sdk/java-generated/README.md` (generated reference).
+`docs/SDK.md` (contract + testing matrix), `docs/DOCUMENT-IR.md`, `docs/ERROR-CODES.md`,
+`api/openapi.yaml` (every field), `sdk/java-generated/README.md` (generated reference).

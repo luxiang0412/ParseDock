@@ -397,11 +397,13 @@ fuzzing and the async client are still open (see "Not delivered"). Delivered and
   `result_version` required, idempotent ACK, `410` is expected, polling shares the rate
   budget) and the honest gaps.
 
-**Not delivered:** the Maven Central release itself (the validated bundle needs the one-click
-Publish in the Central Portal), `schemathesis`
+Maven Central: `com.luxiangs:parsedock-client:0.1.0` is published (resolvable since
+2026-10-31).
+
+**Not delivered:** `schemathesis`
 property-based contract fuzzing (the repo has 47 OpenAPI-derived contract checks (2026-11-01) plus a live
 end-to-end SDK test; property fuzzing belongs in the nightly job with a pinned version), and
-the `httpx` async client (declared as an optional extra but not implemented).
+an async client (not implemented; the package declares no `async` extra).
 
 ---
 
