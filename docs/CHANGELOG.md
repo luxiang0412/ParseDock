@@ -6,7 +6,15 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ## Unreleased
 
-Nothing yet.
+### Fixed
+
+* **docling-rs / docling-serve: text inside a figure stays with its figure.** The mapper
+  did not walk a picture's children (chart labels, OCR of a scanned figure), so they were
+  placed by the texts array before the next *text* - after any picture that followed, a
+  page too late. On the private corpus 27 of 542 PDFs parsed in `accurate` mode had page
+  order going backwards (116 times in total) while the raw docling order had none; with
+  the fix all 27 have none, with identical element and character counts. (Before v0.1.1
+  those texts were appended at the end of the document.)
 
 ## v0.1.1 — 2026-11-01
 

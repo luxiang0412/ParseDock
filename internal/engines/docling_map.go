@@ -115,10 +115,11 @@ type doclingTableCell struct {
 }
 
 type doclingPicture struct {
-	SelfRef string        `json:"self_ref"`
-	Label   string        `json:"label"`
-	Prov    []doclingProv `json:"prov"`
-	Caption []doclingRef  `json:"captions"`
+	SelfRef  string        `json:"self_ref"`
+	Label    string        `json:"label"`
+	Prov     []doclingProv `json:"prov"`
+	Caption  []doclingRef  `json:"captions"`
+	Children []doclingRef  `json:"children"`
 }
 
 type doclingGroup struct {
@@ -254,6 +255,11 @@ func (m *doclingMapper) walk(refs []doclingRef, ctx doclingCtx) {
 				for _, c := range p.Caption {
 					m.visited[c.Ref] = true
 				}
+				// Text inside the figure (chart labels, OCR of a scanned figure) belongs
+				// right after it. Left unreached, placeUnreached put it before the next
+				// *text* in the array, i.e. after any picture that follows, so a figure's
+				// words could land behind the next page's figure.
+				m.walk(p.Children, ctx)
 			}
 		case strings.HasPrefix(r.Ref, "#/groups/"):
 			g, ok := m.groupIdx[r.Ref]
