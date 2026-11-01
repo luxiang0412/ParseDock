@@ -43,7 +43,7 @@ env:
   # Pinned tool image; scripts/verify_pins.py fails if this drifts from
   # images.lock.json.
   OPENAPI_GENERATOR_IMAGE: openapitools/openapi-generator-cli@sha256:dbc745d3a93f7bbc4289155001ef8eba1474d9e34a0733e7baf32d78e8bb02d7
-  SAVE_CACHE: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+  SAVE_CACHE: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.head_ref == 'ci/speedup' }} # TEMP
 
 jobs:
   changes:
