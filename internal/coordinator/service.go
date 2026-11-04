@@ -221,11 +221,14 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 			return nil, false, NewError(422, jobs.ErrEncrypted, "password-protected PDF is not supported in Phase 0")
 		}
 	}
+	var expanded int64
 	if format.ZipBased {
-		if err := storage.VerifyZipContainer(s.Store.InputPath(jobID), format, lim); err != nil {
+		n, err := storage.VerifyZipContainerSize(s.Store.InputPath(jobID), format, lim)
+		if err != nil {
 			_ = s.Store.DeleteJob(jobID)
 			return nil, false, validationErr(err)
 		}
+		expanded = n
 	}
 	if format.Name == "doc" || format.Name == "xls" || format.Name == "ppt" {
 		if err := storage.VerifyCompoundFile(s.Store.InputPath(jobID)); err != nil {
@@ -234,7 +237,7 @@ func (s *Service) CreateJobStaged(ctx context.Context, p CreateParams, jobID str
 		}
 	}
 
-	engineHint, reason, gerr := s.route(ctx, format.Name, mode, device)
+	engineHint, reason, gerr := s.routeSized(ctx, format.Name, mode, device, expanded)
 	if gerr != nil {
 		_ = s.Store.DeleteJob(jobID)
 		return nil, false, gerr
@@ -364,6 +367,38 @@ func isTextFormat(format string) bool {
 	return false
 }
 
+// xlsxStreamEngine is engines.XLSXStreamName (not imported: the coordinator does not
+// depend on the engine adapters).
+const xlsxStreamEngine = "xlsx-stream"
+
+// routeSized is route with one size rule in front: an XLSX whose archive expands to at
+// least Cfg.XLSXStreamMinExpanded goes to the streaming XLSX engine, whatever the mode.
+// The subprocess engines cannot finish such workbooks (xberg refuses archives beyond
+// 500 MiB and both xberg and docling-rs cap their result at 256 MiB), so honouring the
+// mode would only turn the job into a certain expanded_too_large failure.
+// gpu_required keeps its strict semantics and is never redirected to a CPU engine.
+func (s *Service) routeSized(ctx context.Context, format, mode, device string, expanded int64) (string, string, error) {
+	if format == "xlsx" && device != jobs.DeviceGPURequired && s.Cfg.XLSXStreamMinExpanded > 0 &&
+		expanded >= s.Cfg.XLSXStreamMinExpanded {
+		if e, ok := s.engineSpec(xlsxStreamEngine); ok {
+			return e.Name, fmt.Sprintf(
+				"format=%s mode=%s device=%s -> %s (%s); workbook expands to %d MiB >= %d MiB, beyond what the subprocess engines can finish",
+				format, mode, device, e.Name, e.Version, expanded>>20, s.Cfg.XLSXStreamMinExpanded>>20), nil
+		}
+	}
+	return s.route(ctx, format, mode, device)
+}
+
+// engineSpec returns the configured engine with that name.
+func (s *Service) engineSpec(name string) (EngineSpec, bool) {
+	for _, e := range s.Cfg.Engines {
+		if e.Name == name {
+			return e, true
+		}
+	}
+	return EngineSpec{}, false
+}
+
 // route chooses the engine hint and records why. It never silently degrades a
 // gpu_required request.
 func (s *Service) route(ctx context.Context, format, mode, device string) (string, string, error) {
@@ -447,10 +482,16 @@ func (s *Service) route(ctx context.Context, format, mode, device string) (strin
 }
 
 func (s *Service) limits() storage.Limits {
-	if l, ok := s.Cfg.Limits.(storage.Limits); ok && l.MaxBytes > 0 {
-		return l
+	l, ok := s.Cfg.Limits.(storage.Limits)
+	if !ok || l.MaxBytes <= 0 {
+		l = storage.DefaultLimits()
 	}
-	return storage.DefaultLimits()
+	// The raised XLSX cap only makes sense when the engine that can read such workbooks
+	// is configured; otherwise the job would be admitted only to fail in the worker.
+	if _, ok := s.engineSpec(xlsxStreamEngine); !ok {
+		l.MaxXLSXStreamUncompressed = 0
+	}
+	return l
 }
 
 // countGPUWorkers counts live GPU workers that can run engine and, when the engine

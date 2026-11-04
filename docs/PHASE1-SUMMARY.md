@@ -47,7 +47,7 @@
 | Two-host cluster measurement, 30 s network partition | needs a second host; procedure documented in `CLUSTER-LITE.md` §8 |
 | Branch protection / required checks | private repo on the free plan → `HTTP 403: Upgrade to GitHub Pro or make this repository public`; checks are red on failure but not technically unmergeable |
 | docling-serve on CUDA | upstream device option undocumented in the tested build |
-| 14 oversized XLSX (550–770 MiB expanded) | needs sheet-window extraction (PR-06 follow-up, RC-2) |
+| 14 oversized XLSX (550–770 MiB expanded) | `xlsx-stream` engine (PR-69): bounded summary instead of `expanded_too_large` when configured |
 | TEDS/APTED, public licensed corpus, `schemathesis` | scoped out of PR-10/11 with reasons recorded there |
 | Legacy `.doc`/`.xls` from the real corpus | supported by engines and allow-list now; not yet re-run against the corporate corpus after PR-04 |
 

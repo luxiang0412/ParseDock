@@ -203,7 +203,8 @@ exit -1, empty stderr) and a parser that reports an allocator failure on stderr 
 same way, so check `dmesg`/the container's OOM events too. If
 it persists, the file is genuinely larger than the worker can handle: raise
 `--engine-max-rss-mb`/worker memory, or route it to a bigger worker. For 550–770 MiB
-expanded XLSX ledgers this is expected until sheet-window extraction lands (RC-2).
+expanded XLSX ledgers, enable the `xlsx-stream` engine (`docs/DEPLOYMENT.md`, "Large XLSX"):
+they are then routed past xberg/docling-rs and summarised instead of failing.
 
 ### 3.8 Certificate expiry
 

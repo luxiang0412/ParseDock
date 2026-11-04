@@ -30,7 +30,7 @@ services:
       - --role=coordinator
       - --internal-listen=0.0.0.0:8081
       - --data-dir=/data
-      - --engines=native,xberg,docling-rs
+      - --engines=native,xberg,docling-rs,xlsx-stream
       - --result-ttl=${PARSEDOCK_RESULT_TTL:-1h}
       - --max-result-ttl=24h
       - --max-job-lifetime=24h
@@ -72,7 +72,7 @@ services:
     command:
       - --role=worker
       - --coordinator-url=http://coordinator:8081
-      - --engines=native,xberg,docling-rs
+      - --engines=native,xberg,docling-rs,xlsx-stream
       - --worker-concurrency=${WORKER_CONCURRENCY:-2}
       - --device-type=cpu
       - --work-dir=/work

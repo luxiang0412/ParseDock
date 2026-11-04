@@ -182,6 +182,9 @@ type Config struct {
 	Quota             Quota
 	Engines           []EngineSpec
 	Limits            interface{} // storage.Limits, kept as interface to avoid cycle in JSON
+	// XLSXStreamMinExpanded routes an XLSX whose archive expands to at least this many
+	// bytes to the streaming XLSX engine (when configured); 0 disables the rule.
+	XLSXStreamMinExpanded int64
 }
 
 // DefaultConfig returns the Phase 0 defaults from the task guide.

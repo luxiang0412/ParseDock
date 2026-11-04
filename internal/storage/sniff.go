@@ -132,8 +132,12 @@ type Limits struct {
 	MaxBytes           int64
 	MaxPages           int
 	MaxZipUncompressed int64
-	MaxZipRatio        float64
-	MaxZipEntries      int
+	// MaxXLSXStreamUncompressed, when > 0, is the expanded-size cap for xlsx (incl. .xlsm) in
+	// place of MaxZipUncompressed: the deployment runs the streaming XLSX engine, which
+	// is not bound by the subprocess engines' 500 MiB archive cap. 0 = no exception.
+	MaxXLSXStreamUncompressed int64
+	MaxZipRatio               float64
+	MaxZipEntries             int
 }
 
 // DefaultLimits are intentionally conservative; tune only with measurements.
@@ -236,26 +240,38 @@ func SniffFormat(fileName string, head []byte, lim Limits) (Format, error) {
 // VerifyZipContainer checks OOXML archives for the expected part and for
 // compression-bomb characteristics before handing the file to an engine.
 func VerifyZipContainer(path string, format Format, lim Limits) error {
+	_, err := VerifyZipContainerSize(path, format, lim)
+	return err
+}
+
+// VerifyZipContainerSize is VerifyZipContainer that also returns the archive's total
+// expanded size (from the central directory; nothing is decompressed), which the
+// coordinator uses to route very large workbooks to the streaming XLSX engine.
+func VerifyZipContainerSize(path string, format Format, lim Limits) (int64, error) {
 	zr, err := zip.OpenReader(path)
 	if err != nil {
-		return &ValidationError{Code: "malformed_file", Msg: "not a valid zip container"}
+		return 0, &ValidationError{Code: "malformed_file", Msg: "not a valid zip container"}
 	}
 	defer zr.Close()
-	if len(zr.File) > lim.MaxZipEntries {
-		return &ValidationError{Code: "suspicious_compression", Msg: "too many archive entries"}
+	maxExpanded := lim.MaxZipUncompressed
+	if format.Name == "xlsx" && lim.MaxXLSXStreamUncompressed > 0 {
+		maxExpanded = lim.MaxXLSXStreamUncompressed
 	}
 	var total int64
+	if len(zr.File) > lim.MaxZipEntries {
+		return total, &ValidationError{Code: "suspicious_compression", Msg: "too many archive entries"}
+	}
 	var haveCore bool
 	for _, f := range zr.File {
 		total += int64(f.UncompressedSize64)
-		if total > lim.MaxZipUncompressed {
+		if total > maxExpanded {
 			// Not a bomb signal but a real limit: the configured engines cannot
 			// expand documents this large (xberg caps at 500 MiB, docling-rs at
 			// 10M cells). Report it as a size problem so callers can act on it.
-			return &ValidationError{
+			return total, &ValidationError{
 				Code: "expanded_too_large",
 				Msg: fmt.Sprintf("expanded archive needs %d MiB (limit %d MiB); the parsers cannot process documents this large",
-					total>>20, lim.MaxZipUncompressed>>20),
+					total>>20, maxExpanded>>20),
 			}
 		}
 		// Bomb signal: an extreme ratio (>200:1 by default) on a part that is not
@@ -264,7 +280,7 @@ func VerifyZipContainer(path string, format Format, lim Limits) error {
 		if f.CompressedSize64 > 0 && f.UncompressedSize64 > 1<<20 {
 			ratio := float64(f.UncompressedSize64) / float64(f.CompressedSize64)
 			if ratio > lim.MaxZipRatio {
-				return &ValidationError{
+				return total, &ValidationError{
 					Code: "suspicious_compression",
 					Msg:  fmt.Sprintf("compression ratio %.0f:1 on a %d MiB part exceeds the bomb threshold", ratio, f.UncompressedSize64>>20),
 				}
@@ -285,13 +301,13 @@ func VerifyZipContainer(path string, format Format, lim Limits) error {
 			}
 		}
 		if strings.Contains(f.Name, "..") || strings.HasPrefix(f.Name, "/") {
-			return &ValidationError{Code: "malformed_file", Msg: "archive contains unsafe paths"}
+			return total, &ValidationError{Code: "malformed_file", Msg: "archive contains unsafe paths"}
 		}
 	}
 	if !haveCore {
-		return &ValidationError{Code: "unsupported_type", Msg: "archive does not match " + format.Name + " structure"}
+		return total, &ValidationError{Code: "unsupported_type", Msg: "archive does not match " + format.Name + " structure"}
 	}
-	return nil
+	return total, nil
 }
 
 func isOLE2Format(name string) bool {

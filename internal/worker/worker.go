@@ -486,7 +486,10 @@ func (w *Worker) parsePhase(parseCtx context.Context, task *coordClaim, workDir 
 	// Enrichment and escalation both run inside the heartbeat-protected phase: a
 	// large workbook can take a while to unzip, and a lost lease would let the
 	// coordinator reclaim a job that is still being processed.
-	if engines.ShouldEnrichFormulas(task.Format) {
+	// The streaming XLSX engine reads workbooks too large to unpack into memory, which
+	// is exactly what formula enrichment would try to do; its result is a summary, not a
+	// cell-for-cell table the formulas could be attached to.
+	if engines.ShouldEnrichFormulas(task.Format) && engine.Name() != engines.XLSXStreamName {
 		n, warns, eerr := engines.EnrichXLSXFormulas(parseCtx, local, result)
 		if eerr != nil {
 			// Enrichment is best effort only for genuine parse problems; a
