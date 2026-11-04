@@ -182,7 +182,9 @@ Flags map 1:1 to environment variables (`PARSEDOCK_*`). The important ones:
 | `--quota-jobs-per-day` | `PARSEDOCK_QUOTA_JOBS_PER_DAY` | `0` (off) | jobs per owner per rolling 24 h |
 | `--quota-bytes-per-day` | `PARSEDOCK_QUOTA_BYTES_PER_DAY` | `0` (off) | input bytes per owner per rolling 24 h |
 | `--quota-storage-mb` | `PARSEDOCK_QUOTA_STORAGE_MB` | `0` (off) | live result bytes per owner; accounting is released when a result is released/expires |
-| `--max-expanded-mb` | `PARSEDOCK_MAX_EXPANDED_MB` | `512` | OOXML expanded-size cap; the parsers cap lower (xberg 500 MiB, docling-rs 10 M cells/sheet) |
+| `--max-expanded-mb` | `PARSEDOCK_MAX_EXPANDED_MB` | `500` | OOXML expanded-size cap, aligned with xberg's own 500 MiB archive cap (it was 512, which admitted 500–512 MiB documents only to fail in the parser); docling-rs caps at 10 M cells/sheet |
+| `--xlsx-stream-min-expanded-mb` | `PARSEDOCK_XLSX_STREAM_MIN_EXPANDED_MB` | `256` | coordinator: an XLSX expanding to at least this is routed to `xlsx-stream` (when in `--engines`) regardless of `mode`; 0 disables the rule |
+| `--xlsx-stream-max-expanded-mb` | `PARSEDOCK_XLSX_STREAM_MAX_EXPANDED_MB` | `4096` | coordinator: expanded-size cap for XLSX when `xlsx-stream` is in `--engines` (replaces `--max-expanded-mb` for XLSX); 0 = no exception |
 | `--sandbox` | `PARSEDOCK_SANDBOX` | `` (off) | `unshare-net` |
 | `--xberg-ocr-backend` (worker image) | `PARSEDOCK_XBERG_OCR_BACKEND` | ` ` (unset → tesseract) | OCR backend for xberg: leave unset for today's behaviour, or set `paddle-ocr` (PP-OCRv6 small, in-process, no extra dependency) on a Chinese corpus. Measured on 300 dpi scans: `paddle-ocr` reads Chinese at CER 0.000 and English at 0.000, where tesseract is 0.075/0.453 with the wrong language, at ~3x the latency (1.25 s vs 0.41 s per 2-page scan) and ~3.4x the memory. `eng`, `en`, `chi_sim`, `zh` and `ch` all map to the right recognition family; an unknown name fails at startup rather than on the first document. `--ocr-backend-options` is deliberately **not** exposed: xberg 1.3.10 silently ignores unknown option keys, so it cannot be verified. |
 | `--xberg-ocr-lang` | `PARSEDOCK_XBERG_OCR_LANG` | `eng` | OCR language passed to the engine. **Match the corpus**: on the scanned Chinese fixture `eng` produced garbage while `zh` reproduced the page exactly ("采购订单 / 供应商：华北物流有限公司 / 金额：人民币128,400元"), and `zh` degrades English scans ("Supler. Nwn Lic"). A combined value (`chi_sim+eng`) is rejected by xberg 1.3.10. Run one worker per language, or point the whole deployment at the one that dominates. A wrong language is only *partly* detected: a Chinese page read with `eng` loses OCR confidence (0.38–0.51) and `mode=auto` retries it once on the accurate engine, but an English page read with `chi_sim` stays confident (0.87) and is not retried (measured 3 % CER loss). With `--xberg-ocr-backend paddle-ocr` the language choice stops mattering for Chinese/English. |
@@ -363,10 +365,22 @@ limits, not bugs, and they are reported with stable codes:
 
 | Cause | Code | Corpus count | Action |
 | --- | --- | --- | --- |
-| expanded OOXML > parser limit (xberg 500 MiB, docling-rs 10M cells) | `expanded_too_large` (413) | 14 (58–74 MiB SAP ledgers) | raise/prune at the source, or add per-sheet window extraction (PR-06) |
+| expanded OOXML > parser limit (xberg 500 MiB, docling-rs 10M cells) | `expanded_too_large` (413) | 14 (58–74 MiB SAP ledgers) | XLSX: enable the `xlsx-stream` engine (bounded summary, see below); other OOXML: split at the source |
 | encrypted PDF | `encrypted_file` | 8 | out of scope (no password support) |
 | > `--max-pages` | `page_limit_exceeded` | 0 (after raising the default to 2000) | raise `--max-pages` if the tenant needs it |
 | corrupt/zero-padded PDF, empty XLSX | `unsupported_type` / `malformed_file` | 5 | rejected before an engine runs |
+
+**Large XLSX (`xlsx-stream`).** Add `xlsx-stream` to `--engines` on the coordinator *and*
+the CPU workers. Workbooks expanding to ≥ `--xlsx-stream-min-expanded-mb` (256 MiB) then
+skip xberg/docling-rs and are read by a pure-Go streaming reader; the expanded-size cap for
+XLSX becomes `--xlsx-stream-max-expanded-mb` (4 GiB). Sheets up to 50k rows / 1M cells
+(5M cells per workbook) are returned in full; larger sheets as a bounded summary — the
+used range and row count, the first 100 rows, per-column statistics (non-empty, numbers,
+dates, text, min/max, distinct up to 10k) — with a `truncated` warning. Measured on a
+synthetic 780k × 19 ledger (75 MiB zip, 539 MiB expanded): 10.7 s, ~195 MiB peak RSS,
+34 KiB of Markdown (`PARSEDOCK_XLSX_STREAM_SCALE=1 go test ./internal/engines/ -run
+TestXLSXStreamScale -v`). Memory is bounded by the shared-string table (cap 1 GiB), not by
+the sheet. `--max-upload-mb` still bounds the compressed upload (default 64 MiB).
 
 `tests/integration/batch_parse.py` reproduces the run (redacted by default:
 hashed file ids, no document text); full report in `docs/REAL-CORPUS-TEST.md`.

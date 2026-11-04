@@ -63,6 +63,8 @@ type flags struct {
 	quotaBytesPerDay int64
 	quotaStorageMB   int64
 	maxExpandedMB    int64
+	xlsxStreamMinMB  int64
+	xlsxStreamMaxMB  int64
 	devInsecure      bool
 	logLevel         string
 	engines          string
@@ -165,7 +167,11 @@ func parseFlags() (*flags, error) {
 	fs.IntVar(&f.quotaJobsPerDay, "quota-jobs-per-day", intEnv("PARSEDOCK_QUOTA_JOBS_PER_DAY", 0), "max jobs per owner per rolling 24h (0 = unlimited)")
 	fs.Int64Var(&f.quotaBytesPerDay, "quota-bytes-per-day", int64Env("PARSEDOCK_QUOTA_BYTES_PER_DAY", 0), "max input bytes per owner per rolling 24h (0 = unlimited)")
 	fs.Int64Var(&f.quotaStorageMB, "quota-storage-mb", int64Env("PARSEDOCK_QUOTA_STORAGE_MB", 0), "max live result bytes per owner (0 = unlimited)")
-	fs.Int64Var(&f.maxExpandedMB, "max-expanded-mb", int64Env("PARSEDOCK_MAX_EXPANDED_MB", 512), "OOXML expanded-size cap (xberg itself caps at 500 MiB; docling-rs at 10M cells per sheet)")
+	fs.Int64Var(&f.maxExpandedMB, "max-expanded-mb", int64Env("PARSEDOCK_MAX_EXPANDED_MB", 500), "OOXML expanded-size cap (xberg itself caps at 500 MiB; docling-rs at 10M cells per sheet)")
+	fs.Int64Var(&f.xlsxStreamMinMB, "xlsx-stream-min-expanded-mb", int64Env("PARSEDOCK_XLSX_STREAM_MIN_EXPANDED_MB", 256),
+		"coordinator: route an XLSX expanding to at least this many MiB to the xlsx-stream engine when it is in --engines (0 = never)")
+	fs.Int64Var(&f.xlsxStreamMaxMB, "xlsx-stream-max-expanded-mb", int64Env("PARSEDOCK_XLSX_STREAM_MAX_EXPANDED_MB", 4096),
+		"coordinator: expanded-size cap for XLSX when the xlsx-stream engine is in --engines (replaces --max-expanded-mb for XLSX; 0 = no exception)")
 	fs.BoolVar(&f.devInsecure, "dev-insecure", env("PARSEDOCK_DEV_INSECURE", "") == "1", "allow anonymous access (tests only)")
 	fs.StringVar(&f.logLevel, "log-level", env("PARSEDOCK_LOG_LEVEL", "info"), "debug|info|warn|error")
 	fs.StringVar(&f.engines, "engines", env("PARSEDOCK_ENGINES", "native"), "worker engines (comma list)")
@@ -249,6 +255,9 @@ func (f *flags) validate() error {
 	if f.maxUploadMB <= 0 {
 		return fmt.Errorf("--max-upload-mb must be > 0, got %d", f.maxUploadMB)
 	}
+	if f.xlsxStreamMinMB < 0 || f.xlsxStreamMaxMB < 0 {
+		return fmt.Errorf("--xlsx-stream-min-expanded-mb and --xlsx-stream-max-expanded-mb must be >= 0")
+	}
 	if f.maxExpandedMB <= 0 {
 		return fmt.Errorf("--max-expanded-mb must be > 0, got %d", f.maxExpandedMB)
 	}
@@ -317,9 +326,12 @@ func run(f *flags) error {
 		MaxBytes:           f.maxUploadMB << 20,
 		MaxPages:           f.maxPages,
 		MaxZipUncompressed: f.maxExpandedMB << 20,
-		MaxZipRatio:        200,
-		MaxZipEntries:      5000,
+		// Applies only when xlsx-stream is configured (Service.limits drops it otherwise).
+		MaxXLSXStreamUncompressed: f.xlsxStreamMaxMB << 20,
+		MaxZipRatio:               200,
+		MaxZipEntries:             5000,
 	}
+	cfg.XLSXStreamMinExpanded = f.xlsxStreamMinMB << 20
 	cfg.Engines = engineSpecs(f)
 	cfg.Quota = coordinator.Quota{
 		MaxConcurrent:   f.quotaConcurrent,
@@ -726,6 +738,8 @@ func buildRegistry(f *flags, device string) *engines.Registry {
 		switch name {
 		case "native":
 			reg.Add(&engines.Native{})
+		case engines.XLSXStreamName:
+			reg.Add(&engines.XLSXStream{})
 		case "mock":
 			reg.Add(&engines.Mock{DeviceStr: device})
 		case "xberg":

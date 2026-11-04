@@ -6,7 +6,23 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ## Unreleased
 
-Nothing yet.
+### Added
+
+* **`xlsx-stream` engine for very large workbooks.** A pure-Go streaming XLSX reader
+  (memory bounded by the shared-string table, not the sheet). With `xlsx-stream` in
+  `--engines`, an XLSX expanding to ≥ `--xlsx-stream-min-expanded-mb` (256 MiB) is routed
+  to it regardless of `mode`, and the XLSX expanded-size cap becomes
+  `--xlsx-stream-max-expanded-mb` (4 GiB). Sheets up to 50k rows / 1M cells come back in
+  full; larger ones as a bounded summary (row count and used range, first 100 rows,
+  per-column statistics) with a `truncated` warning. 550–770 MiB ledgers that used to fail
+  with `expanded_too_large` now complete. Not added to any default: enable it explicitly
+  (the shipped compose files do).
+
+### Changed
+
+* **`--max-expanded-mb` defaults to 500 (was 512)**, xberg's own archive cap. Documents
+  expanding to 500–512 MiB were admitted and then failed inside the parser with
+  `expanded_too_large`; they are now refused at upload with the same code.
 
 ## v0.1.2 — 2026-11-01
 

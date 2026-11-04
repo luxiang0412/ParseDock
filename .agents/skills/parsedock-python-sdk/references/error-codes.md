@@ -29,7 +29,7 @@ and `POST /v1/parse` returns a failed job as `422` with that code.
 | `encrypted_file` | 422; job | no | Password-protected document |
 | `page_limit_exceeded` | 422 | no | Document has more pages than the configured page limit |
 | `suspicious_compression` | 422 | no | Archive-based document (DOCX/XLSX/PPTX/…) has too many entries or a decompression ratio that looks like a zip bomb |
-| `expanded_too_large` | 413; job | no | Document expands beyond the parser limits (e.g. very large XLSX); see "Deliberate gaps" in `AGENTS.md` |
+| `expanded_too_large` | 413; job | no | Document expands beyond the parser limits (e.g. very large XLSX); XLSX are read by the `xlsx-stream` engine instead when the deployment enables it |
 | `engine_out_of_memory` | job | yes (job is retried by the coordinator first) | The engine process exceeded the RSS ceiling (`--engine-max-rss-mb`) and was killed |
 | `quota_exceeded` | 429 (with `Retry-After`); job | no | Owner quota reached: concurrent jobs, jobs per day or stored bytes. Also raised at completion when the result would exceed the storage quota |
 | `insufficient_storage` | 507 | yes | Coordinator disk is below the safety watermark; existing results stay readable |

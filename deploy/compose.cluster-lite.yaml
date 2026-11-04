@@ -32,7 +32,7 @@ services:
       - --role=coordinator
       - --internal-listen=0.0.0.0:8081
       - --data-dir=/data
-      - --engines=native,xberg,docling-rs
+      - --engines=native,xberg,docling-rs,xlsx-stream
       # Mutual TLS for the cross-host hop (mount /certs read-only, see volumes):
       # - --tls-cert=/certs/coordinator.crt
       # - --tls-key=/certs/coordinator.key
@@ -80,7 +80,7 @@ services:
     command:
       - --role=worker
       - --coordinator-url=${COORDINATOR_URL:?set https://coordinator-host:8081}
-      - --engines=native,xberg,docling-rs
+      - --engines=native,xberg,docling-rs,xlsx-stream
       - --worker-concurrency=2
       - --work-dir=/work
       - --device-type=${DEVICE_TYPE:-cpu}

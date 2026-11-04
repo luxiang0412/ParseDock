@@ -170,5 +170,9 @@ port clashes and confusing failures in the integration tests.
 * No OpenTelemetry SDK. Correlation is `X-Request-Id` + audit lines + `job_events`; see
   `docs/SLO.md` §3 before adding an exporter.
 * `image_ref` in the IR is reserved; artifacts are not downloadable yet.
-* 550–770 MiB expanded XLSX need sheet-window extraction; they currently fail with
-  `expanded_too_large` by design.
+* Very large XLSX (≥ `--xlsx-stream-min-expanded-mb`, default 256 MiB expanded) are routed to
+  the pure-Go `xlsx-stream` engine when it is in `--engines`. A sheet beyond its full-output
+  bound (50k rows / 1M cells; 5M cells per workbook) is returned as a **bounded summary**
+  (size, the first 100 rows, per-column statistics, warning `truncated`), not cell for cell:
+  emitting ~15M cells would breach the IR table limits and the 256 MiB worker result body,
+  and is of no use as Markdown. Full cell-for-cell output of such sheets is a deliberate gap.

@@ -48,7 +48,7 @@ is a breaking API change.
 | `encrypted_file` | 422; job | no | Password-protected document | coordinator pre-flight, `engines.ClassifyCLIError` |
 | `page_limit_exceeded` | 422 | no | Document has more pages than the configured page limit | `internal/storage` PDF pre-flight |
 | `suspicious_compression` | 422 | no | Archive-based document (DOCX/XLSX/PPTX/…) has too many entries or a decompression ratio that looks like a zip bomb | `internal/storage` ZIP inspection |
-| `expanded_too_large` | 413; job | no | Document expands beyond the parser limits (e.g. very large XLSX); see "Deliberate gaps" in `AGENTS.md` | `internal/storage` ZIP inspection, engines (xberg, docling-rs), `engines.ClassifyCLIError` |
+| `expanded_too_large` | 413; job | no | Document expands beyond the parser limits (e.g. very large XLSX); XLSX are read by the `xlsx-stream` engine instead when the deployment enables it | `internal/storage` ZIP inspection, engines (xberg, docling-rs), `engines.ClassifyCLIError` |
 | `engine_out_of_memory` | job | yes (job is retried by the coordinator first) | The engine process exceeded the RSS ceiling (`--engine-max-rss-mb`) and was killed | `internal/engines/exec.go` RSS watchdog (xberg, docling-rs, mineru) |
 | `quota_exceeded` | 429 (with `Retry-After`); job | no | Owner quota reached: concurrent jobs, jobs per day or stored bytes. Also raised at completion when the result would exceed the storage quota | coordinator quota admission (`quota.go`) and completion |
 | `insufficient_storage` | 507 | yes | Coordinator disk is below the safety watermark; existing results stay readable | coordinator upload |

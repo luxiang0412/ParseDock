@@ -19,6 +19,12 @@ var BuiltinCapabilities = map[string]Capability{
 		Formats: []string{"txt", "md", "csv", "tsv"}, Modes: []string{"fast", "accurate"},
 		Notes: "pure Go; no models, no subprocess; the accurate choice for text formats",
 	},
+	"xlsx-stream": {
+		Name: "xlsx-stream", Device: "cpu", Priority: 0,
+		Formats: []string{"xlsx"}, Modes: []string{"fast", "accurate", "auto"},
+		Notes: "pure Go streaming XLSX reader; routed only for workbooks at or above " +
+			"--xlsx-stream-min-expanded-mb (sheets beyond the full-output bound are summarised)",
+	},
 	"mock": {
 		Name: "mock", Device: "cpu", Priority: 1,
 		Formats: []string{"*"}, Modes: []string{"fast", "accurate", "auto"},

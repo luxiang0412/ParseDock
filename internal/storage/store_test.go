@@ -439,3 +439,46 @@ func TestSniffDocContainingHTML(t *testing.T) {
 		t.Fatal("png containing HTML was accepted")
 	}
 }
+
+func TestVerifyZipContainerSizeAndXLSXStreamCap(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "book.xlsx")
+	f, err := os.Create(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	zw := zip.NewWriter(f)
+	for name, size := range map[string]int{"xl/workbook.xml": 100, "xl/worksheets/sheet1.xml": 2 << 20} {
+		w, err := zw.CreateHeader(&zip.FileHeader{Name: name, Method: zip.Store})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write(bytes.Repeat([]byte("x"), size)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	xlsx := MustLookupByName("xlsx")
+	l := lim()
+	total, err := VerifyZipContainerSize(p, xlsx, l)
+	if err != nil || total != 2<<20+100 {
+		t.Fatalf("total = %d, err = %v", total, err)
+	}
+	l.MaxZipUncompressed = 1 << 20
+	if _, err := VerifyZipContainerSize(p, xlsx, l); err == nil {
+		t.Fatal("ordinary cap not enforced")
+	}
+	l.MaxXLSXStreamUncompressed = 4 << 20
+	if _, err := VerifyZipContainerSize(p, xlsx, l); err != nil {
+		t.Fatalf("streaming cap must replace the ordinary one for xlsx: %v", err)
+	}
+	l.MaxXLSXStreamUncompressed = 1 << 20
+	var ve *ValidationError
+	if _, err := VerifyZipContainerSize(p, xlsx, l); !asValidation(err, &ve) || ve.Code != "expanded_too_large" {
+		t.Fatalf("streaming cap not enforced: %v", err)
+	}
+}

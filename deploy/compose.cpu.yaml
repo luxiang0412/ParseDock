@@ -31,7 +31,7 @@ services:
       - --role=coordinator
       - --internal-listen=0.0.0.0:8081
       - --data-dir=/data
-      - --engines=native,xberg,docling-rs
+      - --engines=native,xberg,docling-rs,xlsx-stream
       - --result-ttl=1h
       - --max-result-ttl=24h
       - --max-job-lifetime=24h
@@ -90,7 +90,7 @@ services:
     command:
       - --role=worker
       - --coordinator-url=http://coordinator:8081
-      - --engines=native,xberg,docling-rs
+      - --engines=native,xberg,docling-rs,xlsx-stream
       - --worker-concurrency=2
       - --work-dir=/work
       - --device-type=cpu
