@@ -1,7 +1,7 @@
 # parsedock-client
 
 ParseDock
-- API version: 0.1.2
+- API version: 0.1.3
   - Generator version: 7.27.0-SNAPSHOT
 
 ParseDock converts documents (PDF; DOCX, XLSX/XLSM, PPTX; legacy DOC/DOT,
@@ -59,7 +59,7 @@ Add this dependency to your project's POM:
 <dependency>
   <groupId>com.luxiangs</groupId>
   <artifactId>parsedock-client</artifactId>
-  <version>0.1.2</version>
+  <version>0.1.3</version>
   <scope>compile</scope>
 </dependency>
 ```
@@ -75,7 +75,7 @@ Add this dependency to your project's build file:
   }
 
   dependencies {
-     implementation "com.luxiangs:parsedock-client:0.1.2"
+     implementation "com.luxiangs:parsedock-client:0.1.3"
   }
 ```
 
@@ -89,7 +89,7 @@ mvn clean package
 
 Then manually install the following JARs:
 
-* `target/parsedock-client-0.1.2.jar`
+* `target/parsedock-client-0.1.3.jar`
 * `target/lib/*.jar`
 
 ## Getting Started
