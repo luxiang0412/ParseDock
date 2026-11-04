@@ -6,6 +6,24 @@ All notable changes to ParseDock. Versions follow [SemVer](https://semver.org/);
 
 ## Unreleased
 
+Nothing yet.
+
+## v0.1.3 — 2026-11-04
+
+### Upgrade notes (read first)
+
+* **Enable the new engine explicitly.** `xlsx-stream` is not in the binary's default
+  `--engines`; add it on the coordinator **and** the CPU workers (the shipped compose files
+  now list `native,xberg,docling-rs,xlsx-stream`). A coordinator that lists it routes
+  workbooks expanding to ≥ 256 MiB to it, so every worker must run it too.
+* **`--max-expanded-mb` defaults to 500 (was 512).** Documents expanding to 500–512 MiB are
+  now refused at upload with `expanded_too_large` instead of failing inside the parser; XLSX
+  are exempt when `xlsx-stream` is enabled (cap `--xlsx-stream-max-expanded-mb`, 4 GiB).
+* **Image tags are unchanged.** `make images` / `scripts/build-images.sh` still tag the
+  local images `:0.1.0` by default; rebuild from this release and redeploy.
+* No API, Document IR (`doc-ir/0.1`), error-code or worker-protocol change; the SDKs only
+  change version.
+
 ### Added
 
 * **`xlsx-stream` engine for very large workbooks.** A pure-Go streaming XLSX reader
